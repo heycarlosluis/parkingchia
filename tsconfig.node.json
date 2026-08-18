@@ -1,0 +1,24 @@
+{
+  "extends": "@electron-toolkit/tsconfig/tsconfig.node.json",
+  "include": [
+    "electron.vite.config.*",
+    "drizzle.config.ts",
+    "scripts/**/*.ts",
+    "src/main/**/*.ts",
+    "src/preload/**/*.ts",
+    "src/shared/**/*.ts"
+  ],
+  "compilerOptions": {
+    "strict": true,
+    "ignoreDeprecations": "6.0",
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "composite": true,
+    "types": ["node", "electron"],
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["src/shared/*"],
+      "@main/*": ["src/main/*"]
+    }
+  }
+}

@@ -1,0 +1,154 @@
+{
+  "name": "parkingchia",
+  "version": "0.1.0-alpha.1",
+  "description": "Aplicación de escritorio offline-first para administrar Parking Chía",
+  "main": "./out/main/index.js",
+  "author": "heycarlosluis",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "npm run lint -- --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/database.ts migrate",
+    "db:seed": "tsx scripts/database.ts seed",
+    "build": "npm run typecheck && electron-vite build",
+    "preview": "electron-vite preview",
+    "postinstall": "node node_modules/electron/install.js && electron-builder install-app-deps",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win nsis --x64",
+    "dist:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64"
+  },
+  "dependencies": {
+    "@electron-toolkit/utils": "^4.0.0",
+    "@hookform/resolvers": "latest",
+    "@radix-ui/react-label": "latest",
+    "@radix-ui/react-progress": "^1.1.16",
+    "@radix-ui/react-select": "latest",
+    "@radix-ui/react-separator": "^1.1.15",
+    "@radix-ui/react-slot": "latest",
+    "better-sqlite3": "^13.0.3",
+    "class-variance-authority": "latest",
+    "clsx": "latest",
+    "date-fns": "latest",
+    "drizzle-orm": "^0.45.2",
+    "electron-updater": "^6.8.9",
+    "lucide-react": "latest",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-hook-form": "latest",
+    "react-router-dom": "latest",
+    "tailwind-merge": "latest",
+    "zod": "latest",
+    "zustand": "latest"
+  },
+  "devDependencies": {
+    "@electron-toolkit/tsconfig": "latest",
+    "@eslint/js": "^10.0.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/jest-dom": "latest",
+    "@testing-library/react": "latest",
+    "@testing-library/user-event": "latest",
+    "@types/better-sqlite3": "latest",
+    "@types/node": "^22.0.0",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "^5.2.0",
+    "drizzle-kit": "^0.31.10",
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "eslint": "^10.0.0",
+    "eslint-plugin-react-hooks": "latest",
+    "eslint-plugin-react-refresh": "latest",
+    "globals": "latest",
+    "jsdom": "latest",
+    "prettier": "^3.9.6",
+    "tailwindcss": "^4.3.3",
+    "tsx": "latest",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "latest",
+    "vite": "^7.3.6",
+    "vitest": "^4.1.11"
+  },
+  "build": {
+    "appId": "com.heycarlosluis.parkingchia",
+    "productName": "Parking Chía",
+    "artifactName": "Parking-Chia-${version}-${os}-${arch}.${ext}",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "drizzle",
+        "to": "drizzle",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "heycarlosluis",
+      "repo": "parkingchia",
+      "releaseType": "release"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Parking Chía",
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.business",
+      "identity": null,
+      "hardenedRuntime": false
+    },
+    "dmg": {
+      "sign": false
+    }
+  }
+}

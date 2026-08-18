@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # WIN_CSC_LINK y WIN_CSC_KEY_PASSWORD podrán configurarse como secretos en el futuro.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run dist:win -- --publish never
+      - name: Guardar artefactos Windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: parkingchia-windows-${{ github.ref_name }}
+          path: |
+            release/*.exe
+            release/*.yml
+            release/*.blockmap
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-14
+    timeout-minutes: 60
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # CSC_LINK, CSC_KEY_PASSWORD y APPLE_* podrán configurarse como secretos en el futuro.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run dist:mac -- --publish never
+      - name: Guardar artefactos macOS
+        uses: actions/upload-artifact@v4
+        with:
+          name: parkingchia-macos-${{ github.ref_name }}
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.yml
+            release/*.blockmap
+          if-no-files-found: error
+
+  publish:
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Descargar artefactos
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Crear o actualizar GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          prerelease_flag=""
+          if [[ "$RELEASE_TAG" =~ -(alpha|beta|rc) ]]; then
+            prerelease_flag="--prerelease"
+          fi
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" artifacts/* --clobber
+          else
+            gh release create "$RELEASE_TAG" artifacts/* \
+              --verify-tag \
+              --generate-notes \
+              --title "Parking Chía ${RELEASE_TAG#v}" \
+              $prerelease_flag
+          fi

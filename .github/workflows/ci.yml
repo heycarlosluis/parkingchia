@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@v4
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependencias
+        run: npm ci
+      - name: Verificar tipos
+        run: npm run typecheck
+      - name: Verificar estilo
+        run: npm run lint
+      - name: Ejecutar pruebas
+        run: npm run test:run
+      - name: Compilar aplicación
+        run: npm run build
