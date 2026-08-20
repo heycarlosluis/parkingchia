@@ -4,6 +4,7 @@ import {
   BarChart3,
   CarFront,
   CircleParking,
+  History,
   LayoutDashboard,
   LogIn,
   Settings,
@@ -13,11 +14,14 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { useSystemStore } from '@/store/system-store'
+import { useAccessStore } from '@/store/access-store'
+import { useCashStore } from '@/store/cash-store'
 
 const navigation = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/ingresos', label: 'Registrar ingreso', icon: LogIn },
   { to: '/parqueo-activo', label: 'Parqueo activo', icon: CarFront },
+  { to: '/historial', label: 'Historial', icon: History },
   { to: '/mensualidades', label: 'Mensualidades', icon: UsersRound },
   { to: '/caja', label: 'Caja', icon: Banknote },
   { to: '/reportes', label: 'Reportes', icon: BarChart3 },
@@ -32,11 +36,16 @@ const navigation = [
 export function AppShell(): React.JSX.Element {
   const initialize = useSystemStore((state) => state.initialize)
   const setUpdateState = useSystemStore((state) => state.setUpdateState)
+  const parkingName = useAccessStore((state) => state.state?.profile?.name ?? 'Parking Chía')
+  const cashSession = useCashStore((state) => state.session)
+  const cashLoading = useCashStore((state) => state.loading)
+  const initializeCash = useCashStore((state) => state.initialize)
 
   useEffect(() => {
     void initialize()
+    void initializeCash()
     return window.parkingAPI.onUpdateState(setUpdateState)
-  }, [initialize, setUpdateState])
+  }, [initialize, initializeCash, setUpdateState])
 
   return (
     <div className="app-shell">
@@ -49,7 +58,7 @@ export function AppShell(): React.JSX.Element {
             <CircleParking />
           </div>
           <div>
-            <p className="brand-name">Parking Chía</p>
+            <p className="brand-name">{parkingName}</p>
             <Badge variant="secondary">Modo local</Badge>
           </div>
         </div>
@@ -69,8 +78,19 @@ export function AppShell(): React.JSX.Element {
         </nav>
 
         <div className="sidebar-footer">
-          <span className="status-dot" aria-hidden="true" />
-          Los datos se guardan en este equipo
+          <NavLink to="/caja" className="cash-indicator" title="Ver la caja del turno">
+            <span
+              className={cn('status-dot', cashSession ? 'status-dot-open' : 'status-dot-closed')}
+              aria-hidden="true"
+            />
+            <span>
+              {cashLoading ? 'Consultando…' : cashSession ? 'Caja abierta' : 'Caja cerrada'}
+            </span>
+          </NavLink>
+          <span className="sidebar-footer-note">
+            <span className="status-dot" aria-hidden="true" />
+            Los datos se guardan en este equipo
+          </span>
         </div>
       </aside>
 

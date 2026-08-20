@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { durationMinutes, formatCurrency } from './format'
+import { elapsedMinutes, formatCurrency } from './format'
 
 describe('helpers de formato y duración', () => {
   it('formatea pesos colombianos sin decimales', () => {
@@ -7,7 +7,9 @@ describe('helpers de formato y duración', () => {
     expect(formatCurrency(12500)).toContain('$')
   })
 
-  it('redondea una duración iniciada al minuto siguiente', () => {
-    expect(durationMinutes('2026-08-18T12:00:00.000Z', '2026-08-18T12:01:01.000Z')).toBe(2)
+  it('cuenta minutos cumplidos y no minutos iniciados', () => {
+    expect(elapsedMinutes('2026-08-18T12:00:00.000Z', '2026-08-18T12:01:01.000Z')).toBe(1)
+    expect(elapsedMinutes('2026-08-18T12:00:00.000Z', '2026-08-18T13:05:59.000Z')).toBe(65)
+    expect(elapsedMinutes('2026-08-18T12:00:00.000Z', '2026-08-18T13:06:00.000Z')).toBe(66)
   })
 })

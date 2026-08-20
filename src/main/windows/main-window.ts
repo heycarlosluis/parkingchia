@@ -14,7 +14,7 @@ export function createMainWindow(): BrowserWindow {
     title: 'Parking Chía',
     backgroundColor: '#f7f8f6',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
+      preload: join(__dirname, '../preload/index.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
@@ -22,6 +22,12 @@ export function createMainWindow(): BrowserWindow {
       allowRunningInsecureContent: false,
     },
   })
+
+  if (is.dev) {
+    window.webContents.on('preload-error', (_event, preloadPath, error) => {
+      console.error(`Preload error (${preloadPath}):`, error)
+    })
+  }
 
   window.once('ready-to-show', () => window.show())
 

@@ -4,7 +4,7 @@ Aplicación de escritorio offline-first para administrar la operación de un par
 
 ## Estado actual
 
-La aplicación abre una interfaz navegable con Dashboard, ingreso, parqueo activo, mensualidades, caja, reportes y configuración. SQLite, IPC, lista de impresoras, ticket de prueba, copia de seguridad y estados de actualización tienen implementaciones reales. La lógica definitiva de tarifas, cobro, salida, cierre de caja y reportes aún no forma parte de esta fase.
+La primera ejecución presenta un onboarding para guardar el nombre, dirección y teléfono del parqueadero. La protección con un PIN local de 8 dígitos es opcional y puede administrarse después desde Configuración. La aplicación abre una interfaz navegable con Dashboard, ingreso, parqueo activo, mensualidades, caja, reportes y configuración. SQLite, IPC, lista de impresoras, ticket de prueba, copia de seguridad y estados de actualización tienen implementaciones reales. La lógica definitiva de tarifas, cobro, salida, cierre de caja y reportes aún no forma parte de esta fase.
 
 ## Stack
 
@@ -52,7 +52,9 @@ docs/                    decisiones técnicas y guías operativas
 .github/workflows/       CI y releases
 ```
 
-Consulta [arquitectura](docs/architecture.md), [base de datos](docs/database.md), [impresión](docs/printing.md) y [releases](docs/releases.md).
+Consulta [arquitectura](docs/architecture.md), [configuración inicial y acceso local](docs/onboarding.md), [base de datos](docs/database.md), [impresión](docs/printing.md) y [releases](docs/releases.md).
+
+Para continuar el proyecto con cualquier asistente de inteligencia artificial, usa [`AGENTS.md`](AGENTS.md) y la [memoria canónica en `docs/ai/`](docs/ai/README.md). Los archivos de entrada para Claude, Gemini y GitHub Copilot remiten a esa misma fuente para evitar instrucciones divergentes.
 
 ## Base de datos y migraciones
 
@@ -72,6 +74,12 @@ npm run db:seed
 Los dos últimos comandos operan por defecto sobre `.data/parkingchia-development.sqlite`; pueden apuntar a otra base de desarrollo con `PARKINGCHIA_DEV_DB`. No apuntes esa variable a datos reales de un usuario.
 
 La aplicación abierta con `npm run dev` usa además un `userData` separado llamado `parkingchia-development`, de modo que las pruebas manuales no tocan una instalación empaquetada.
+
+## Configuración inicial y acceso local
+
+En la primera ejecución se solicitan los datos básicos del parqueadero. No existen cuentas, inicio de sesión remoto ni recuperación por Internet. El PIN opcional se procesa exclusivamente en el proceso principal, se persiste como un hash `scrypt` con sal aleatoria y bloquea también las operaciones IPC, no solo la interfaz.
+
+Desde Configuración es posible editar los datos, crear o cambiar el PIN, bloquear la aplicación inmediatamente o eliminar la protección confirmando el PIN vigente. Consulta [docs/onboarding.md](docs/onboarding.md) para el flujo y sus límites.
 
 ## Impresión
 

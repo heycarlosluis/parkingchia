@@ -6,12 +6,22 @@ export function seedDevelopmentData(sqlite: Database.Database): void {
   sqlite.transaction(() => {
     const insertRate = sqlite.prepare(`
       INSERT OR IGNORE INTO rate_plans
-      (id, name, vehicle_type, billing_unit, amount_cop, grace_minutes, status, created_at, updated_at)
-      VALUES (?, ?, ?, 'hour', ?, 0, 'active', ?, ?)
+      (id, name, vehicle_type, billing_unit, amount_cop, minimum_charge_cop, plena_cop,
+       grace_minutes, status, created_at, updated_at)
+      VALUES (?, ?, ?, 'hour', ?, ?, ?, NULL, 'active', ?, ?)
     `)
     const carRateId = 'dev-rate-car-hour'
-    insertRate.run(carRateId, 'Automóvil por hora', 'car', 5000, now, now)
-    insertRate.run('dev-rate-motorcycle-hour', 'Motocicleta por hora', 'motorcycle', 2500, now, now)
+    insertRate.run(carRateId, 'Automóvil por hora', 'car', 5000, 3000, 30000, now, now)
+    insertRate.run(
+      'dev-rate-motorcycle-hour',
+      'Motocicleta por hora',
+      'motorcycle',
+      2500,
+      2000,
+      15000,
+      now,
+      now,
+    )
 
     const vehicleId = 'dev-vehicle-example'
     sqlite

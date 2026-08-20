@@ -23,7 +23,12 @@ try {
   sqlite.pragma('foreign_keys = ON')
   sqlite.pragma('journal_mode = WAL')
   const database = drizzle(sqlite)
-  migrate(database, { migrationsFolder: path.join(root, 'drizzle') })
+  sqlite.pragma('foreign_keys = OFF')
+  try {
+    migrate(database, { migrationsFolder: path.join(root, 'drizzle') })
+  } finally {
+    sqlite.pragma('foreign_keys = ON')
+  }
   if (command === 'seed') seedDevelopmentData(sqlite)
   process.stdout.write(
     `${command === 'seed' ? 'Datos de desarrollo creados' : 'Migraciones aplicadas'} en ${databasePath}\n`,

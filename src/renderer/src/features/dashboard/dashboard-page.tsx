@@ -1,36 +1,52 @@
-import { ArrowRight, CarFront, Database, LogIn, LogOut, RefreshCw, Settings } from 'lucide-react'
+import {
+  ArrowRight,
+  Banknote,
+  CarFront,
+  LogIn,
+  LogOut,
+  Settings,
+  UsersRound,
+  Wallet,
+} from 'lucide-react'
+import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import { formatCurrency } from '@shared/format'
+import { EXPIRING_SOON_DAYS } from '@shared/monthly'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeading } from '@/components/page-heading'
+import { useCashStore } from '@/store/cash-store'
+import { useMonthlyStore } from '@/store/monthly-store'
 import { useSystemStore } from '@/store/system-store'
 
-function UpdateSummary(): React.JSX.Element {
-  const update = useSystemStore((state) => state.updateState)
-  const label =
-    update?.status === 'downloaded' ? 'Lista para instalar' : (update?.message ?? 'Consultando…')
-  return (
-    <div className="system-row">
-      <div className="system-icon" aria-hidden="true">
-        <RefreshCw />
-      </div>
-      <div>
-        <p className="system-label">Actualizaciones</p>
-        <p className="system-value">{label}</p>
-      </div>
-    </div>
-  )
-}
-
 export function DashboardPage(): React.JSX.Element {
-  const { status, loading, error } = useSystemStore()
+  const status = useSystemStore((state) => state.status)
+  const loading = useSystemStore((state) => state.loading)
+  const refreshStatus = useSystemStore((state) => state.refreshStatus)
+
+  const cashSession = useCashStore((state) => state.session)
+  const cashLoading = useCashStore((state) => state.loading)
+  const expectedCop = useCashStore((state) => state.expectedCop)
+
+  const summary = useMonthlyStore((state) => state.summary)
+  const monthlyLoading = useMonthlyStore((state) => state.loading)
+  const initializeMonthly = useMonthlyStore((state) => state.initialize)
+
+  // El conteo de vehículos y el resumen mensual cambian con la operación; al
+  // volver al dashboard se vuelven a consultar para no mostrar datos viejos.
+  useEffect(() => {
+    void refreshStatus()
+    void initializeMonthly()
+  }, [refreshStatus, initializeMonthly])
+
+  const activeSessions = status?.activeSessions ?? 0
 
   return (
     <div className="page-stack">
       <PageHeading
         title="Buen turno"
-        description="Estado operativo del parqueadero y accesos para las tareas frecuentes."
+        description="Lo importante del parqueadero de un vistazo y los accesos a las tareas frecuentes."
         action={
           <Button asChild>
             <Link to="/ingresos">
@@ -41,12 +57,6 @@ export function DashboardPage(): React.JSX.Element {
         }
       />
 
-      {error ? (
-        <div className="inline-error" role="alert">
-          <strong>No se pudo consultar el sistema.</strong> {error}
-        </div>
-      ) : null}
-
       <section aria-labelledby="summary-title">
         <h2 id="summary-title" className="sr-only">
           Resumen del turno
@@ -54,10 +64,8 @@ export function DashboardPage(): React.JSX.Element {
         <div className="summary-grid">
           <Card className="active-card">
             <CardHeader>
-              <CardDescription>Vehículos actualmente activos</CardDescription>
-              <CardTitle className="metric-value">
-                {loading ? '—' : (status?.activeSessions ?? 0)}
-              </CardTitle>
+              <CardDescription>Vehículos activos ahora</CardDescription>
+              <CardTitle className="metric-value">{loading ? '—' : activeSessions}</CardTitle>
             </CardHeader>
             <CardContent>
               <Button variant="outline" asChild>
@@ -71,17 +79,65 @@ export function DashboardPage(): React.JSX.Element {
 
           <Card>
             <CardHeader>
-              <CardDescription>Estado de los datos locales</CardDescription>
+              <CardDescription>Caja del turno</CardDescription>
               <CardTitle className="status-title">
-                <Database aria-hidden="true" />
-                {status?.database.connected ? 'Base de datos lista' : 'Sin conexión local'}
+                <Wallet aria-hidden="true" />
+                {cashLoading ? 'Consultando…' : cashSession ? 'Caja abierta' : 'Caja cerrada'}
               </CardTitle>
             </CardHeader>
             <CardContent className="card-detail-row">
-              <Badge variant={status?.database.connected ? 'secondary' : 'destructive'}>
-                {status?.database.connected ? 'SQLite conectado' : 'Requiere atención'}
-              </Badge>
-              {status?.database.connected ? <span>WAL · claves foráneas activas</span> : null}
+              {cashSession ? (
+                <Badge variant="secondary">Esperado al cierre {formatCurrency(expectedCop)}</Badge>
+              ) : (
+                <span>Ábrela para asociar los cobros del turno.</span>
+              )}
+              <Button variant="outline" asChild>
+                <Link to="/caja">
+                  {cashSession ? 'Ver caja' : 'Abrir caja'}
+                  <ArrowRight data-icon="inline-end" />
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardDescription>Mensualidades vigentes</CardDescription>
+              <CardTitle className="metric-value">
+                {monthlyLoading ? '—' : summary.activeCount}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="card-detail-row">
+              {summary.expiringSoonCount > 0 ? (
+                <Badge variant="outline">
+                  {summary.expiringSoonCount} por vencer en {EXPIRING_SOON_DAYS} días
+                </Badge>
+              ) : (
+                <span>Ninguna por vencer en {EXPIRING_SOON_DAYS} días.</span>
+              )}
+              <Button variant="outline" asChild>
+                <Link to="/mensualidades">
+                  Ver mensualidades
+                  <ArrowRight data-icon="inline-end" />
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardDescription>Saldo por cobrar de mensualidades</CardDescription>
+              <CardTitle className="metric-value tabular">
+                {monthlyLoading ? '—' : formatCurrency(summary.pendingCollectionCop)}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Button variant="outline" asChild>
+                <Link to="/mensualidades">
+                  Cobrar mensualidades
+                  <ArrowRight data-icon="inline-end" />
+                </Link>
+              </Button>
             </CardContent>
           </Card>
         </div>
@@ -113,30 +169,47 @@ export function DashboardPage(): React.JSX.Element {
             </span>
             <ArrowRight aria-hidden="true" />
           </Link>
+          <Link className="action-tile" to="/mensualidades">
+            <span className="action-icon">
+              <UsersRound aria-hidden="true" />
+            </span>
+            <span>
+              <strong>Mensualidades</strong>
+              <small>Clientes, periodos pagados por adelantado y sus pagos.</small>
+            </span>
+            <ArrowRight aria-hidden="true" />
+          </Link>
+          <Link className="action-tile" to="/caja">
+            <span className="action-icon">
+              <Banknote aria-hidden="true" />
+            </span>
+            <span>
+              <strong>Caja</strong>
+              <small>Abre el turno, revisa los movimientos y cierra el arqueo.</small>
+            </span>
+            <ArrowRight aria-hidden="true" />
+          </Link>
           <Link className="action-tile" to="/configuracion">
             <span className="action-icon">
               <Settings aria-hidden="true" />
             </span>
             <span>
               <strong>Configuración</strong>
-              <small>Administra impresión, copias y actualizaciones.</small>
+              <small>Tarifas, impresión, acceso y copias de seguridad.</small>
+            </span>
+            <ArrowRight aria-hidden="true" />
+          </Link>
+          <Link className="action-tile" to="/historial">
+            <span className="action-icon">
+              <CarFront aria-hidden="true" />
+            </span>
+            <span>
+              <strong>Historial</strong>
+              <small>Consulta salidas y reimprime recibos anteriores.</small>
             </span>
             <ArrowRight aria-hidden="true" />
           </Link>
         </div>
-      </section>
-
-      <section className="system-strip" aria-label="Estado del sistema">
-        <div className="system-row">
-          <div className="system-icon" aria-hidden="true">
-            <CarFront />
-          </div>
-          <div>
-            <p className="system-label">Aplicación instalada</p>
-            <p className="system-value">Versión {status?.version ?? '…'}</p>
-          </div>
-        </div>
-        <UpdateSummary />
       </section>
     </div>
   )

@@ -29,7 +29,19 @@ export class DatabaseManager {
     if (databaseExists) this.createPreMigrationBackup(sqlite)
 
     const database = drizzle(sqlite, { schema })
-    migrate(database, { migrationsFolder: this.migrationsPath })
+    // Recrear una tabla referenciada exige claves foráneas desactivadas fuera de la transacción:
+    // dentro de ella `PRAGMA foreign_keys` es un no-op y `defer_foreign_keys` no reevalúa la cuenta.
+    sqlite.pragma('foreign_keys = OFF')
+    try {
+      migrate(database, { migrationsFolder: this.migrationsPath })
+    } finally {
+      sqlite.pragma('foreign_keys = ON')
+    }
+    const violations = sqlite.pragma('foreign_key_check') as unknown[]
+    if (violations.length > 0) {
+      sqlite.close()
+      throw new Error('La migración dejó referencias inconsistentes en la base de datos')
+    }
 
     this.sqlite = sqlite
     this.database = database

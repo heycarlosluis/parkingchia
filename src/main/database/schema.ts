@@ -47,9 +47,11 @@ export const ratePlans = sqliteTable(
     vehicleType: text('vehicle_type', {
       enum: ['car', 'motorcycle', 'bicycle', 'other'],
     }).notNull(),
-    billingUnit: text('billing_unit', { enum: ['hour', 'day', 'month'] }).notNull(),
+    billingUnit: text('billing_unit', { enum: ['minute', 'hour', 'day', 'month'] }).notNull(),
     amountCop: integer('amount_cop').notNull(),
-    graceMinutes: integer('grace_minutes').notNull().default(0),
+    minimumChargeCop: integer('minimum_charge_cop').notNull().default(0),
+    plenaCop: integer('plena_cop'),
+    graceMinutes: integer('grace_minutes'),
     status: text('status', { enum: ['active', 'inactive'] })
       .notNull()
       .default('active'),
@@ -57,12 +59,17 @@ export const ratePlans = sqliteTable(
   },
   (table) => [
     check('rate_plans_amount_nonnegative', sql`${table.amountCop} >= 0`),
-    check('rate_plans_grace_nonnegative', sql`${table.graceMinutes} >= 0`),
+    check('rate_plans_minimum_nonnegative', sql`${table.minimumChargeCop} >= 0`),
+    check('rate_plans_plena_nonnegative', sql`${table.plenaCop} is null or ${table.plenaCop} >= 0`),
+    check(
+      'rate_plans_grace_nonnegative',
+      sql`${table.graceMinutes} is null or ${table.graceMinutes} >= 0`,
+    ),
     check(
       'rate_plans_vehicle_type_valid',
       sql`${table.vehicleType} in ('car', 'motorcycle', 'bicycle', 'other')`,
     ),
-    check('rate_plans_unit_valid', sql`${table.billingUnit} in ('hour', 'day', 'month')`),
+    check('rate_plans_unit_valid', sql`${table.billingUnit} in ('minute', 'hour', 'day', 'month')`),
     check('rate_plans_status_valid', sql`${table.status} in ('active', 'inactive')`),
   ],
 )
@@ -75,6 +82,7 @@ export const monthlyCustomers = sqliteTable(
     documentNumber: text('document_number'),
     phone: text('phone'),
     email: text('email'),
+    notes: text('notes'),
     status: text('status', { enum: ['active', 'inactive'] })
       .notNull()
       .default('active'),
@@ -82,6 +90,7 @@ export const monthlyCustomers = sqliteTable(
   },
   (table) => [
     index('monthly_customers_document_idx').on(table.documentNumber),
+    index('monthly_customers_name_idx').on(table.fullName),
     check('monthly_customers_status_valid', sql`${table.status} in ('active', 'inactive')`),
   ],
 )
@@ -103,10 +112,13 @@ export const monthlySubscriptions = sqliteTable(
     endsAt: text('ends_at').notNull(),
     amountCop: integer('amount_cop').notNull(),
     status: text('status', { enum: ['pending', 'active', 'expired', 'cancelled'] }).notNull(),
+    notes: text('notes'),
     ...timestamps,
   },
   (table) => [
     index('monthly_subscriptions_customer_idx').on(table.customerId),
+    index('monthly_subscriptions_vehicle_idx').on(table.vehicleId),
+    index('monthly_subscriptions_coverage_idx').on(table.status, table.endsAt),
     check('monthly_subscriptions_amount_nonnegative', sql`${table.amountCop} >= 0`),
     check('monthly_subscriptions_dates_valid', sql`${table.endsAt} > ${table.startsAt}`),
     check(
@@ -124,6 +136,10 @@ export const parkingSessions = sqliteTable(
       .notNull()
       .references(() => vehicles.id, { onDelete: 'restrict' }),
     ratePlanId: text('rate_plan_id').references(() => ratePlans.id, { onDelete: 'restrict' }),
+    /** Mensualidad que cubrió la salida; `NULL` cuando se cobró por tiempo. */
+    subscriptionId: text('subscription_id').references(() => monthlySubscriptions.id, {
+      onDelete: 'restrict',
+    }),
     enteredAt: text('entered_at').notNull(),
     exitedAt: text('exited_at'),
     status: text('status', { enum: ['active', 'closed', 'cancelled'] })
@@ -136,6 +152,7 @@ export const parkingSessions = sqliteTable(
   (table) => [
     index('parking_sessions_active_idx').on(table.status, table.enteredAt),
     index('parking_sessions_vehicle_idx').on(table.vehicleId),
+    index('parking_sessions_subscription_idx').on(table.subscriptionId),
     uniqueIndex('parking_sessions_one_active_vehicle')
       .on(table.vehicleId)
       .where(sql`${table.status} = 'active'`),
@@ -150,10 +167,29 @@ export const parkingSessions = sqliteTable(
   ],
 )
 
+export const employees = sqliteTable(
+  'employees',
+  {
+    id: text('id').primaryKey(),
+    fullName: text('full_name').notNull(),
+    documentNumber: text('document_number'),
+    status: text('status', { enum: ['active', 'inactive'] })
+      .notNull()
+      .default('active'),
+    ...timestamps,
+  },
+  (table) => [
+    index('employees_document_idx').on(table.documentNumber),
+    index('employees_name_idx').on(table.fullName),
+    check('employees_status_valid', sql`${table.status} in ('active', 'inactive')`),
+  ],
+)
+
 export const cashRegisterSessions = sqliteTable(
   'cash_register_sessions',
   {
     id: text('id').primaryKey(),
+    employeeId: text('employee_id').references(() => employees.id, { onDelete: 'restrict' }),
     openedAt: text('opened_at').notNull(),
     closedAt: text('closed_at'),
     openingAmountCop: integer('opening_amount_cop').notNull(),
@@ -166,6 +202,7 @@ export const cashRegisterSessions = sqliteTable(
     ...timestamps,
   },
   (table) => [
+    index('cash_register_sessions_employee_idx').on(table.employeeId),
     index('cash_register_sessions_status_idx').on(table.status),
     uniqueIndex('cash_register_only_one_open')
       .on(table.status)

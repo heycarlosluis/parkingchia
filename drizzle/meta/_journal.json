@@ -8,6 +8,41 @@
       "when": 1787075232797,
       "tag": "0000_late_hawkeye",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787083291475,
+      "tag": "0001_harsh_fabian_cortez",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787140010279,
+      "tag": "0002_slim_firestar",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787140028872,
+      "tag": "0003_jittery_ultimates",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787156326148,
+      "tag": "0004_odd_abomination",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787174592960,
+      "tag": "0005_gray_smiling_tiger",
+      "breakpoints": true
     }
   ]
 }

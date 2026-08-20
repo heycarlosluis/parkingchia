@@ -23,6 +23,14 @@ La ventana usa `nodeIntegration: false`, `contextIsolation: true`, sandbox y CSP
 - `printing`: interfaz `TicketPrinter` y adapter nativo de Electron.
 - `updates`: máquina de estados de `electron-updater` y eventos hacia React.
 - `security`: reglas de navegación externa.
+- `security/access-service`: onboarding, perfil del parqueadero, hash del PIN y estado de bloqueo en memoria.
+- `parking`: ingreso, salida, anulación, pagos y recibos como ciclo transaccional.
+- `tariffs`: configuración de cobro, planes de tarifa y liquidación de permanencias.
+- `monthly`: clientes, planes, suscripciones, cobertura y pagos por abono.
+- `cash`: apertura, cierre, arqueo en vivo y anulación de cobros.
+- `employee`: administración de empleados y su vínculo con los turnos de caja.
 - `windows`: configuración de la ventana principal.
 
-El bloqueo de instancia única impide dos procesos concurrentes sobre la misma base. La lógica comercial se añadirá en servicios de dominio, sin trasladarla a componentes React.
+El bloqueo de instancia única impide dos procesos concurrentes sobre la misma base. La lógica comercial vive en servicios de dominio del proceso principal y no se traslada a componentes React.
+
+Antes de montar las rutas operativas, el renderer consulta el estado de acceso. Onboarding y desbloqueo son las únicas operaciones disponibles sin autorización; los handlers restantes validan en el proceso principal que la configuración inicial esté completa y la aplicación desbloqueada.

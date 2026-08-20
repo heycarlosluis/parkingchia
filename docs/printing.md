@@ -2,12 +2,12 @@
 
 `TicketPrinter` define la abstracción y `ElectronTicketPrinter` implementa el adapter actual con APIs nativas de Electron. No existe dependencia de una marca de impresora y puede agregarse un adapter ESC/POS sin cambiar la interfaz React.
 
-La configuración persistida incluye impresora, papel de 58 u 80 mm y uso del diálogo del sistema. El ticket de prueba es HTML monocromático e incluye nombre, fecha local, consecutivo, matrícula, tarifa y total COP.
+La configuración persistida incluye impresora, papel de 58 u 80 mm y uso del diálogo del sistema. El ticket de prueba es HTML monocromático e incluye el nombre, dirección y teléfono configurados durante el onboarding, además de fecha local, consecutivo, matrícula, tarifa y total COP.
 
 ## Diagnóstico
 
 1. Confirma que el sistema operativo detecte la impresora.
-2. Selecciónala en Configuración.
+2. Selecciónala en la pestaña Impresión de Configuración.
 3. Mantén activado el diálogo del sistema durante las pruebas.
 4. Imprime el ticket de prueba.
 
