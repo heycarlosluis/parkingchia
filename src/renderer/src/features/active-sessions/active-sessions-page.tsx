@@ -1,7 +1,7 @@
 import { CarFront, LogOut, Printer, RefreshCw, Search, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import type { ActiveSession, ExitRegistration } from '@shared/contracts'
-import { elapsedMinutes, formatCurrency } from '@shared/format'
+import { elapsedMinutesOrZero, formatCurrency } from '@shared/format'
 import { describeElapsed, PAYMENT_METHOD_LABELS } from '@shared/parking'
 import { calculateChargeForMinutes, VEHICLE_TYPE_LABELS } from '@shared/tariff'
 import {
@@ -49,6 +49,8 @@ export function ActiveSessionsPage(): React.JSX.Element {
   const [cancelReason, setCancelReason] = useState('')
   const [lastExit, setLastExit] = useState<ExitRegistration | null>(null)
   const [reprintMessage, setReprintMessage] = useState('')
+  const [ticketMessage, setTicketMessage] = useState('')
+  const [printingTicketId, setPrintingTicketId] = useState<string | null>(null)
 
   useEffect(() => {
     void initializeTariffs()
@@ -65,7 +67,7 @@ export function ActiveSessionsPage(): React.JSX.Element {
   const rows = useMemo(
     () =>
       sessions.map((session) => {
-        const minutes = elapsedMinutes(session.enteredAt, now)
+        const minutes = elapsedMinutesOrZero(session.enteredAt, now)
         const plan = session.ratePlanId === null ? undefined : plansById.get(session.ratePlanId)
         // Una mensualidad vigente exime del cobro por tiempo; el total real lo
         // confirma el proceso principal al cotizar la salida.
@@ -89,6 +91,15 @@ export function ActiveSessionsPage(): React.JSX.Element {
     setReprintMessage('Enviando el recibo…')
     const result = await window.parkingAPI.reprintReceipt({ sessionId })
     setReprintMessage(result.ok ? result.data.message : result.error.message)
+  }
+
+  /** Reemite el tiquete de un vehículo que sigue en el parqueadero. */
+  const reprintEntryTicket = async (session: ActiveSession): Promise<void> => {
+    setPrintingTicketId(session.id)
+    setTicketMessage(`Enviando el tiquete de ${session.plate}…`)
+    const result = await window.parkingAPI.reprintEntryTicket({ sessionId: session.id })
+    setPrintingTicketId(null)
+    setTicketMessage(result.ok ? result.data.message : result.error.message)
   }
 
   const confirmCancel = async (): Promise<void> => {
@@ -189,6 +200,10 @@ export function ActiveSessionsPage(): React.JSX.Element {
           </div>
         </CardHeader>
         <CardContent>
+          <div className="stable-status" role="status" aria-live="polite">
+            {ticketMessage}
+          </div>
+
           {loading ? (
             <p className="field-hint">Consultando el parqueo activo…</p>
           ) : rows.length === 0 ? (
@@ -274,6 +289,16 @@ export function ActiveSessionsPage(): React.JSX.Element {
                           >
                             <LogOut data-icon="inline-start" />
                             Salida
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={printingTicketId === session.id}
+                            onClick={() => void reprintEntryTicket(session)}
+                          >
+                            <Printer data-icon="inline-start" />
+                            {printingTicketId === session.id ? 'Imprimiendo…' : 'Tiquete'}
                           </Button>
                           <Button
                             type="button"

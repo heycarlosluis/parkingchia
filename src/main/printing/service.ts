@@ -17,13 +17,14 @@ import {
   createExitReceiptHtml,
   createMonthlyReceiptHtml,
   createTestTicketHtml,
+  type TicketRenderOptions,
 } from './ticket'
 
 export interface TicketPrinter {
   listPrinters(): Promise<PrinterInfo[]>
   printTestTicket(): Promise<PrintResult>
-  printEntryTicket(entry: EntryRegistration): Promise<PrintResult>
-  printExitReceipt(receipt: ReceiptSnapshot): Promise<PrintResult>
+  printEntryTicket(entry: EntryRegistration, options?: TicketRenderOptions): Promise<PrintResult>
+  printExitReceipt(receipt: ReceiptSnapshot, options?: TicketRenderOptions): Promise<PrintResult>
   printMonthlyReceipt(receipt: MonthlyReceiptSnapshot): Promise<PrintResult>
   printCashCloseReceipt(summary: CashCloseSummary): Promise<PrintResult>
 }
@@ -54,17 +55,27 @@ export class ElectronTicketPrinter implements TicketPrinter {
     )
   }
 
-  async printEntryTicket(entry: EntryRegistration): Promise<PrintResult> {
+  async printEntryTicket(
+    entry: EntryRegistration,
+    options: TicketRenderOptions = {},
+  ): Promise<PrintResult> {
     return this.render(
-      (paperWidth, profile) => createEntryTicketHtml(paperWidth, profile, entry),
-      'El tiquete de ingreso se envió a la impresora.',
+      (paperWidth, profile) => createEntryTicketHtml(paperWidth, profile, entry, options),
+      options.reprint
+        ? 'El tiquete de ingreso se reimprimió como duplicado.'
+        : 'El tiquete de ingreso se envió a la impresora.',
     )
   }
 
-  async printExitReceipt(receipt: ReceiptSnapshot): Promise<PrintResult> {
+  async printExitReceipt(
+    receipt: ReceiptSnapshot,
+    options: TicketRenderOptions = {},
+  ): Promise<PrintResult> {
     return this.render(
-      (paperWidth, profile) => createExitReceiptHtml(paperWidth, profile, receipt),
-      'El recibo se envió a la impresora.',
+      (paperWidth, profile) => createExitReceiptHtml(paperWidth, profile, receipt, options),
+      options.reprint
+        ? 'El recibo se reimprimió como duplicado.'
+        : 'El recibo se envió a la impresora.',
     )
   }
 

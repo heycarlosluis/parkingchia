@@ -32,6 +32,7 @@ describe('Registrar ingreso', () => {
     expect(await screen.findByText('Ingreso registrado')).toBeInTheDocument()
     expect(screen.getByText('ABC123')).toBeInTheDocument()
     expect(screen.getByText('Automóvil por hora')).toBeInTheDocument()
+    expect(screen.getByText('Costo por hora')).toBeInTheDocument()
     expect(screen.getByText('15 min')).toBeInTheDocument()
 
     await waitFor(() => {
@@ -39,6 +40,33 @@ describe('Registrar ingreso', () => {
         expect.objectContaining({ plate: 'ABC123', vehicleType: 'car', notes: null }),
       )
     })
+  })
+
+  it('ofrece reimprimir el tiquete sin desplazar a la acción principal', async () => {
+    renderEntries()
+
+    await screen.findByLabelText('Matrícula')
+    await userEvent.type(screen.getByLabelText('Matrícula'), 'abc 123')
+    await userEvent.click(screen.getByRole('button', { name: /Registrar ingreso/ }))
+
+    // El aviso de la impresión automática vive en la misma región que el duplicado.
+    expect(
+      await screen.findByText('No hay impresoras disponibles en el sistema.'),
+    ).toBeInTheDocument()
+
+    const reprintButton = screen.getByRole('button', { name: /Reimprimir tiquete/ })
+    await userEvent.click(reprintButton)
+
+    await waitFor(() => {
+      expect(window.parkingAPI.reprintEntryTicket).toHaveBeenCalledWith({
+        sessionId: 'session-new',
+      })
+    })
+    expect(await screen.findByText('No hay impresoras.')).toBeInTheDocument()
+
+    // Registrar otro ingreso sigue siendo lo primero que encuentra el operador.
+    await userEvent.click(screen.getByRole('button', { name: /Registrar otro ingreso/ }))
+    expect(await screen.findByLabelText('Matrícula')).toHaveFocus()
   })
 
   it('rechaza una matrícula inválida sin llamar al proceso principal', async () => {

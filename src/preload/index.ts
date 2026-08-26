@@ -22,6 +22,7 @@ const api: ParkingApi = {
   quoteSessionExit: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_QUOTE_EXIT, input),
   closeSession: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_CLOSE, input),
   cancelSession: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_CANCEL, input),
+  reprintEntryTicket: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_ENTRY_REPRINT, input),
   reprintReceipt: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_REPRINT, input),
   listExits: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_EXIT_HISTORY, input),
   getMonthlyOverview: (input) => ipcRenderer.invoke(IPC_CHANNELS.MONTHLY_OVERVIEW, input),

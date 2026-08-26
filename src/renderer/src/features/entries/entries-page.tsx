@@ -6,7 +6,12 @@ import { Link } from 'react-router-dom'
 import { z } from 'zod'
 import type { EntryRegistration, MonthlyCoverage } from '@shared/contracts'
 import { describeCoverage } from '@shared/monthly'
-import { VEHICLE_TYPE_LABELS, vehicleTypeSchema, type VehicleType } from '@shared/tariff'
+import {
+  describeBillingUnit,
+  VEHICLE_TYPE_LABELS,
+  vehicleTypeSchema,
+  type VehicleType,
+} from '@shared/tariff'
 import { formatCurrency } from '@shared/format'
 import { isValidPlate, normalizePlate, plateSchema } from '@shared/validation'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -57,6 +62,8 @@ export function EntriesPage(): React.JSX.Element {
   const [registration, setRegistration] = useState<EntryRegistration | null>(null)
   const [coverage, setCoverage] = useState<MonthlyCoverage | null>(null)
   const [registeredCoverage, setRegisteredCoverage] = useState<MonthlyCoverage | null>(null)
+  const [reprinting, setReprinting] = useState(false)
+  const [reprintMessage, setReprintMessage] = useState('')
 
   const { control, handleSubmit, register, reset, setFocus, setValue, formState } = useForm<
     EntryFormInput,
@@ -115,12 +122,27 @@ export function EntriesPage(): React.JSX.Element {
     setRegistration(created)
     setRegisteredCoverage(coverage)
     setCoverage(null)
+    setReprintMessage('')
     reset({ plate: '', vehicleType: values.vehicleType, ratePlanId: values.ratePlanId, notes: '' })
   })
+
+  const reprintEntry = async (): Promise<void> => {
+    if (!registration) return
+    setReprinting(true)
+    setReprintMessage('')
+    const result = await window.parkingAPI.reprintEntryTicket({
+      sessionId: registration.sessionId,
+    })
+    setReprinting(false)
+    setReprintMessage(result.ok ? result.data.message : result.error.message)
+  }
+
+  const printStatus = reprintMessage === '' ? (registration?.printMessage ?? '') : reprintMessage
 
   const startAnother = (): void => {
     setRegistration(null)
     setRegisteredCoverage(null)
+    setReprintMessage('')
     clearError()
     setFocus('plate')
   }
@@ -198,6 +220,10 @@ export function EntriesPage(): React.JSX.Element {
                 <dd>{registration.ratePlanName}</dd>
               </div>
               <div>
+                <dt>Costo por {describeBillingUnit(registration.billingUnit)}</dt>
+                <dd className="tabular">{formatCurrency(registration.ratePlanAmountCop)}</dd>
+              </div>
+              <div>
                 <dt>Hora de ingreso</dt>
                 <dd className="tabular">
                   {new Date(registration.enteredAt).toLocaleTimeString('es-CO', {
@@ -218,15 +244,28 @@ export function EntriesPage(): React.JSX.Element {
                 salida no generará cobro mientras esté vigente.
               </p>
             ) : null}
-            <p className="field-hint">
-              <Printer aria-hidden="true" data-icon="inline-start" />
-              {registration.printMessage}
-            </p>
+            <div className="stable-status" role="status" aria-live="polite">
+              {printStatus === '' ? null : (
+                <>
+                  <Printer aria-hidden="true" />
+                  {printStatus}
+                </>
+              )}
+            </div>
           </CardContent>
           <CardFooter>
             <Button type="button" onClick={startAnother}>
               <LogIn data-icon="inline-start" />
               Registrar otro ingreso
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void reprintEntry()}
+              disabled={reprinting}
+            >
+              <Printer data-icon="inline-start" />
+              {reprinting ? 'Imprimiendo…' : 'Reimprimir tiquete'}
             </Button>
           </CardFooter>
         </Card>

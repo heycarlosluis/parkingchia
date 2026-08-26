@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { DEFAULT_TARIFF_SETTINGS } from '@shared/tariff'
 import { DatabaseManager } from '@main/database/connection'
 import { OperationError } from '@main/ipc/errors'
 import { TariffService } from './service'
@@ -107,6 +108,47 @@ describe('TariffService', () => {
 
     expect(() => service.deletePlan(plan.id)).toThrow(OperationError)
     expect(service.listPlans()).toHaveLength(1)
+  })
+
+  it('no administra ni simula desde Tarifas un plan de mensualidad', () => {
+    const now = new Date().toISOString()
+    manager
+      .getNativeConnection()
+      .prepare(
+        `INSERT INTO rate_plans
+         (id, name, vehicle_type, billing_unit, amount_cop, minimum_charge_cop, plena_cop,
+          grace_minutes, status, created_at, updated_at)
+         VALUES ('mensual-1', 'Mensualidad automóvil', 'car', 'month', 150000, 0, NULL, NULL,
+                 'active', ?, ?)`,
+      )
+      .run(now, now)
+
+    expect(() => service.deletePlan('mensual-1')).toThrow(OperationError)
+    expect(() => service.updatePlan({ ...draft, id: 'mensual-1' })).toThrow(OperationError)
+    // Liquidar un precio mensual por horas devolvía 300.000 por dos horas.
+    expect(() => service.simulate({ ratePlanId: 'mensual-1', minutes: 120 })).toThrow(
+      OperationError,
+    )
+
+    const survivors = manager
+      .getNativeConnection()
+      .prepare("SELECT count(*) AS total FROM rate_plans WHERE id = 'mensual-1'")
+      .get() as { total: number }
+    expect(survivors.total).toBe(1)
+    expect(service.listPlans()).toEqual([])
+  })
+
+  it('conserva los ajustes válidos cuando uno queda corrupto', () => {
+    service.updateSettings({ billingUnit: 'minute', graceMinutes: 30, roundingStepCop: 500 })
+    manager
+      .getNativeConnection()
+      .prepare("UPDATE app_settings SET value = '999' WHERE key = 'tariff.graceMinutes'")
+      .run()
+
+    const settings = service.getSettings()
+    expect(settings.graceMinutes).toBe(DEFAULT_TARIFF_SETTINGS.graceMinutes)
+    expect(settings.billingUnit).toBe('minute')
+    expect(settings.roundingStepCop).toBe(500)
   })
 
   it('simula el cobro con la configuración vigente', () => {

@@ -76,12 +76,79 @@ afterEach(() => {
 describe('registro de ingreso', () => {
   it('crea el vehículo y la sesión activa', () => {
     const registration = parking.registerEntry(entry())
-    expect(registration).toMatchObject({ plate: 'ABC123', ratePlanName: 'Automóvil por hora' })
+    expect(registration).toMatchObject({
+      plate: 'ABC123',
+      ratePlanName: 'Automóvil por hora',
+      ratePlanAmountCop: 5000,
+      billingUnit: 'hour',
+    })
     expect(registration.graceMinutes).toBe(15)
 
     const active = parking.listActiveSessions({ search: '' })
     expect(active).toHaveLength(1)
     expect(active[0]).toMatchObject({ plate: 'ABC123', vehicleType: 'car' })
+  })
+
+  it('reconstruye el tiquete de ingreso para reimprimirlo', () => {
+    const registration = parking.registerEntry(entry())
+    const reprint = parking.findEntryRegistration(registration.sessionId)
+    expect(reprint).toMatchObject({
+      sessionId: registration.sessionId,
+      plate: 'ABC123',
+      vehicleType: 'car',
+      ratePlanName: 'Automóvil por hora',
+      ratePlanAmountCop: 5000,
+      billingUnit: 'hour',
+      graceMinutes: 15,
+    })
+  })
+
+  it('explica el reloj atrasado en lugar de fallar sin motivo al cotizar', () => {
+    const registration = parking.registerEntry(entry())
+    // El reloj del equipo retrocede por debajo de la hora de ingreso.
+    ageSession(registration.sessionId, -120)
+
+    const failure = (): unknown => parking.quoteExit(registration.sessionId)
+    expect(failure).toThrow(OperationError)
+    expect(failure).toThrow(/hora del equipo es anterior/)
+  })
+
+  it('rechaza cobrar un ingreso con una tarifa de mensualidad', () => {
+    const now = new Date().toISOString()
+    manager
+      .getNativeConnection()
+      .prepare(
+        `INSERT INTO rate_plans
+         (id, name, vehicle_type, billing_unit, amount_cop, minimum_charge_cop, plena_cop,
+          grace_minutes, status, created_at, updated_at)
+         VALUES ('mensual-1', 'Mensualidad automóvil', 'car', 'month', 150000, 0, NULL, NULL,
+                 'active', ?, ?)`,
+      )
+      .run(now, now)
+
+    expect(() => parking.registerEntry({ ...entry(), ratePlanId: 'mensual-1' })).toThrow(
+      OperationError,
+    )
+    expect(parking.listActiveSessions({ search: '' })).toEqual([])
+  })
+
+  it('no reimprime el tiquete de una sesión cerrada ni de una anulada', () => {
+    const closed = parking.registerEntry(entry())
+    parking.closeSession({
+      sessionId: closed.sessionId,
+      expectedTotalCop: 0,
+      method: 'cash',
+      receivedCop: null,
+      notes: null,
+    })
+    expect(() => parking.findEntryRegistration(closed.sessionId)).toThrow(OperationError)
+
+    const cancelled = parking.registerEntry(entry('XYZ789'))
+    parking.cancelSession({
+      sessionId: cancelled.sessionId,
+      reason: 'Matrícula digitada por error',
+    })
+    expect(() => parking.findEntryRegistration(cancelled.sessionId)).toThrow(OperationError)
   })
 
   it('normaliza la matrícula y reutiliza el vehículo entre visitas', () => {
@@ -196,7 +263,12 @@ describe('cotización y salida', () => {
     expect(payment).toMatchObject({ amount_cop: 10_000, method: 'cash', status: 'completed' })
 
     const snapshot = parking.findReceiptSnapshot(registration.sessionId)
-    expect(snapshot).toMatchObject({ version: 2, plate: 'ABC123', receiptNumber: 1 })
+    expect(snapshot).toMatchObject({
+      version: 3,
+      plate: 'ABC123',
+      receiptNumber: 1,
+      employeeName: 'Operador de prueba',
+    })
     expect(snapshot.charge.totalCop).toBe(10_000)
   })
 
@@ -320,6 +392,14 @@ describe('recibo persistido', () => {
     expect(normalized.charge.plenaCount).toBe(0)
     expect(normalized.charge.plenaUnitCop).toBe(0)
     expect(normalized.charge.chargedUnits).toBe(3)
+  })
+
+  it('no atribuye a nadie un recibo anterior al empleado del turno', () => {
+    const legacy = {
+      version: 2,
+      charge: { billedUnits: 3, chargedUnits: 3, plenaCount: 0, plenaUnitCop: 0, totalCop: 15_000 },
+    } as unknown as ReceiptSnapshot
+    expect(normalizeReceiptSnapshot(legacy).employeeName).toBeNull()
   })
 
   it('conserva el desglose del IVA vigente al cobrar', () => {

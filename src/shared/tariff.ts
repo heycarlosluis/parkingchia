@@ -342,10 +342,10 @@ export const taxPercentSchema = z
   .number()
   .min(0, 'El IVA no puede ser negativo')
   .max(MAX_TAX_PERCENT, 'El IVA no puede superar 100 %')
+  // `Math.round` siempre devuelve un entero, así que la comprobación real es
+  // que el valor no tenga más de dos decimales.
   .refine(
-    (value) =>
-      Number.isInteger(Math.round(value * 100)) &&
-      Math.abs(value * 100 - Math.round(value * 100)) < 1e-9,
+    (value) => Math.abs(value * 100 - Math.round(value * 100)) < 1e-9,
     'Usa máximo dos decimales en el IVA',
   )
 

@@ -16,6 +16,8 @@ const entry: EntryRegistration = {
   plate: 'ABC123',
   vehicleType: 'motorcycle',
   ratePlanName: 'Motocicleta por hora',
+  ratePlanAmountCop: 2500,
+  billingUnit: 'hour',
   enteredAt: '2026-08-18T15:00:00.000Z',
   graceMinutes: 15,
   printed: false,
@@ -41,17 +43,34 @@ const receipt: ReceiptSnapshot = {
   method: 'cash',
   receivedCop: 20_000,
   changeCop: 20_000 - charge.totalCop,
+  employeeName: 'Ana Ruiz',
   notes: null,
 }
 
 describe('tiquete de ingreso', () => {
-  it('incluye matrícula, tarifa y gracia, y escapa el perfil', () => {
+  it('incluye matrícula, tarifa, costo por hora y gracia, y escapa el perfil', () => {
     const html = createEntryTicketHtml('80mm', profile, entry)
     expect(html).toContain('ABC123')
     expect(html).toContain('Motocicleta por hora')
+    expect(html).toContain('Costo por hora')
     expect(html).toContain('15 min')
     expect(html).toContain('Parqueadero &lt;Central&gt;')
     expect(html).not.toContain('<Central>')
+  })
+
+  it('nombra el costo según la unidad de cobro', () => {
+    const perMinute = createEntryTicketHtml('58mm', null, {
+      ...entry,
+      billingUnit: 'minute',
+    })
+    expect(perMinute).toContain('Costo por minuto')
+  })
+
+  it('marca el duplicado y deja limpio el original', () => {
+    expect(createEntryTicketHtml('80mm', profile, entry)).not.toContain('REIMPRESIÓN')
+
+    const duplicate = createEntryTicketHtml('80mm', profile, entry, { reprint: true })
+    expect(duplicate).toContain('** REIMPRESIÓN **')
   })
 })
 
@@ -63,6 +82,33 @@ describe('recibo de salida', () => {
     expect(html).toContain('Recibido')
     expect(html).toContain('Cambio')
     expect(html).toContain('@page { size: 58mm auto')
+  })
+
+  it('deja constancia del empleado del turno y de la nota de la salida', () => {
+    const html = createExitReceiptHtml('80mm', profile, {
+      ...receipt,
+      notes: 'Salió con el casco del <cliente>',
+    })
+    expect(html).toContain('Atendió')
+    expect(html).toContain('Ana Ruiz')
+    expect(html).toContain('Nota: Salió con el casco del &lt;cliente&gt;')
+  })
+
+  it('omite al empleado y la nota cuando el recibo no los guardó', () => {
+    const html = createExitReceiptHtml('80mm', profile, {
+      ...receipt,
+      employeeName: null,
+      notes: '   ',
+    })
+    expect(html).not.toContain('Atendió')
+    expect(html).not.toContain('Nota:')
+  })
+
+  it('marca el duplicado del recibo', () => {
+    expect(createExitReceiptHtml('80mm', profile, receipt)).not.toContain('REIMPRESIÓN')
+
+    const duplicate = createExitReceiptHtml('80mm', profile, receipt, { reprint: true })
+    expect(duplicate).toContain('** REIMPRESIÓN **')
   })
 
   it('omite las filas de IVA y efectivo cuando no aplican', () => {

@@ -27,3 +27,17 @@ export function elapsedMinutes(startedAtUtc: string, endedAtUtc: string): number
   }
   return Math.floor((end - start) / 60_000)
 }
+
+/**
+ * Permanencia para mostrar en pantalla, tolerante a un reloj inconsistente.
+ *
+ * Si el reloj del equipo retrocede por debajo de la hora de ingreso, el
+ * intervalo queda invertido. Un listado informativo no debe caerse por eso:
+ * muestra cero y deja que el cobro real lo rechace con un mensaje accionable.
+ */
+export function elapsedMinutesOrZero(startedAtUtc: string, endedAtUtc: string): number {
+  const start = new Date(startedAtUtc).getTime()
+  const end = new Date(endedAtUtc).getTime()
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 0
+  return Math.floor((end - start) / 60_000)
+}

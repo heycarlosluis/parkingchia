@@ -1,6 +1,6 @@
 # Estado actual del proyecto
 
-Última actualización: **2026-08-19**.
+Última actualización: **2026-08-21**.
 
 Este archivo describe el último corte conocido, no sustituye la verificación de `git status`, `package.json`, GitHub Actions ni el comportamiento ejecutable.
 
@@ -31,9 +31,11 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 - Tolerancia sobre la fracción: se cobran las horas cumplidas y la fracción final solo si supera la gracia, que se vuelve a aplicar en cada salida. El desglose informa los minutos perdonados.
 - Plena: precio del día completo por tarifa y umbral de horas en la configuración general. Cada 24 horas son una plena y el excedente vuelve a cobrarse por hora hasta alcanzar de nuevo el umbral.
 - Historial de salidas con filtro por matrícula y rango de fechas, totales del filtro y reimpresión de cualquier recibo desde su snapshot.
-- Módulo de parqueo completo: registro de ingreso para automóviles, motocicletas, bicicletas y otros, con matrícula normalizada, tarifa sugerida por tipo de vehículo, nota opcional y tiquete de ingreso.
+- Módulo de parqueo completo: registro de ingreso para automóviles, motocicletas, bicicletas y otros, con matrícula normalizada, tarifa sugerida por tipo de vehículo, nota opcional y tiquete de ingreso que incluye el costo por hora/minuto.
+- Reimpresión del tiquete de ingreso desde la confirmación del registro y desde cada fila de Parqueo activo, únicamente mientras la sesión sigue activa.
 - Parqueo activo con búsqueda por matrícula, permanencia y estimado que se refrescan en pantalla, y anulación de un ingreso con motivo obligatorio y auditoría.
 - Salida transaccional: cotización contra el proceso principal, medio de pago, efectivo recibido con cálculo de cambio, pago y recibo consecutivo con snapshot inmutable, cierre de sesión e impresión del recibo con reimpresión disponible.
+- El recibo de salida deja constancia del empleado del turno y de la nota de la salida, y todo duplicado sale marcado como «REIMPRESIÓN» con su fecha y hora.
 - Salida dentro del tiempo de gracia que cierra la sesión sin cobro ni recibo.
 - Migración `0001` que recrea `rate_plans` preservando datos y referencias, con claves foráneas desactivadas alrededor de `migrate()` y verificación posterior con `PRAGMA foreign_key_check`.
 - Configuración persistente de impresora, ancho de papel y diálogo del sistema.
@@ -66,7 +68,7 @@ npm ci
 npm run format:check
 npm run typecheck
 npm run lint
-npm run test:run       25 archivos, 181 pruebas
+npm run test:run       25 archivos, 196 pruebas
 npm run db:generate
 npm run db:migrate
 npm run db:seed
@@ -86,7 +88,8 @@ El workflow de release verificó además `npm run dist:win` en Windows y `npm ru
 - No existe restauración guiada de respaldos.
 - No existe recuperación remota del PIN. Es una decisión coherente con la ausencia de cuentas; deberá diseñarse una recuperación local segura antes de ofrecerla.
 - ESC/POS, corte de papel y apertura de cajón son extensiones futuras.
-- El módulo de tarifas administra únicamente planes por tiempo (`minute` y `hour`). Los planes `day` y `month` quedan reservados para Mensualidades y no se editan desde la pestaña Tarifas de Configuración.
+- El módulo de tarifas administra únicamente planes por tiempo (`minute` y `hour`). Los planes `day` y `month` quedan reservados para Mensualidades: editarlos, eliminarlos o simularlos desde Tarifas se rechaza con `RATE_PLAN_NOT_APPLICABLE` (D-024).
+- La plena solo se cobra con la unidad por hora. Cobrando por minuto el valor guardado en la tarifa se conserva pero no se aplica, y tanto el formulario como el listado de tarifas lo advierten.
 - Al cambiar la unidad de cobro los precios no se convierten automáticamente; la interfaz lo advierte y exige confirmación, pero la revisión es responsabilidad del operador.
 - La auditoría de npm de la línea base reportó cuatro avisos moderados en dependencias transitivas de desarrollo de Drizzle Kit y ninguno alto o crítico. No se aplicó el downgrade incompatible sugerido automáticamente.
 - Las acciones oficiales de GitHub emitieron un aviso de transición de su runtime interno de Node.js, sin fallar CI ni la release; conviene actualizar sus versiones en un cambio de mantenimiento futuro.
@@ -100,4 +103,8 @@ La política de cobro está implementada y documentada en D-011. Falta confirmar
 
 ## Trabajo activo al cerrar este corte
 
-El cobro en efectivo ahora exige registrar el efectivo recibido (tanto en la salida de parqueo como en el pago de mensualidad), calcula el cambio y lo valida de extremo a extremo en esquema y servicio. Los cambios pasan format, typecheck, lint, 181 pruebas y build; falta verificarlos visualmente en la aplicación en ejecución. No hay una migración, refactor o release adicional en curso documentado. Cualquier asistente debe comprobar el worktree y los procesos locales antes de asumir que sigue así.
+El tiquete de ingreso muestra el costo por hora/minuto de la tarifa y se reimprime desde la confirmación del registro y desde cada fila de Parqueo activo (canal IPC `parking:reprint-entry`). El `EntryRegistration` expone `ratePlanAmountCop` y `billingUnit`. La reimpresión solo alcanza sesiones activas: reemitir el tiquete de una salida ya registrada o de un ingreso anulado producía un comprobante válido de un vehículo ausente. El recibo de salida agrega el empleado del turno y la nota, con `ReceiptSnapshot` en versión 3 y los recibos anteriores normalizados sin atribución. Todo duplicado, de ingreso o de salida, sale marcado como «REIMPRESIÓN» con su fecha y hora (D-023).
+
+Además se auditó el sistema de tarifas completo: el módulo dejó de administrar y simular planes de Mensualidades, la lectura de ajustes cae por campo en lugar de revertir toda la configuración ante un valor corrupto, y un reloj anterior a la hora de ingreso produce un mensaje accionable en vez de un fallo genérico o una pantalla caída (D-024). El motor de liquidación y sus ejemplos de D-016 se verificaron sin cambios.
+
+Los cambios pasan format, typecheck, lint, 196 pruebas y build. `npm run dev` sí lanza Electron en este equipo: el fallo anterior lo causaba la variable `ELECTRON_RUN_AS_NODE=1` presente en el entorno de la terminal, no una incompatibilidad de Electron 43 con `@electron-toolkit/utils`. Si vuelve a aparecer, arranca con `env -u ELECTRON_RUN_AS_NODE npm run dev`. La verificación visual de estos cambios queda a cargo del propietario. No hay migración, refactor ni release en curso documentado. Cualquier asistente debe comprobar el worktree y los procesos locales antes de asumir que sigue así.

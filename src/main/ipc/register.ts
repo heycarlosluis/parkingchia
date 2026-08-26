@@ -195,10 +195,21 @@ export function registerIpcHandlers(services: Services): void {
   ipcMain.handle(IPC_CHANNELS.PARKING_CANCEL, (_event, rawInput: unknown) =>
     withAccess(() => services.parking.cancelSession(parseOrReject(cancelSessionSchema, rawInput))),
   )
+  ipcMain.handle(IPC_CHANNELS.PARKING_ENTRY_REPRINT, (_event, rawInput: unknown) =>
+    withAccess(() =>
+      services.printing.printEntryTicket(
+        services.parking.findEntryRegistration(
+          parseOrReject(quoteSessionSchema, rawInput).sessionId,
+        ),
+        { reprint: true },
+      ),
+    ),
+  )
   ipcMain.handle(IPC_CHANNELS.PARKING_REPRINT, (_event, rawInput: unknown) =>
     withAccess(() =>
       services.printing.printExitReceipt(
         services.parking.findReceiptSnapshot(parseOrReject(quoteSessionSchema, rawInput).sessionId),
+        { reprint: true },
       ),
     ),
   )

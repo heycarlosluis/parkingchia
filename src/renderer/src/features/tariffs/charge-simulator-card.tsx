@@ -1,6 +1,7 @@
 import { Calculator } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { formatCurrency } from '@shared/format'
+import { describeElapsed } from '@shared/parking'
 import { describeBilledTime, MINUTES_PER_DAY, type ParkingCharge } from '@shared/tariff'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
@@ -14,13 +15,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useTariffStore } from '@/store/tariff-store'
-
-function describeDuration(minutes: number): string {
-  if (minutes < 60) return `${minutes} min`
-  const hours = Math.floor(minutes / 60)
-  const rest = minutes % 60
-  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`
-}
 
 export function ChargeSimulatorCard(): React.JSX.Element {
   const settings = useTariffStore((store) => store.settings)
@@ -107,7 +101,7 @@ export function ChargeSimulatorCard(): React.JSX.Element {
                   onChange={(event) => setMinutes(event.target.valueAsNumber)}
                 />
                 <FieldDescription>
-                  {Number.isFinite(minutes) ? describeDuration(minutes) : 'Ingresa los minutos'}
+                  {Number.isFinite(minutes) ? describeElapsed(minutes) : 'Ingresa los minutos'}
                 </FieldDescription>
               </Field>
             </div>

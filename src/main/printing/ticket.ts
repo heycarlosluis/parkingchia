@@ -8,10 +8,22 @@ import type {
 } from '@shared/contracts'
 import { formatCurrency } from '@shared/format'
 import { describeElapsed, PAYMENT_METHOD_LABELS } from '@shared/parking'
-import { describeBilledTime, VEHICLE_TYPE_LABELS } from '@shared/tariff'
+import { describeBilledTime, describeBillingUnit, VEHICLE_TYPE_LABELS } from '@shared/tariff'
 import { describeCoverage } from '@shared/monthly'
 import type { MonthlyReceiptSnapshot } from '@main/monthly/service'
 import type { ReceiptSnapshot } from '@main/parking/service'
+
+/** Ajustes de render comunes a todos los documentos. */
+export type TicketRenderOptions = {
+  /**
+   * Marca el documento como duplicado.
+   *
+   * Un tiquete o un recibo reimpreso circula igual que el original, así que
+   * debe distinguirse en el papel: de lo contrario un duplicado sirve para
+   * retirar un vehículo o para justificar dos veces el mismo cobro.
+   */
+  reprint?: boolean
+}
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>'"]/g, (character) => {
@@ -77,8 +89,12 @@ function documentShell(
   profile: ParkingProfile | null,
   title: string,
   body: string,
+  options: TicketRenderOptions = {},
 ): string {
   const width = paperWidth === '58mm' ? 58 : 80
+  const reprintMark = options.reprint
+    ? `<p class="reprint-mark">** REIMPRESIÓN **<br />${escapeHtml(localDateTime(new Date().toISOString()))}</p>`
+    : ''
   return `<!doctype html>
 <html lang="es">
   <head>
@@ -97,6 +113,8 @@ function documentShell(
       dd { margin: 0; text-align: right; font-weight: 700; }
       .plate { text-align: center; font-size: 22px; font-weight: 700; letter-spacing: 2px; margin: 2mm 0; }
       .total { font-size: 14px; }
+      .note { margin: 2mm 0 0; text-align: left; }
+      .reprint-mark { margin: 0 0 3mm; text-align: center; font-weight: 700; letter-spacing: 1px; }
       .footer { margin-top: 3mm; text-align: center; font-size: 9px; }
     </style>
   </head>
@@ -104,6 +122,7 @@ function documentShell(
     <h1>${escapeHtml(profile?.name ?? 'Parking Chía')}</h1>
     ${profile ? `<p class="subtitle">${escapeHtml(profile.address)}<br />${escapeHtml(profile.phone)}</p>` : ''}
     <p class="subtitle">${escapeHtml(title)}</p>
+    ${reprintMark}
     <div class="rule"></div>
     ${body}
   </body>
@@ -118,24 +137,27 @@ export function createEntryTicketHtml(
   paperWidth: PaperWidth,
   profile: ParkingProfile | null,
   entry: EntryRegistration,
+  options: TicketRenderOptions = {},
 ): string {
   const body = `
     <p class="plate">${escapeHtml(entry.plate)}</p>
     <dl>
       <div class="row"><dt>Vehículo</dt><dd>${escapeHtml(VEHICLE_TYPE_LABELS[entry.vehicleType])}</dd></div>
       <div class="row"><dt>Tarifa</dt><dd>${escapeHtml(entry.ratePlanName)}</dd></div>
+      <div class="row"><dt>Costo por ${escapeHtml(describeBillingUnit(entry.billingUnit))}</dt><dd>${escapeHtml(formatCurrency(entry.ratePlanAmountCop))}</dd></div>
       <div class="row"><dt>Ingreso</dt><dd>${escapeHtml(localDateTime(entry.enteredAt))}</dd></div>
       <div class="row"><dt>Gracia</dt><dd>${entry.graceMinutes} min</dd></div>
     </dl>
     <div class="rule"></div>
     <p class="footer">Conserve este tiquete. Se exige para retirar el vehículo.</p>`
-  return documentShell(paperWidth, profile, 'Tiquete de ingreso', body)
+  return documentShell(paperWidth, profile, 'Tiquete de ingreso', body, options)
 }
 
 export function createExitReceiptHtml(
   paperWidth: PaperWidth,
   profile: ParkingProfile | null,
   receipt: ReceiptSnapshot,
+  options: TicketRenderOptions = {},
 ): string {
   const { charge } = receipt
   const taxRows =
@@ -148,6 +170,14 @@ export function createExitReceiptHtml(
       ? ''
       : `<div class="row"><dt>Recibido</dt><dd>${escapeHtml(formatCurrency(receipt.receivedCop))}</dd></div>
        <div class="row"><dt>Cambio</dt><dd>${escapeHtml(formatCurrency(receipt.changeCop ?? 0))}</dd></div>`
+  const employeeRow =
+    receipt.employeeName === null
+      ? ''
+      : `<div class="row"><dt>Atendió</dt><dd>${escapeHtml(receipt.employeeName)}</dd></div>`
+  const notesBlock =
+    receipt.notes === null || receipt.notes.trim() === ''
+      ? ''
+      : `<p class="note">Nota: ${escapeHtml(receipt.notes)}</p>`
 
   const body = `
     <p class="plate">${escapeHtml(receipt.plate)}</p>
@@ -166,10 +196,12 @@ export function createExitReceiptHtml(
       <div class="row total"><dt><strong>Total</strong></dt><dd>${escapeHtml(formatCurrency(charge.totalCop))}</dd></div>
       <div class="row"><dt>Pago</dt><dd>${escapeHtml(PAYMENT_METHOD_LABELS[receipt.method])}</dd></div>
       ${cashRows}
+      ${employeeRow}
     </dl>
+    ${notesBlock}
     <div class="rule"></div>
     <p class="footer">Gracias por su visita.</p>`
-  return documentShell(paperWidth, profile, 'Recibo de salida', body)
+  return documentShell(paperWidth, profile, 'Recibo de salida', body, options)
 }
 
 export function createMonthlyReceiptHtml(

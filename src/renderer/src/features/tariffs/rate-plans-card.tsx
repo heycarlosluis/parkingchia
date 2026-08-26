@@ -120,7 +120,16 @@ export function RatePlansCard(): React.JSX.Element {
                       {plan.minimumChargeCop === 0 ? '—' : formatCurrency(plan.minimumChargeCop)}
                     </td>
                     <td className="numeric tabular">
-                      {plan.plenaCop === null ? '—' : formatCurrency(plan.plenaCop)}
+                      {plan.plenaCop === null ? (
+                        '—'
+                      ) : (
+                        <>
+                          {formatCurrency(plan.plenaCop)}
+                          {settings.billingUnit === 'hour' ? null : (
+                            <span className="grace-scope">No aplica por minuto</span>
+                          )}
+                        </>
+                      )}
                     </td>
                     <td className="numeric tabular">
                       {plan.graceMinutes === null ? (

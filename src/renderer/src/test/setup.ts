@@ -345,6 +345,8 @@ const parkingApi: ParkingApi = {
       plate: input.plate,
       vehicleType: input.vehicleType,
       ratePlanName: 'Automóvil por hora',
+      ratePlanAmountCop: ratePlan.amountCop,
+      billingUnit: 'hour' as const,
       enteredAt: new Date().toISOString(),
       graceMinutes: DEFAULT_TARIFF_SETTINGS.graceMinutes,
       printed: false,
@@ -385,6 +387,7 @@ const parkingApi: ParkingApi = {
     })
   }),
   cancelSession: vi.fn(async () => ok([])),
+  reprintEntryTicket: vi.fn(async () => ok({ printed: false, message: 'No hay impresoras.' })),
   reprintReceipt: vi.fn(async () => ok({ printed: false, message: 'No hay impresoras.' })),
   listExits: vi.fn(async (input) => {
     const records = exitRecords.filter(

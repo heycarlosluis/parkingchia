@@ -97,6 +97,21 @@ describe('Parqueo activo', () => {
     expect(screen.queryByText(/Salida registrada/)).not.toBeInTheDocument()
   })
 
+  it('reimprime el tiquete de un vehículo que sigue en el parqueadero', async () => {
+    render(<ActiveSessionsPage />)
+
+    const table = await screen.findByRole('table')
+    const row = within(table).getByRole('row', { name: /ABC123/ })
+    await userEvent.click(within(row).getByRole('button', { name: /Tiquete/ }))
+
+    await waitFor(() => {
+      expect(window.parkingAPI.reprintEntryTicket).toHaveBeenCalledWith({
+        sessionId: 'session-1',
+      })
+    })
+    expect(await screen.findByText('No hay impresoras.')).toBeInTheDocument()
+  })
+
   it('exige un motivo antes de anular un ingreso', async () => {
     render(<ActiveSessionsPage />)
     await screen.findByRole('table')

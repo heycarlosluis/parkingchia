@@ -4,9 +4,12 @@ import type { RatePlan, TariffConfiguration } from '@shared/contracts'
 import {
   calculateChargeForMinutes,
   DEFAULT_TARIFF_SETTINGS,
+  graceMinutesSchema,
+  plenaThresholdSchema,
   ROUNDING_STEPS_COP,
   TARIFF_CURRENCY,
-  tariffSettingsInputSchema,
+  tariffBillingUnitSchema,
+  taxPercentSchema,
   type CreateRatePlanInput,
   type ParkingCharge,
   type RatePlanBillingUnit,
@@ -58,37 +61,52 @@ export class TariffService {
       .all('tariff.%') as Array<{ key: string; value: string }>
     const stored = new Map(rows.map((row) => [row.key, row.value]))
 
-    const candidate = {
-      billingUnit: stored.get(SETTING_KEYS.billingUnit) ?? DEFAULT_TARIFF_SETTINGS.billingUnit,
-      graceMinutes: this.readInteger(
-        stored.get(SETTING_KEYS.graceMinutes),
+    // Cada ajuste cae por separado a su valor por defecto: un solo valor
+    // corrupto no puede revertir en silencio la unidad de cobro ni el redondeo
+    // con los que se está cobrando.
+    return {
+      billingUnit: this.readValid(
+        tariffBillingUnitSchema,
+        stored.get(SETTING_KEYS.billingUnit),
+        DEFAULT_TARIFF_SETTINGS.billingUnit,
+      ),
+      graceMinutes: this.readValid(
+        graceMinutesSchema,
+        this.readInteger(
+          stored.get(SETTING_KEYS.graceMinutes),
+          DEFAULT_TARIFF_SETTINGS.graceMinutes,
+        ),
         DEFAULT_TARIFF_SETTINGS.graceMinutes,
       ),
+      currency: TARIFF_CURRENCY,
       taxEnabled: this.readBoolean(
         stored.get(SETTING_KEYS.taxEnabled),
         DEFAULT_TARIFF_SETTINGS.taxEnabled,
       ),
-      taxPercent: this.readNumber(
-        stored.get(SETTING_KEYS.taxPercent),
+      taxPercent: this.readValid(
+        taxPercentSchema,
+        this.readNumber(stored.get(SETTING_KEYS.taxPercent), DEFAULT_TARIFF_SETTINGS.taxPercent),
         DEFAULT_TARIFF_SETTINGS.taxPercent,
       ),
       taxIncludedInPrice: this.readBoolean(
         stored.get(SETTING_KEYS.taxIncludedInPrice),
         DEFAULT_TARIFF_SETTINGS.taxIncludedInPrice,
       ),
-      plenaThresholdHours: this.readInteger(
-        stored.get(SETTING_KEYS.plenaThresholdHours),
+      plenaThresholdHours: this.readValid(
+        plenaThresholdSchema,
+        this.readInteger(
+          stored.get(SETTING_KEYS.plenaThresholdHours),
+          DEFAULT_TARIFF_SETTINGS.plenaThresholdHours,
+        ),
         DEFAULT_TARIFF_SETTINGS.plenaThresholdHours,
       ),
-      roundingStepCop: this.readInteger(
-        stored.get(SETTING_KEYS.roundingStepCop),
-        DEFAULT_TARIFF_SETTINGS.roundingStepCop,
+      roundingStepCop: this.asRoundingStep(
+        this.readInteger(
+          stored.get(SETTING_KEYS.roundingStepCop),
+          DEFAULT_TARIFF_SETTINGS.roundingStepCop,
+        ),
       ),
     }
-
-    const parsed = tariffSettingsInputSchema.safeParse(candidate)
-    if (!parsed.success) return { ...DEFAULT_TARIFF_SETTINGS }
-    return { ...parsed.data, currency: TARIFF_CURRENCY }
   }
 
   updateSettings(input: UpdateTariffSettingsInput): TariffConfiguration {
@@ -170,16 +188,7 @@ export class TariffService {
   }
 
   updatePlan(input: UpdateRatePlanInput): TariffConfiguration {
-    const existing = this.findPlan(input.id)
-    if (!existing) {
-      throw new OperationError('RATE_PLAN_NOT_FOUND', 'La tarifa que intentas editar ya no existe.')
-    }
-    if (!TIME_BASED_UNITS.includes(existing.billingUnit)) {
-      throw new OperationError(
-        'RATE_PLAN_NOT_EDITABLE',
-        'Esta tarifa pertenece a otro módulo y no se edita desde aquí.',
-      )
-    }
+    this.requireTimeBasedPlan(input.id, 'La tarifa que intentas editar ya no existe.')
 
     const now = new Date().toISOString()
     this.sqlite.transaction(() => {
@@ -208,13 +217,7 @@ export class TariffService {
   }
 
   deletePlan(id: string): TariffConfiguration {
-    const existing = this.findPlan(id)
-    if (!existing) {
-      throw new OperationError(
-        'RATE_PLAN_NOT_FOUND',
-        'La tarifa que intentas eliminar ya no existe.',
-      )
-    }
+    const existing = this.requireTimeBasedPlan(id, 'La tarifa que intentas eliminar ya no existe.')
     if (this.countReferences(id) > 0) {
       throw new OperationError(
         'RATE_PLAN_IN_USE',
@@ -232,10 +235,7 @@ export class TariffService {
   }
 
   simulate(input: SimulateChargeInput): ParkingCharge {
-    const plan = this.findPlan(input.ratePlanId)
-    if (!plan) {
-      throw new OperationError('RATE_PLAN_NOT_FOUND', 'La tarifa seleccionada ya no existe.')
-    }
+    const plan = this.requireTimeBasedPlan(input.ratePlanId, 'La tarifa seleccionada ya no existe.')
     return calculateChargeForMinutes(input.minutes, this.getSettings(), {
       amountCop: plan.amountCop,
       minimumChargeCop: plan.minimumChargeCop,
@@ -253,6 +253,27 @@ export class TariffService {
       )
       .all() as RatePlanRow[]
     return rows.map((row) => this.toRatePlan(row))
+  }
+
+  /**
+   * Tarifa por tiempo administrada por este módulo.
+   *
+   * Los planes `day` y `month` pertenecen a Mensualidades. Tratarlos aquí
+   * liquidaría un precio mensual como si fuera el de una hora, y eliminarlos
+   * desde Tarifas dejaría a Mensualidades sin su plan.
+   */
+  private requireTimeBasedPlan(id: string, missingMessage: string): RatePlan {
+    const plan = this.findPlan(id)
+    if (!plan) {
+      throw new OperationError('RATE_PLAN_NOT_FOUND', missingMessage)
+    }
+    if (!TIME_BASED_UNITS.includes(plan.billingUnit)) {
+      throw new OperationError(
+        'RATE_PLAN_NOT_APPLICABLE',
+        'Esa tarifa pertenece a Mensualidades y no se administra desde aquí.',
+      )
+    }
+    return plan
   }
 
   private findPlan(id: string): RatePlan | null {
@@ -291,6 +312,15 @@ export class TariffService {
   private asRoundingStep(value: number): RoundingStepCop {
     const match = ROUNDING_STEPS_COP.find((step) => step === value)
     return match ?? DEFAULT_TARIFF_SETTINGS.roundingStepCop
+  }
+
+  /** Devuelve el valor guardado solo si sigue siendo válido; si no, el predeterminado. */
+  private readValid<T>(
+    schema: { safeParse: (value: unknown) => { success: boolean } },
+    value: unknown,
+    fallback: T,
+  ): T {
+    return schema.safeParse(value).success ? (value as T) : fallback
   }
 
   private readInteger(value: string | undefined, fallback: number): number {

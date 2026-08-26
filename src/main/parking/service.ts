@@ -21,10 +21,12 @@ import {
 import {
   calculateChargeForMinutes,
   type ParkingCharge,
+  type RatePlanBillingUnit,
   type RatePlanPricing,
+  type TariffBillingUnit,
   type VehicleType,
 } from '@shared/tariff'
-import { elapsedMinutes } from '@shared/format'
+import { elapsedMinutes, elapsedMinutesOrZero } from '@shared/format'
 import { OperationError } from '@main/ipc/errors'
 import type { CashService } from '@main/cash/service'
 import type { MonthlyService } from '@main/monthly/service'
@@ -43,7 +45,7 @@ const COVERED_BY_MONTHLY_PRICING: RatePlanPricing = {
   graceMinutes: null,
 }
 
-export const RECEIPT_SNAPSHOT_VERSION = 2
+export const RECEIPT_SNAPSHOT_VERSION = 3
 
 export type ReceiptSnapshot = {
   version: number
@@ -58,20 +60,39 @@ export type ReceiptSnapshot = {
   method: CloseSessionInput['method']
   receivedCop: number | null
   changeCop: number | null
+  /** Empleado del turno que cobró la salida; `null` en recibos anteriores a la v3. */
+  employeeName: string | null
   notes: string | null
 }
 
 /**
- * Completa un recibo antiguo con los campos que agregó la plena.
+ * Completa un recibo antiguo con los campos que agregaron la plena y el turno.
  *
  * Los recibos versión 1 se emitieron sin plenas: todas sus unidades eran horas
  * o minutos sueltos, así que reimprimirlos debe seguir mostrando lo cobrado.
+ * Los anteriores a la versión 3 no guardaron el empleado del turno; se
+ * reimprimen sin esa línea en lugar de atribuirlos a quien opera hoy.
  */
+/**
+ * Unidad de cobro utilizable para el tiquete de ingreso.
+ *
+ * La columna admite `day` y `month` porque la comparten las mensualidades; un
+ * ingreso por tiempo nunca debería referenciarlas, pero si un dato antiguo lo
+ * hace es preferible mostrar la unidad general antes que una etiqueta falsa.
+ */
+function asTariffBillingUnit(
+  unit: RatePlanBillingUnit | null,
+  fallback: TariffBillingUnit,
+): TariffBillingUnit {
+  return unit === 'hour' || unit === 'minute' ? unit : fallback
+}
+
 export function normalizeReceiptSnapshot(snapshot: ReceiptSnapshot): ReceiptSnapshot {
   if (snapshot.version >= RECEIPT_SNAPSHOT_VERSION) return snapshot
   const charge = snapshot.charge
   return {
     ...snapshot,
+    employeeName: snapshot.employeeName ?? null,
     charge: {
       ...charge,
       plenaCount: charge.plenaCount ?? 0,
@@ -142,6 +163,14 @@ export class ParkingService {
         'Esa tarifa está inactiva. Activa la tarifa o elige otra.',
       )
     }
+    // Un plan `day` o `month` pertenece a Mensualidades: cobrarlo por tiempo
+    // liquidaría el precio del periodo completo en cada unidad.
+    if (plan.billingUnit !== 'hour' && plan.billingUnit !== 'minute') {
+      throw new OperationError(
+        'RATE_PLAN_NOT_APPLICABLE',
+        'Esa tarifa pertenece a Mensualidades y no puede cobrar un ingreso por tiempo.',
+      )
+    }
 
     const openSession = this.sqlite
       .prepare(
@@ -199,8 +228,67 @@ export class ParkingService {
       plate: input.plate,
       vehicleType: input.vehicleType,
       ratePlanName: plan.name,
+      ratePlanAmountCop: plan.amountCop,
+      billingUnit: plan.billingUnit,
       enteredAt: now,
       graceMinutes: plan.graceMinutes ?? this.tariffs.getSettings().graceMinutes,
+      printed: false,
+      printMessage: '',
+    }
+  }
+
+  /**
+   * Reconstruye el tiquete de ingreso de una sesión activa para reimprimirlo.
+   *
+   * A diferencia del recibo de salida, el tiquete de ingreso no guarda un
+   * snapshot: es informativo y se reimprime con los datos vigentes de la
+   * tarifa, que de todos modos no puede eliminarse mientras la sesión la use.
+   *
+   * Solo se reimprime mientras la sesión sigue activa. Un tiquete es lo que el
+   * cliente entrega para retirar el vehículo, así que reemitirlo después de la
+   * salida o de una anulación produciría un comprobante válido de un vehículo
+   * que ya no está en el parqueadero.
+   */
+  findEntryRegistration(sessionId: string): EntryRegistration {
+    const row = this.sqlite
+      .prepare(
+        `SELECT s.id, v.plate, v.vehicle_type, s.entered_at,
+                r.name AS rate_plan_name, r.amount_cop AS rate_plan_amount_cop,
+                r.billing_unit, r.grace_minutes
+         FROM parking_sessions s
+         JOIN vehicles v ON v.id = s.vehicle_id
+         LEFT JOIN rate_plans r ON r.id = s.rate_plan_id
+         WHERE s.id = ? AND s.status = 'active'`,
+      )
+      .get(sessionId) as
+      | {
+          id: string
+          plate: string
+          vehicle_type: VehicleType
+          entered_at: string
+          rate_plan_name: string | null
+          rate_plan_amount_cop: number | null
+          billing_unit: RatePlanBillingUnit | null
+          grace_minutes: number | null
+        }
+      | undefined
+    if (!row) {
+      throw new OperationError(
+        'SESSION_NOT_ACTIVE',
+        'Ese ingreso ya no está activo, así que no hay tiquete que reimprimir.',
+      )
+    }
+
+    const settings = this.tariffs.getSettings()
+    return {
+      sessionId: row.id,
+      plate: row.plate,
+      vehicleType: row.vehicle_type,
+      ratePlanName: row.rate_plan_name ?? 'Sin tarifa',
+      ratePlanAmountCop: row.rate_plan_amount_cop ?? 0,
+      billingUnit: asTariffBillingUnit(row.billing_unit, settings.billingUnit),
+      enteredAt: row.entered_at,
+      graceMinutes: row.grace_minutes ?? settings.graceMinutes,
       printed: false,
       printMessage: '',
     }
@@ -317,6 +405,7 @@ export class ParkingService {
           method: input.method,
           receivedCop,
           changeCop,
+          employeeName: this.cash.getOpenSessionEmployeeName(),
           notes: input.notes,
         }
 
@@ -458,7 +547,7 @@ export class ParkingService {
       ratePlanName: row.rate_plan_name,
       enteredAt: row.entered_at,
       exitedAt,
-      totalMinutes: snapshot?.charge.totalMinutes ?? elapsedMinutes(row.entered_at, exitedAt),
+      totalMinutes: snapshot?.charge.totalMinutes ?? elapsedMinutesOrZero(row.entered_at, exitedAt),
       totalCop: row.calculated_amount_cop ?? 0,
       status: row.status,
       method: row.method,
@@ -505,7 +594,24 @@ export class ParkingService {
         : knownCoverage
     const pricing =
       coverage === null ? this.pricingFor(row.rate_plan_id) : COVERED_BY_MONTHLY_PRICING
-    return calculateChargeForMinutes(elapsedMinutes(row.entered_at, atUtc), settings, pricing)
+    return calculateChargeForMinutes(this.stayMinutes(row.entered_at, atUtc), settings, pricing)
+  }
+
+  /**
+   * Permanencia cobrable, con un mensaje accionable si el reloj retrocedió.
+   *
+   * `elapsedMinutes` rechaza un intervalo invertido con un `RangeError`, que
+   * llegaría al operador como un fallo genérico y sin salida: no podría
+   * registrar la salida ni sabría que el problema es la hora del equipo.
+   */
+  private stayMinutes(enteredAt: string, atUtc: string): number {
+    if (new Date(atUtc).getTime() < new Date(enteredAt).getTime()) {
+      throw new OperationError(
+        'CLOCK_BEFORE_ENTRY',
+        'La hora del equipo es anterior a la del ingreso, así que no se puede calcular el cobro. Ajusta la fecha y la hora del sistema e inténtalo de nuevo.',
+      )
+    }
+    return elapsedMinutes(enteredAt, atUtc)
   }
 
   private pricingFor(ratePlanId: string | null): RatePlanPricing {
@@ -526,6 +632,7 @@ export class ParkingService {
     name: string
     status: string
     amountCop: number
+    billingUnit: RatePlanBillingUnit
     minimumChargeCop: number
     plenaCop: number | null
     graceMinutes: number | null
@@ -536,6 +643,7 @@ export class ParkingService {
           name: string
           status: string
           amount_cop: number
+          billing_unit: RatePlanBillingUnit
           minimum_charge_cop: number
           plena_cop: number | null
           grace_minutes: number | null
@@ -549,6 +657,7 @@ export class ParkingService {
       name: row.name,
       status: row.status,
       amountCop: row.amount_cop,
+      billingUnit: row.billing_unit,
       minimumChargeCop: row.minimum_charge_cop,
       plenaCop: row.plena_cop,
       graceMinutes: row.grace_minutes,

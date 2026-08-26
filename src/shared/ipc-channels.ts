@@ -18,6 +18,7 @@ export const IPC_CHANNELS = {
   PARKING_QUOTE_EXIT: 'parking:quote-exit',
   PARKING_CLOSE: 'parking:close-session',
   PARKING_CANCEL: 'parking:cancel-session',
+  PARKING_ENTRY_REPRINT: 'parking:reprint-entry',
   PARKING_REPRINT: 'parking:reprint-receipt',
   PARKING_EXIT_HISTORY: 'parking:list-exits',
   MONTHLY_OVERVIEW: 'monthly:get-overview',

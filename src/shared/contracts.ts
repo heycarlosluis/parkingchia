@@ -11,6 +11,7 @@ import type {
   ParkingCharge,
   RatePlanBillingUnit,
   RatePlanStatus,
+  TariffBillingUnit,
   TariffSettings,
   VehicleType,
 } from './tariff'
@@ -181,6 +182,10 @@ export type EntryRegistration = {
   plate: string
   vehicleType: VehicleType
   ratePlanName: string
+  /** Precio de una unidad de cobro de la tarifa, en pesos colombianos enteros. */
+  ratePlanAmountCop: number
+  /** Unidad con la que se cobra la tarifa del ingreso (`hour` o `minute`). */
+  billingUnit: TariffBillingUnit
   enteredAt: string
   graceMinutes: number
   printed: boolean
@@ -406,6 +411,7 @@ export interface ParkingApi {
     sessionId: string
     reason: string
   }) => Promise<ApiResult<ActiveSession[]>>
+  reprintEntryTicket: (input: { sessionId: string }) => Promise<ApiResult<PrintResult>>
   reprintReceipt: (input: { sessionId: string }) => Promise<ApiResult<PrintResult>>
   listExits: (input: {
     search: string

@@ -236,6 +236,11 @@ export class CashService {
     return this.getOpenSession()?.id ?? null
   }
 
+  /** Empleado del turno abierto, para dejar constancia de quién atendió el cobro. */
+  getOpenSessionEmployeeName(): string | null {
+    return this.getOpenSession()?.employeeName ?? null
+  }
+
   /** Cierres de caja más recientes, con el arqueo completo para consultarlos o reimprimirlos. */
   listClosedSessions(limit = 20): CashCloseSummary[] {
     const rows = this.sqlite

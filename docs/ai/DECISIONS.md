@@ -183,6 +183,22 @@ Estados posibles: `propuesta`, `aceptada`, `reemplazada` o `descartada`.
 - Motivo: el operador siempre recibe el efectivo al cobrar; dejarlo opcional dejaba pagos sin cambio ni trazabilidad y rompía la coherencia con el arqueo de caja.
 - Consecuencia: las salidas sin cobro (gracia o mensualidad) siguen sin exigir efectivo. El desglose del recibo conserva recibido y cambio como enteros COP.
 
+## D-023 — Los duplicados se marcan y el tiquete solo se reimprime en sesión activa
+
+- Fecha: 2026-08-21
+- Estado: aceptada
+- Decisión: el tiquete de ingreso se reimprime desde la confirmación del registro y desde Parqueo activo, pero únicamente mientras la sesión está activa; una sesión cerrada o anulada responde `SESSION_NOT_ACTIVE`. El tiquete no guarda snapshot: se reconstruye con los datos vigentes de la tarifa, que no puede eliminarse mientras una sesión la referencie. Todo documento reimpreso, de ingreso o de salida, se marca en el papel como «REIMPRESIÓN» con la fecha y hora del duplicado. El recibo de salida agrega el empleado del turno y la nota de la salida, lo que lleva `ReceiptSnapshot` a la versión 3.
+- Motivo: el tiquete es lo que el cliente entrega para retirar el vehículo y el recibo es el respaldo de un cobro; un duplicado indistinguible del original permite sacar un vehículo ya cobrado o justificar dos veces el mismo pago. Reimprimir el tiquete de una sesión cerrada o anulada crearía directamente ese comprobante de un vehículo que ya no está en el parqueadero. El empleado y la nota ya existían en la operación pero no llegaban al papel que se entrega.
+- Consecuencia: el recibo de salida conserva su snapshot inmutable, así que la marca de duplicado es una decisión de render y no altera lo guardado. Los recibos anteriores a la versión 3 se normalizan sin empleado en lugar de atribuirse a quien opera hoy. Si más adelante se necesita reponer un tiquete perdido después de la salida, debe resolverse como una operación propia con su auditoría, no reabriendo esta reimpresión.
+
+## D-024 — Tarifas solo administra planes por tiempo y el cobro exige un reloj coherente
+
+- Fecha: 2026-08-21
+- Estado: aceptada
+- Decisión: el módulo de Tarifas rechaza con `RATE_PLAN_NOT_APPLICABLE` cualquier plan cuya unidad no sea `minute` ni `hour`, tanto al editar como al eliminar y al simular, y `registerEntry` rechaza abrir una sesión con uno de esos planes. La lectura de `app_settings` valida cada ajuste por separado: un valor corrupto cae a su predeterminado sin arrastrar a los demás. Si la hora del equipo queda antes de la del ingreso, el cobro se rechaza con `CLOCK_BEFORE_ENTRY` y un mensaje accionable, mientras que las pantallas informativas muestran cero en lugar de caerse.
+- Motivo: `listPlans` ya ocultaba los planes de Mensualidades, pero eliminar y simular no lo comprobaban: se podía borrar desde Tarifas un plan mensual sin suscripciones y simular uno de 150.000 al mes como si fueran 150.000 por hora, que devolvía 300.000 por dos horas. La lectura de ajustes hacía `safeParse` del conjunto completo, así que una sola clave inválida revertía en silencio la unidad de cobro y el redondeo con los que se estaba cobrando. Y un reloj retrasado hacía que `elapsedMinutes` lanzara un `RangeError`, que llegaba al operador como un fallo genérico sin explicación y bloqueaba la salida.
+- Consecuencia: Mensualidades sigue siendo el único módulo que administra los planes `month`, igual que ya lo hacía en sus consultas. Las sesiones antiguas que referencien un plan que no sea por tiempo se pueden seguir cerrando, porque la guardia está en el ingreso y no en la liquidación. Un ajuste inválido deja de ser silencioso solo en su propio campo: si se necesita avisarlo al operador, debe añadirse aparte. El cobro nunca liquida una permanencia negativa como cero.
+
 ## Plantilla para una nueva decisión
 
 ```markdown

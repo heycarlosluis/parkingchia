@@ -269,6 +269,13 @@ export function RatePlanDialog({
               <FieldLabel htmlFor="plan-use-plena">Cobrar plena (día completo)</FieldLabel>
             </Field>
 
+            {billingUnit === 'hour' ? null : (
+              <p className="field-hint">
+                La plena solo aplica cobrando por hora. Mientras la unidad de cobro sea por minuto,
+                este valor se guarda pero no se cobra.
+              </p>
+            )}
+
             {usePlena ? (
               <Field data-invalid={Boolean(formState.errors.plenaCop)}>
                 <FieldLabel htmlFor="plan-plena">Valor de la plena</FieldLabel>
@@ -283,8 +290,9 @@ export function RatePlanDialog({
                   {...register('plenaCop', { valueAsNumber: true })}
                 />
                 <FieldDescription>
-                  Se cobra al llegar al umbral de {plenaThresholdHours} horas y cubre el día
-                  completo.
+                  {billingUnit === 'hour'
+                    ? `Se cobra al llegar al umbral de ${plenaThresholdHours} horas y cubre el día completo.`
+                    : 'Se cobrará al llegar al umbral en horas, cuando la unidad de cobro vuelva a ser por hora.'}
                 </FieldDescription>
                 <FieldError errors={[formState.errors.plenaCop]} />
               </Field>
