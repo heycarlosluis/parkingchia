@@ -152,12 +152,78 @@ describe('TariffService', () => {
   })
 
   it('simula el cobro con la configuración vigente', () => {
-    service.updateSettings({ billingUnit: 'hour', graceMinutes: 15, taxEnabled: false })
+    service.updateSettings({
+      billingUnit: 'hour',
+      graceMinutes: 15,
+      graceFromHour: 0,
+      taxEnabled: false,
+    })
     const plan = service.createPlan(draft).plans[0]!
 
     expect(service.simulate({ ratePlanId: plan.id, minutes: 10 }).totalCop).toBe(0)
     // La tolerancia perdona la fracción final: 1 h 01 sigue cobrando una hora.
     expect(service.simulate({ ratePlanId: plan.id, minutes: 61 }).totalCop).toBe(5000)
+    expect(service.simulate({ ratePlanId: plan.id, minutes: 76 }).totalCop).toBe(10_000)
+  })
+
+  it('cobra el ciclo de la plena con el umbral y la duración configurados', () => {
+    service.updateSettings({
+      billingUnit: 'hour',
+      graceMinutes: 5,
+      graceFromHour: 1,
+      plenaThresholdHours: 5,
+      plenaHours: 12,
+      taxEnabled: false,
+      roundingStepCop: 0,
+    })
+    const plan = service.createPlan({ ...draft, amountCop: 3500, plenaCop: 20_000 }).plans[0]!
+    const total = (minutos: number) =>
+      service.simulate({ ratePlanId: plan.id, minutes: minutos }).totalCop
+
+    expect(total(5 * 60)).toBe(17_500)
+    expect(total(5 * 60 + 5)).toBe(17_500)
+    expect(total(5 * 60 + 6)).toBe(20_000)
+    expect(total(12 * 60)).toBe(20_000)
+    expect(total(12 * 60 + 6)).toBe(23_500)
+    expect(total(17 * 60 + 6)).toBe(40_000)
+  })
+
+  it('rechaza un umbral que no cabe dentro de la duración de la plena', () => {
+    service.updateSettings({ plenaThresholdHours: 5, plenaHours: 12 })
+
+    expect(() => service.updateSettings({ plenaThresholdHours: 12 })).toThrow(
+      expect.objectContaining({ code: 'PLENA_THRESHOLD_INVALID' }),
+    )
+    expect(() => service.updateSettings({ plenaHours: 4 })).toThrow(OperationError)
+    expect(service.getSettings().plenaThresholdHours).toBe(5)
+    expect(service.getSettings().plenaHours).toBe(12)
+  })
+
+  it('devuelve el umbral a su predeterminado cuando no cabe en la plena guardada', () => {
+    service.updateSettings({ plenaThresholdHours: 20, plenaHours: 24 })
+    manager
+      .getNativeConnection()
+      .prepare("UPDATE app_settings SET value = '12' WHERE key = 'tariff.plenaHours'")
+      .run()
+
+    const settings = service.getSettings()
+    expect(settings.plenaHours).toBe(12)
+    expect(settings.plenaThresholdHours).toBe(DEFAULT_TARIFF_SETTINGS.plenaThresholdHours)
+  })
+
+  it('persiste la hora desde la que arranca la tolerancia', () => {
+    service.updateSettings({
+      billingUnit: 'hour',
+      graceMinutes: 15,
+      graceFromHour: 1,
+      taxEnabled: false,
+    })
+    const plan = service.createPlan(draft).plans[0]!
+
+    expect(service.getSettings().graceFromHour).toBe(1)
+    // La primera hora ya no tiene tolerancia; la fracción siguiente sí.
+    expect(service.simulate({ ratePlanId: plan.id, minutes: 10 }).totalCop).toBe(5000)
+    expect(service.simulate({ ratePlanId: plan.id, minutes: 75 }).totalCop).toBe(5000)
     expect(service.simulate({ ratePlanId: plan.id, minutes: 76 }).totalCop).toBe(10_000)
   })
 })

@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { elapsedMinutes, elapsedMinutesOrZero, formatCurrency } from './format'
+import { elapsedMinutes, elapsedMinutesOrZero, formatCurrency, formatDateTime } from './format'
 
 describe('helpers de formato y duración', () => {
   it('formatea pesos colombianos sin decimales', () => {
     expect(formatCurrency(12500)).toMatch(/12[.]500/)
     expect(formatCurrency(12500)).toContain('$')
+  })
+
+  it('formatea la fecha y hora exacta de una marca UTC', () => {
+    const result = formatDateTime('2026-08-18T14:30:00.000Z')
+    expect(result).toContain('18/08/2026')
+    expect(result).toContain(':30')
   })
 
   it('cuenta minutos cumplidos y no minutos iniciados', () => {

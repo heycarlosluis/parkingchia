@@ -12,7 +12,7 @@ import {
   vehicleTypeSchema,
   type VehicleType,
 } from '@shared/tariff'
-import { formatCurrency } from '@shared/format'
+import { formatCurrency, formatDateTime } from '@shared/format'
 import { isValidPlate, normalizePlate, plateSchema } from '@shared/validation'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -25,8 +25,17 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { RadioCards } from '@/components/ui/radio-cards'
 import {
   Select,
   SelectContent,
@@ -49,6 +58,11 @@ const entryFormSchema = z.object({
 
 type EntryFormInput = z.input<typeof entryFormSchema>
 type EntryForm = z.output<typeof entryFormSchema>
+
+const VEHICLE_TYPE_OPTIONS = Object.entries(VEHICLE_TYPE_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}))
 
 export function EntriesPage(): React.JSX.Element {
   const initializeTariffs = useTariffStore((store) => store.initialize)
@@ -224,13 +238,8 @@ export function EntriesPage(): React.JSX.Element {
                 <dd className="tabular">{formatCurrency(registration.ratePlanAmountCop)}</dd>
               </div>
               <div>
-                <dt>Hora de ingreso</dt>
-                <dd className="tabular">
-                  {new Date(registration.enteredAt).toLocaleTimeString('es-CO', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </dd>
+                <dt>Fecha y hora de ingreso</dt>
+                <dd className="tabular">{formatDateTime(registration.enteredAt)}</dd>
               </div>
               <div>
                 <dt>Tolerancia</dt>
@@ -300,29 +309,21 @@ export function EntriesPage(): React.JSX.Element {
                   ) : null}
                 </Field>
 
-                <Field>
-                  <FieldLabel htmlFor="entry-vehicle-type">Tipo de vehículo</FieldLabel>
+                <FieldSet>
+                  <FieldLegend>Tipo de vehículo</FieldLegend>
                   <Controller
                     control={control}
                     name="vehicleType"
                     render={({ field }) => (
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <SelectTrigger id="entry-vehicle-type" className="min-h-11">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup>
-                            {Object.entries(VEHICLE_TYPE_LABELS).map(([value, label]) => (
-                              <SelectItem key={value} value={value as VehicleType}>
-                                {label}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
+                      <RadioCards
+                        name="entry-vehicle-type"
+                        options={VEHICLE_TYPE_OPTIONS}
+                        value={field.value}
+                        onValueChange={(value) => field.onChange(value as VehicleType)}
+                      />
                     )}
                   />
-                </Field>
+                </FieldSet>
 
                 <Field data-invalid={Boolean(formState.errors.ratePlanId)}>
                   <FieldLabel htmlFor="entry-rate-plan">Tarifa</FieldLabel>
@@ -348,7 +349,11 @@ export function EntriesPage(): React.JSX.Element {
                   />
                   <FieldDescription>
                     Se cobra por {settings.billingUnit === 'hour' ? 'hora' : 'minuto'} con{' '}
-                    {settings.graceMinutes} minutos de tolerancia.
+                    {settings.graceMinutes} minutos de tolerancia
+                    {settings.billingUnit === 'hour' && settings.graceFromHour > 0
+                      ? ` a partir de la hora ${settings.graceFromHour}`
+                      : ''}
+                    .
                   </FieldDescription>
                   <FieldError errors={[formState.errors.ratePlanId]} />
                 </Field>

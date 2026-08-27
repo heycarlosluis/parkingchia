@@ -19,7 +19,7 @@ La segunda migración (`0001`) recrea `rate_plans` para el módulo de tarifas: `
 
 Recrear una tabla referenciada exige que las claves foráneas estén desactivadas **fuera** de la transacción de migración: dentro de ella `PRAGMA foreign_keys` no tiene efecto y `PRAGMA defer_foreign_keys` no recalcula el contador de violaciones tras el `RENAME`. Por eso `DatabaseManager` y `scripts/database.ts` apagan las claves foráneas alrededor de `migrate()`, las vuelven a encender y ejecutan `PRAGMA foreign_key_check`; si aparece una inconsistencia, el arranque falla en lugar de continuar con datos rotos.
 
-`app_settings` conserva ajustes de impresión, perfil, finalización del onboarding, el hash del PIN opcional y la configuración de tarifas bajo el prefijo `tariff.` (unidad de cobro, gracia, IVA, modo de IVA y redondeo). El PIN se deriva con `scrypt` y sal aleatoria; nunca se persiste en texto plano ni se expone al renderer. Añadir estas claves no requiere alterar el esquema tabular.
+`app_settings` conserva ajustes de impresión, perfil, finalización del onboarding, el hash del PIN opcional y la configuración de tarifas bajo el prefijo `tariff.` (unidad de cobro, gracia, hora desde la que aplica la gracia, umbral y duración de la plena, IVA, modo de IVA y redondeo). El PIN se deriva con `scrypt` y sal aleatoria; nunca se persiste en texto plano ni se expone al renderer. Añadir estas claves no requiere alterar el esquema tabular.
 
 ## Migraciones y datos de desarrollo
 

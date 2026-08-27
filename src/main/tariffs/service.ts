@@ -4,7 +4,11 @@ import type { RatePlan, TariffConfiguration } from '@shared/contracts'
 import {
   calculateChargeForMinutes,
   DEFAULT_TARIFF_SETTINGS,
+  graceFromHourSchema,
   graceMinutesSchema,
+  plenaHoursSchema,
+  PLENA_THRESHOLD_MESSAGE,
+  plenaThresholdFitsPlena,
   plenaThresholdSchema,
   ROUNDING_STEPS_COP,
   TARIFF_CURRENCY,
@@ -24,10 +28,12 @@ import { OperationError } from '@main/ipc/errors'
 const SETTING_KEYS = {
   billingUnit: 'tariff.billingUnit',
   graceMinutes: 'tariff.graceMinutes',
+  graceFromHour: 'tariff.graceFromHour',
   taxEnabled: 'tariff.taxEnabled',
   taxPercent: 'tariff.taxPercent',
   taxIncludedInPrice: 'tariff.taxIncludedInPrice',
   plenaThresholdHours: 'tariff.plenaThresholdHours',
+  plenaHours: 'tariff.plenaHours',
   roundingStepCop: 'tariff.roundingStepCop',
 } as const
 
@@ -78,6 +84,14 @@ export class TariffService {
         ),
         DEFAULT_TARIFF_SETTINGS.graceMinutes,
       ),
+      graceFromHour: this.readValid(
+        graceFromHourSchema,
+        this.readInteger(
+          stored.get(SETTING_KEYS.graceFromHour),
+          DEFAULT_TARIFF_SETTINGS.graceFromHour,
+        ),
+        DEFAULT_TARIFF_SETTINGS.graceFromHour,
+      ),
       currency: TARIFF_CURRENCY,
       taxEnabled: this.readBoolean(
         stored.get(SETTING_KEYS.taxEnabled),
@@ -92,14 +106,7 @@ export class TariffService {
         stored.get(SETTING_KEYS.taxIncludedInPrice),
         DEFAULT_TARIFF_SETTINGS.taxIncludedInPrice,
       ),
-      plenaThresholdHours: this.readValid(
-        plenaThresholdSchema,
-        this.readInteger(
-          stored.get(SETTING_KEYS.plenaThresholdHours),
-          DEFAULT_TARIFF_SETTINGS.plenaThresholdHours,
-        ),
-        DEFAULT_TARIFF_SETTINGS.plenaThresholdHours,
-      ),
+      ...this.readPlena(stored),
       roundingStepCop: this.asRoundingStep(
         this.readInteger(
           stored.get(SETTING_KEYS.roundingStepCop),
@@ -109,27 +116,73 @@ export class TariffService {
     }
   }
 
+  /**
+   * Lee el par de la plena dejándolo siempre coherente.
+   *
+   * El umbral y la duración se guardan por separado, así que una instalación
+   * anterior a la duración configurable puede tener un umbral que ya no cabe
+   * dentro de la plena. En ese caso el umbral cae a su predeterminado en lugar
+   * de bloquear el cobro y el guardado de los demás ajustes.
+   */
+  private readPlena(
+    stored: Map<string, string>,
+  ): Pick<TariffSettings, 'plenaThresholdHours' | 'plenaHours'> {
+    const plenaHours = this.readValid(
+      plenaHoursSchema,
+      this.readInteger(stored.get(SETTING_KEYS.plenaHours), DEFAULT_TARIFF_SETTINGS.plenaHours),
+      DEFAULT_TARIFF_SETTINGS.plenaHours,
+    )
+    const plenaThresholdHours = this.readValid(
+      plenaThresholdSchema,
+      this.readInteger(
+        stored.get(SETTING_KEYS.plenaThresholdHours),
+        DEFAULT_TARIFF_SETTINGS.plenaThresholdHours,
+      ),
+      DEFAULT_TARIFF_SETTINGS.plenaThresholdHours,
+    )
+
+    return plenaThresholdFitsPlena({ plenaThresholdHours, plenaHours })
+      ? { plenaThresholdHours, plenaHours }
+      : {
+          plenaThresholdHours: Math.min(
+            DEFAULT_TARIFF_SETTINGS.plenaThresholdHours,
+            plenaHours - 1,
+          ),
+          plenaHours,
+        }
+  }
+
   updateSettings(input: UpdateTariffSettingsInput): TariffConfiguration {
     const current = this.getSettings()
     const next: TariffSettings = {
       billingUnit: input.billingUnit ?? current.billingUnit,
       graceMinutes: input.graceMinutes ?? current.graceMinutes,
+      graceFromHour: input.graceFromHour ?? current.graceFromHour,
       currency: TARIFF_CURRENCY,
       taxEnabled: input.taxEnabled ?? current.taxEnabled,
       taxPercent: input.taxPercent ?? current.taxPercent,
       taxIncludedInPrice: input.taxIncludedInPrice ?? current.taxIncludedInPrice,
       plenaThresholdHours: input.plenaThresholdHours ?? current.plenaThresholdHours,
+      plenaHours: input.plenaHours ?? current.plenaHours,
       roundingStepCop: this.asRoundingStep(input.roundingStepCop ?? current.roundingStepCop),
+    }
+
+    // La regla cruza dos campos que se pueden guardar por separado, así que se
+    // comprueba sobre el resultado combinado y no sobre lo que llegó.
+    if (!plenaThresholdFitsPlena(next)) {
+      throw new OperationError('PLENA_THRESHOLD_INVALID', PLENA_THRESHOLD_MESSAGE)
     }
 
     const now = new Date().toISOString()
     this.sqlite.transaction(() => {
       this.upsertSetting(SETTING_KEYS.billingUnit, next.billingUnit, now)
       this.upsertSetting(SETTING_KEYS.graceMinutes, String(next.graceMinutes), now)
+      this.upsertSetting(SETTING_KEYS.graceFromHour, String(next.graceFromHour), now)
       this.upsertSetting(SETTING_KEYS.taxEnabled, String(next.taxEnabled), now)
       this.upsertSetting(SETTING_KEYS.taxPercent, String(next.taxPercent), now)
       this.upsertSetting(SETTING_KEYS.taxIncludedInPrice, String(next.taxIncludedInPrice), now)
       this.upsertSetting(SETTING_KEYS.plenaThresholdHours, String(next.plenaThresholdHours), now)
+      this.upsertSetting(SETTING_KEYS.plenaHours, String(next.plenaHours), now)
       this.upsertSetting(SETTING_KEYS.roundingStepCop, String(next.roundingStepCop), now)
 
       if (next.billingUnit !== current.billingUnit) {
@@ -144,10 +197,12 @@ export class TariffService {
       this.writeAudit('tariff.settings_updated', 'tariff', null, now, {
         billingUnit: next.billingUnit,
         graceMinutes: next.graceMinutes,
+        graceFromHour: next.graceFromHour,
         taxEnabled: next.taxEnabled,
         taxPercent: next.taxPercent,
         taxIncludedInPrice: next.taxIncludedInPrice,
         plenaThresholdHours: next.plenaThresholdHours,
+        plenaHours: next.plenaHours,
         roundingStepCop: next.roundingStepCop,
       })
     })()

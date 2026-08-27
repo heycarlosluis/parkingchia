@@ -121,6 +121,7 @@ type RatePlanDialogProps = {
   billingUnit: TariffBillingUnit
   graceMinutes: number
   plenaThresholdHours: number
+  plenaHours: number
   error: string | null
   onOpenChange: (open: boolean) => void
   onSubmit: (draft: RatePlanDraft) => Promise<boolean>
@@ -132,6 +133,7 @@ export function RatePlanDialog({
   billingUnit,
   graceMinutes,
   plenaThresholdHours,
+  plenaHours,
   error,
   onOpenChange,
   onSubmit,
@@ -266,7 +268,7 @@ export function RatePlanDialog({
                   />
                 )}
               />
-              <FieldLabel htmlFor="plan-use-plena">Cobrar plena (día completo)</FieldLabel>
+              <FieldLabel htmlFor="plan-use-plena">Cobrar plena</FieldLabel>
             </Field>
 
             {billingUnit === 'hour' ? null : (
@@ -291,7 +293,7 @@ export function RatePlanDialog({
                 />
                 <FieldDescription>
                   {billingUnit === 'hour'
-                    ? `Se cobra al llegar al umbral de ${plenaThresholdHours} horas y cubre el día completo.`
+                    ? `Se cobra al superar las ${plenaThresholdHours} horas sueltas y cubre hasta ${plenaHours} horas.`
                     : 'Se cobrará al llegar al umbral en horas, cuando la unidad de cobro vuelva a ser por hora.'}
                 </FieldDescription>
                 <FieldError errors={[formState.errors.plenaCop]} />

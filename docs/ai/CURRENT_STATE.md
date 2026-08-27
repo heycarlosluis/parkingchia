@@ -1,6 +1,6 @@
 # Estado actual del proyecto
 
-Última actualización: **2026-08-21**.
+Última actualización: **2026-08-26**.
 
 Este archivo describe el último corte conocido, no sustituye la verificación de `git status`, `package.json`, GitHub Actions ni el comportamiento ejecutable.
 
@@ -26,14 +26,15 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 - SQLite local con migraciones Drizzle, WAL, claves foráneas y estado visible en UI.
 - Esquema inicial de diez entidades con índices, relaciones y restricciones.
 - Seed explícito de desarrollo con dos tarifas, un vehículo y una sesión activa.
-- Módulo de tarifas completo: configuración de cobro persistida (unidad por hora o por minuto, tolerancia sobre la fracción, moneda COP, IVA activable con porcentaje y modo, redondeo del total), administración de tarifas por tipo de vehículo con precio, cobro mínimo, tope por día iniciado y gracia propia opcional, y simulador de cobro contra la configuración guardada.
+- Módulo de tarifas completo: configuración de cobro persistida (unidad por hora o por minuto, tolerancia sobre la fracción, moneda COP, IVA activable con porcentaje y modo, redondeo del total), administración de tarifas por tipo de vehículo con precio, cobro mínimo, plena y gracia propia opcional, y simulador de cobro contra la configuración guardada.
 - Motor de liquidación puro y testeado en `src/shared/tariff.ts`, con desglose de base, subtotal, IVA, redondeo y total en enteros COP.
-- Tolerancia sobre la fracción: se cobran las horas cumplidas y la fracción final solo si supera la gracia, que se vuelve a aplicar en cada salida. El desglose informa los minutos perdonados.
-- Plena: precio del día completo por tarifa y umbral de horas en la configuración general. Cada 24 horas son una plena y el excedente vuelve a cobrarse por hora hasta alcanzar de nuevo el umbral.
+- Tolerancia sobre la fracción: se cobran las horas cumplidas y la fracción final solo si supera la gracia, que se vuelve a aplicar en cada salida. El desglose informa los minutos perdonados. La configuración general define desde qué hora empieza a perdonar: con el valor por defecto `1` la primera hora se cobra completa desde el minuto uno y con `0` la tolerancia también libera el primer tramo.
+- Plena: precio por tarifa, y umbral de horas sueltas y duración de la plena en la configuración general. El tiempo avanza en ciclos de la duración configurada: dentro de cada ciclo se cobra por hora hasta el umbral, superarlo congela el tramo en el precio de la plena, y pasada la duración se retoma el cobro por hora hasta volver a superar el umbral.
 - Historial de salidas con filtro por matrícula y rango de fechas, totales del filtro y reimpresión de cualquier recibo desde su snapshot.
 - Módulo de parqueo completo: registro de ingreso para automóviles, motocicletas, bicicletas y otros, con matrícula normalizada, tarifa sugerida por tipo de vehículo, nota opcional y tiquete de ingreso que incluye el costo por hora/minuto.
 - Reimpresión del tiquete de ingreso desde la confirmación del registro y desde cada fila de Parqueo activo, únicamente mientras la sesión sigue activa.
 - Parqueo activo con búsqueda por matrícula, permanencia y estimado que se refrescan en pantalla, y anulación de un ingreso con motivo obligatorio y auditoría.
+- Permanencia y fechas legibles en todas partes: la permanencia se muestra completa (días, horas y minutos) y la fecha y hora de ingreso aparece en Parqueo activo, en el Historial, en el diálogo de salida y en los comprobantes impresos, con un único formato local `formatDateTime`. El tipo de vehículo se selecciona con cajas de radio en lugar de un menú desplegable.
 - Salida transaccional: cotización contra el proceso principal, medio de pago, efectivo recibido con cálculo de cambio, pago y recibo consecutivo con snapshot inmutable, cierre de sesión e impresión del recibo con reimpresión disponible.
 - El recibo de salida deja constancia del empleado del turno y de la nota de la salida, y todo duplicado sale marcado como «REIMPRESIÓN» con su fecha y hora.
 - Salida dentro del tiempo de gracia que cierra la sesión sin cobro ni recibo.
@@ -68,7 +69,7 @@ npm ci
 npm run format:check
 npm run typecheck
 npm run lint
-npm run test:run       25 archivos, 196 pruebas
+npm run test:run       25 archivos, 213 pruebas
 npm run db:generate
 npm run db:migrate
 npm run db:seed
@@ -103,8 +104,8 @@ La política de cobro está implementada y documentada en D-011. Falta confirmar
 
 ## Trabajo activo al cerrar este corte
 
-El tiquete de ingreso muestra el costo por hora/minuto de la tarifa y se reimprime desde la confirmación del registro y desde cada fila de Parqueo activo (canal IPC `parking:reprint-entry`). El `EntryRegistration` expone `ratePlanAmountCop` y `billingUnit`. La reimpresión solo alcanza sesiones activas: reemitir el tiquete de una salida ya registrada o de un ingreso anulado producía un comprobante válido de un vehículo ausente. El recibo de salida agrega el empleado del turno y la nota, con `ReceiptSnapshot` en versión 3 y los recibos anteriores normalizados sin atribución. Todo duplicado, de ingreso o de salida, sale marcado como «REIMPRESIÓN» con su fecha y hora (D-023).
+La política de cobro sumó dos ajustes generales. La tolerancia arranca en una hora configurable (`tariff.graceFromHour`, D-025): con el valor por defecto `1` la primera hora se cobra completa desde el minuto uno y la gracia solo perdona la fracción a partir de esa hora, mientras que con `0` se recupera el comportamiento anterior de perdonar el primer tramo. La plena pasó de un ciclo fijo de 24 horas a un ciclo configurable (`tariff.plenaHours` y `tariff.plenaThresholdHours`, D-026): dentro de cada ciclo se cobra por hora hasta superar el umbral, superarlo congela el tramo en el precio de la plena y pasada la duración se retoma el cobro por hora. El umbral debe ser menor que la duración; la regla se valida sobre el resultado combinado y se rechaza con `PLENA_THRESHOLD_INVALID`.
 
-Además se auditó el sistema de tarifas completo: el módulo dejó de administrar y simular planes de Mensualidades, la lectura de ajustes cae por campo en lugar de revertir toda la configuración ante un valor corrupto, y un reloj anterior a la hora de ingreso produce un mensaje accionable en vez de un fallo genérico o una pantalla caída (D-024). El motor de liquidación y sus ejemplos de D-016 se verificaron sin cambios.
+La presentación del tiempo y de las fechas quedó unificada: `describeElapsed` conserva los minutos al superar un día, de modo que la permanencia se muestra completa en Parqueo activo, el diálogo de salida, el Historial y los comprobantes impresos; y `formatDateTime` muestra fecha y hora locales completas, de modo que la fecha de entrada aparece en Parqueo activo, en el diálogo de salida y en la columna «Ingreso» del Historial. El tipo de vehículo se selecciona con cajas de radio (`RadioCards`) en lugar de un menú desplegable.
 
-Los cambios pasan format, typecheck, lint, 196 pruebas y build. `npm run dev` sí lanza Electron en este equipo: el fallo anterior lo causaba la variable `ELECTRON_RUN_AS_NODE=1` presente en el entorno de la terminal, no una incompatibilidad de Electron 43 con `@electron-toolkit/utils`. Si vuelve a aparecer, arranca con `env -u ELECTRON_RUN_AS_NODE npm run dev`. La verificación visual de estos cambios queda a cargo del propietario. No hay migración, refactor ni release en curso documentado. Cualquier asistente debe comprobar el worktree y los procesos locales antes de asumir que sigue así.
+Los cambios pasan format, typecheck, lint, 213 pruebas y build. `npm run dev` sí lanza Electron en este equipo: el fallo anterior lo causaba la variable `ELECTRON_RUN_AS_NODE=1` presente en el entorno de la terminal, no una incompatibilidad de Electron 43 con `@electron-toolkit/utils`. Si vuelve a aparecer, arranca con `env -u ELECTRON_RUN_AS_NODE npm run dev`. La verificación visual de estos cambios queda a cargo del propietario. No hay migración de esquema en curso: los dos ajustes nuevos viven en `app_settings` y las instalaciones existentes toman los valores por defecto.

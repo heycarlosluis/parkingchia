@@ -13,10 +13,13 @@ export const TARIFF_CURRENCY_LABEL = 'Peso colombiano (COP)'
 
 export const MINUTES_PER_HOUR = 60
 export const MINUTES_PER_DAY = 1440
-export const HOURS_PER_DAY = 24
 export const MIN_PLENA_THRESHOLD_HOURS = 1
 export const MAX_PLENA_THRESHOLD_HOURS = 24
+export const MIN_PLENA_HOURS = 2
+export const MAX_PLENA_HOURS = 24
 export const MAX_GRACE_MINUTES = 240
+export const MIN_GRACE_FROM_HOUR = 0
+export const MAX_GRACE_FROM_HOUR = 24
 export const MAX_AMOUNT_COP = 10_000_000
 export const MAX_TAX_PERCENT = 100
 
@@ -40,18 +43,38 @@ export type TariffSettings = {
    * fracción, así que actúa como umbral inicial: hasta la gracia no se cobra.
    */
   graceMinutes: number
+  /**
+   * Hora cobrable a partir de la cual la tolerancia empieza a perdonar.
+   *
+   * Con `1`, la primera hora se cobra completa desde el minuto cero y la
+   * gracia solo entra al superarla: con 5 minutos de tolerancia, salir a la
+   * hora y 5 cobra una hora y a la hora y 6 cobra dos. Con `0` la tolerancia
+   * también perdona el primer tramo, así que salir dentro de la gracia no
+   * genera cobro. Cobrando por minuto la gracia solo funciona como umbral
+   * inicial gratuito cuando este valor es `0`.
+   */
+  graceFromHour: number
   currency: TariffCurrency
   taxEnabled: boolean
   taxPercent: number
   /** `true` cuando el precio de la tarifa ya incluye el IVA. */
   taxIncludedInPrice: boolean
   /**
-   * Horas cobrables a partir de las cuales el tramo se convierte en una plena.
+   * Máximo de horas sueltas que se cobran antes de pasar a la plena.
    *
-   * Con 10 horas, alcanzar la décima hora deja de sumar horas sueltas y cobra
-   * el precio de la plena de la tarifa. Solo aplica cobrando por hora.
+   * Con 5 horas y la hora a 3.500, cinco horas cumplidas cobran 17.500; la
+   * primera hora que las supera cambia el cobro por la plena de la tarifa.
+   * Solo aplica cobrando por hora.
    */
   plenaThresholdHours: number
+  /**
+   * Horas que cubre una plena antes de volver a cobrar por hora.
+   *
+   * Con 12 horas, la plena vale hasta esa marca; la primera hora que la supera
+   * cobra la plena más las horas sueltas del ciclo siguiente, que vuelve a
+   * convertirse en plena al superar el umbral. Debe ser mayor que el umbral.
+   */
+  plenaHours: number
   /** Múltiplo al que se redondea hacia arriba el total a cobrar. `0` desactiva el redondeo. */
   roundingStepCop: RoundingStepCop
 }
@@ -59,11 +82,13 @@ export type TariffSettings = {
 export const DEFAULT_TARIFF_SETTINGS: TariffSettings = {
   billingUnit: 'hour',
   graceMinutes: 15,
+  graceFromHour: 1,
   currency: TARIFF_CURRENCY,
   taxEnabled: false,
   taxPercent: 19,
   taxIncludedInPrice: true,
-  plenaThresholdHours: 10,
+  plenaThresholdHours: 5,
+  plenaHours: 12,
   roundingStepCop: 100,
 }
 
@@ -81,6 +106,8 @@ export type ParkingCharge = {
   billingUnit: TariffBillingUnit
   totalMinutes: number
   graceMinutes: number
+  /** Hora cobrable desde la que la tolerancia estuvo activa. */
+  graceFromHour: number
   /** `true` cuando la permanencia no generó ningún cobro. */
   withinGrace: boolean
   /** Minutos de la fracción final que la tolerancia dejó sin cobrar. */
@@ -150,26 +177,30 @@ export type PlenaSplit = {
 /**
  * Reparte las unidades cobrables entre plenas y unidades sueltas.
  *
- * Cada 24 horas cobrables son una plena. El resto se convierte en otra plena
- * cuando alcanza el umbral configurado; si no lo alcanza, se cobra por hora.
+ * El tiempo avanza en ciclos de `plenaHours`. Dentro de cada ciclo se cobran
+ * horas sueltas mientras no se supere el umbral, y la primera hora que lo
+ * supera congela el tramo en el precio de la plena hasta cerrar el ciclo.
+ * Con umbral de 5 y plena de 12: cinco horas cobran cinco horas, seis horas ya
+ * cobran una plena, doce horas siguen cobrando una plena, trece cobran una
+ * plena más una hora y dieciocho cobran dos plenas.
  * Cobrando por minuto no se aplican plenas.
  */
 export function splitIntoPlenas(
   billedUnits: number,
   billingUnit: TariffBillingUnit,
-  plena: { thresholdHours: number; priceCop: number } | null,
+  plena: { thresholdHours: number; plenaHours: number } | null,
 ): PlenaSplit {
   if (plena === null || billingUnit !== 'hour') {
     return { plenaCount: 0, chargedUnits: billedUnits }
   }
 
-  const fullDays = Math.floor(billedUnits / HOURS_PER_DAY)
-  const restHours = billedUnits % HOURS_PER_DAY
-  const restReachesPlena = restHours >= plena.thresholdHours
+  const fullPlenas = Math.floor(billedUnits / plena.plenaHours)
+  const restHours = billedUnits % plena.plenaHours
+  const restExceedsThreshold = restHours > plena.thresholdHours
 
   return {
-    plenaCount: fullDays + (restReachesPlena ? 1 : 0),
-    chargedUnits: restReachesPlena ? 0 : restHours,
+    plenaCount: fullPlenas + (restExceedsThreshold ? 1 : 0),
+    chargedUnits: restExceedsThreshold ? 0 : restHours,
   }
 }
 
@@ -191,16 +222,18 @@ export type BillableUnits = {
  * Reparte la permanencia en unidades cobrables aplicando la tolerancia.
  *
  * Por hora: se cobran las horas completas y la fracción final solo cuando
- * supera la gracia. Por minuto no hay fracción posible, así que la gracia
- * funciona como umbral inicial.
+ * supera la gracia, y la gracia únicamente está activa desde la hora indicada
+ * en `graceFromHour`. Por minuto no hay fracción posible, así que la gracia
+ * funciona como umbral inicial y solo existe con el umbral en la hora cero.
  */
 export function calculateBillableUnits(
   totalMinutes: number,
   billingUnit: TariffBillingUnit,
   graceMinutes: number,
+  graceFromHour: number,
 ): BillableUnits {
   if (billingUnit === 'minute') {
-    const free = totalMinutes <= graceMinutes
+    const free = graceFromHour === 0 && totalMinutes <= graceMinutes
     return {
       billedUnits: free ? 0 : totalMinutes,
       forgivenMinutes: free ? totalMinutes : 0,
@@ -209,7 +242,11 @@ export function calculateBillableUnits(
 
   const completeUnits = Math.floor(totalMinutes / MINUTES_PER_HOUR)
   const remainder = totalMinutes % MINUTES_PER_HOUR
-  const chargeRemainder = remainder > graceMinutes
+  // La tolerancia solo perdona la fracción cuando ya se consumieron las horas
+  // que la habilitan: con el umbral en 1, la primera hora se cobra completa
+  // desde el minuto uno y la gracia recién aparece al pasar de esa hora.
+  const graceActive = completeUnits >= graceFromHour
+  const chargeRemainder = remainder > 0 && !(graceActive && remainder <= graceMinutes)
   return {
     billedUnits: completeUnits + (chargeRemainder ? 1 : 0),
     forgivenMinutes: chargeRemainder ? 0 : remainder,
@@ -238,6 +275,7 @@ export function calculateChargeForMinutes(
     totalMinutes,
     settings.billingUnit,
     graceMinutes,
+    settings.graceFromHour,
   )
 
   if (billedUnits === 0) {
@@ -246,6 +284,7 @@ export function calculateChargeForMinutes(
       billingUnit: settings.billingUnit,
       totalMinutes,
       graceMinutes,
+      graceFromHour: settings.graceFromHour,
       withinGrace: true,
       forgivenMinutes,
       billedUnits: 0,
@@ -267,7 +306,7 @@ export function calculateChargeForMinutes(
     settings.billingUnit,
     plan.plenaCop === null
       ? null
-      : { thresholdHours: settings.plenaThresholdHours, priceCop: plan.plenaCop },
+      : { thresholdHours: settings.plenaThresholdHours, plenaHours: settings.plenaHours },
   )
   const plenaUnitCop = plenaCount > 0 ? (plan.plenaCop ?? 0) : 0
 
@@ -291,6 +330,7 @@ export function calculateChargeForMinutes(
     billingUnit: settings.billingUnit,
     totalMinutes,
     graceMinutes,
+    graceFromHour: settings.graceFromHour,
     withinGrace: false,
     forgivenMinutes,
     billedUnits,
@@ -338,6 +378,15 @@ export const graceMinutesSchema = z
   .min(0, 'El tiempo de gracia no puede ser negativo')
   .max(MAX_GRACE_MINUTES, `El tiempo de gracia no puede superar ${MAX_GRACE_MINUTES} minutos`)
 
+export const graceFromHourSchema = z
+  .number()
+  .int('La hora desde la que aplica la tolerancia debe ser un número entero')
+  .min(MIN_GRACE_FROM_HOUR, 'La hora desde la que aplica la tolerancia no puede ser negativa')
+  .max(
+    MAX_GRACE_FROM_HOUR,
+    `La tolerancia no puede empezar después de la hora ${MAX_GRACE_FROM_HOUR}`,
+  )
+
 export const taxPercentSchema = z
   .number()
   .min(0, 'El IVA no puede ser negativo')
@@ -355,6 +404,12 @@ export const plenaThresholdSchema = z
   .min(MIN_PLENA_THRESHOLD_HOURS, 'El umbral de la plena debe ser al menos de una hora')
   .max(MAX_PLENA_THRESHOLD_HOURS, 'El umbral de la plena no puede superar 24 horas')
 
+export const plenaHoursSchema = z
+  .number()
+  .int('La duración de la plena debe ser un número entero de horas')
+  .min(MIN_PLENA_HOURS, 'La duración de la plena debe ser al menos de dos horas')
+  .max(MAX_PLENA_HOURS, `La duración de la plena no puede superar ${MAX_PLENA_HOURS} horas`)
+
 export const roundingStepSchema = z
   .number()
   .int()
@@ -363,14 +418,32 @@ export const roundingStepSchema = z
     'Selecciona un redondeo permitido',
   )
 
+/**
+ * Regla cruzada entre el umbral y la duración de la plena.
+ *
+ * Vive aparte porque el ajuste se puede guardar campo por campo: la validación
+ * necesita el resultado combinado, no el fragmento que llega en la petición.
+ */
+export const PLENA_THRESHOLD_MESSAGE =
+  'El umbral de la plena debe ser menor que la duración de la plena'
+
+export function plenaThresholdFitsPlena(value: {
+  plenaThresholdHours: number
+  plenaHours: number
+}): boolean {
+  return value.plenaThresholdHours < value.plenaHours
+}
+
 export const tariffSettingsInputSchema = z
   .object({
     billingUnit: tariffBillingUnitSchema,
     graceMinutes: graceMinutesSchema,
+    graceFromHour: graceFromHourSchema,
     taxEnabled: z.boolean(),
     taxPercent: taxPercentSchema,
     taxIncludedInPrice: z.boolean(),
     plenaThresholdHours: plenaThresholdSchema,
+    plenaHours: plenaHoursSchema,
     roundingStepCop: roundingStepSchema,
   })
   .strict()

@@ -42,6 +42,21 @@ describe('Registrar ingreso', () => {
     })
   })
 
+  it('selecciona el tipo de vehículo con cajas en lugar de un selector', async () => {
+    renderEntries()
+
+    await screen.findByLabelText('Matrícula')
+    await userEvent.click(screen.getByRole('radio', { name: 'Motocicleta' }))
+    await userEvent.type(screen.getByLabelText('Matrícula'), 'xyz 99')
+    await userEvent.click(screen.getByRole('button', { name: /Registrar ingreso/ }))
+
+    await waitFor(() => {
+      expect(window.parkingAPI.registerEntry).toHaveBeenCalledWith(
+        expect.objectContaining({ vehicleType: 'motorcycle' }),
+      )
+    })
+  })
+
   it('ofrece reimprimir el tiquete sin desplazar a la acción principal', async () => {
     renderEntries()
 

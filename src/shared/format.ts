@@ -41,3 +41,19 @@ export function elapsedMinutesOrZero(startedAtUtc: string, endedAtUtc: string): 
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 0
   return Math.floor((end - start) / 60_000)
 }
+
+/**
+ * Fecha y hora local exactas de una marca UTC, para listados y comprobantes.
+ *
+ * Combina día, mes, año, hora y minuto en una sola cadena, de modo que un
+ * ingreso o una salida queden fechados sin ambigüedad de calendario.
+ */
+export function formatDateTime(isoUtc: string): string {
+  return new Date(isoUtc).toLocaleString('es-CO', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}

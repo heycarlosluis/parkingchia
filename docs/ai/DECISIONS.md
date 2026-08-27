@@ -128,6 +128,8 @@ Estados posibles: `propuesta`, `aceptada`, `reemplazada` o `descartada`.
 
 ## D-016 — La plena reemplaza el tope diario
 
+- Nota: el ciclo de 24 horas y el borde descritos aquí fueron reemplazados por D-026. El resto sigue vigente.
+
 - Fecha: 2026-08-19
 - Estado: aceptada
 - Reemplaza: el tope por día iniciado introducido en D-011
@@ -198,6 +200,24 @@ Estados posibles: `propuesta`, `aceptada`, `reemplazada` o `descartada`.
 - Decisión: el módulo de Tarifas rechaza con `RATE_PLAN_NOT_APPLICABLE` cualquier plan cuya unidad no sea `minute` ni `hour`, tanto al editar como al eliminar y al simular, y `registerEntry` rechaza abrir una sesión con uno de esos planes. La lectura de `app_settings` valida cada ajuste por separado: un valor corrupto cae a su predeterminado sin arrastrar a los demás. Si la hora del equipo queda antes de la del ingreso, el cobro se rechaza con `CLOCK_BEFORE_ENTRY` y un mensaje accionable, mientras que las pantallas informativas muestran cero en lugar de caerse.
 - Motivo: `listPlans` ya ocultaba los planes de Mensualidades, pero eliminar y simular no lo comprobaban: se podía borrar desde Tarifas un plan mensual sin suscripciones y simular uno de 150.000 al mes como si fueran 150.000 por hora, que devolvía 300.000 por dos horas. La lectura de ajustes hacía `safeParse` del conjunto completo, así que una sola clave inválida revertía en silencio la unidad de cobro y el redondeo con los que se estaba cobrando. Y un reloj retrasado hacía que `elapsedMinutes` lanzara un `RangeError`, que llegaba al operador como un fallo genérico sin explicación y bloqueaba la salida.
 - Consecuencia: Mensualidades sigue siendo el único módulo que administra los planes `month`, igual que ya lo hacía en sus consultas. Las sesiones antiguas que referencien un plan que no sea por tiempo se pueden seguir cerrando, porque la guardia está en el ingreso y no en la liquidación. Un ajuste inválido deja de ser silencioso solo en su propio campo: si se necesita avisarlo al operador, debe añadirse aparte. El cobro nunca liquida una permanencia negativa como cero.
+
+## D-025 — La tolerancia arranca en la hora que se configure
+
+- Fecha: 2026-08-26
+- Estado: aceptada
+- Complementa: D-015
+- Decisión: la configuración general suma `tariff.graceFromHour`, la hora cobrable a partir de la cual la tolerancia empieza a perdonar la fracción. Con el valor por defecto `1`, la primera hora se cobra completa desde el minuto uno y la gracia solo entra al superarla: con 5 minutos de tolerancia, salir a los 4 minutos cobra una hora, salir a la hora y 5 cobra una hora y salir a la hora y 6 cobra dos. Con `0` se recupera exactamente el comportamiento de D-015, en el que la tolerancia también perdona el primer tramo y la salida temprana no genera cobro ni recibo. Cobrando por minuto la gracia sigue siendo un umbral inicial gratuito, que solo existe con el umbral en `0`. El ajuste es general, no por tarifa.
+- Motivo: el parqueadero cobra la hora desde que el vehículo entra; la tolerancia existe para que quien alcanza el límite de una hora tenga margen para pagar y salir, no para regalar las estadías cortas. Con la regla anterior, cualquier salida dentro de la gracia se iba sin pagar.
+- Consecuencia: `ParkingCharge` expone `graceFromHour` junto a `graceMinutes`, así que el desglose y el recibo pueden explicar la política vigente. Una permanencia de cero minutos cumplidos sigue sin generar cobro, que es el caso del ingreso registrado por error. El ajuste vive en `app_settings` y no necesita migración; las instalaciones existentes que no lo tengan guardado toman el valor por defecto `1`, de modo que la actualización cambia el cobro de las salidas tempranas.
+
+## D-026 — La plena es un ciclo configurable con bloqueo de costo
+
+- Fecha: 2026-08-26
+- Estado: aceptada
+- Reemplaza: el ciclo de 24 horas y el borde del umbral de D-016
+- Decisión: la configuración general suma `tariff.plenaHours`, la duración que cubre una plena, junto al umbral `tariff.plenaThresholdHours`, que pasa a leerse como el máximo de horas sueltas que se cobran antes de la plena. El tiempo cobrable avanza en ciclos de `plenaHours`: dentro de cada ciclo se cobran horas sueltas mientras no se supere el umbral, y la primera hora que lo supera congela el tramo en el precio de la plena hasta cerrar el ciclo. El borde deja de ser «alcanzar» y pasa a ser «superar». Con hora a 3.500, plena a 20.000, umbral de 5 y plena de 12: 5 horas cobran 17.500, 5 h 06 con 5 minutos de tolerancia cobran 20.000, 12 horas cobran 20.000, 12 h 06 cobran 23.500, 17 horas cobran 37.500 y 17 h 06 cobran 40.000. El umbral debe ser menor que la duración de la plena; la regla cruza dos ajustes que se guardan por separado, así que se valida sobre el resultado combinado en `TariffService.updateSettings` y se rechaza con `PLENA_THRESHOLD_INVALID`.
+- Motivo: es la regla real del parqueadero. El ciclo de 24 horas no era configurable, de modo que una plena de 12 horas no se podía expresar, y el borde en «alcanzar» cobraba la plena en la hora del umbral en lugar de dejar que esa hora todavía se cobrara suelta.
+- Consecuencia: la tolerancia sigue resolviéndose antes del reparto, así que el margen de la plena y el del umbral salen de la misma regla de D-015 y D-025 sin lógica aparte. `splitIntoPlenas` recibe el par umbral/duración y ya no conoce el día. Al leer los ajustes, un umbral guardado que no quepa en la plena vigente cae a su predeterminado en lugar de bloquear el guardado de los demás ajustes, que es el caso de las instalaciones anteriores a esta decisión. La duración es general, no por tarifa: cada tarifa sigue aportando solo el precio de su plena.
 
 ## Plantilla para una nueva decisión
 

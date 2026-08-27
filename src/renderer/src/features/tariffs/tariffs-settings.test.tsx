@@ -21,6 +21,7 @@ describe('Tarifas en Configuración', () => {
 
     expect(await screen.findByLabelText('Unidad de cobro')).toHaveTextContent('Por hora')
     expect(screen.getByLabelText('Tiempo de gracia (tolerancia)')).toHaveValue(15)
+    expect(screen.getByLabelText('La tolerancia aplica desde la hora')).toHaveValue(1)
     expect(screen.getByLabelText('Moneda')).toHaveValue('Peso colombiano (COP)')
 
     const taxCheckbox = screen.getByRole('checkbox', { name: 'Cobrar IVA' })

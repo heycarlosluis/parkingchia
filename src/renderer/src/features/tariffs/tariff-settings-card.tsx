@@ -4,10 +4,18 @@ import { useEffect, useState } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { z } from 'zod'
 import {
+  graceFromHourSchema,
   graceMinutesSchema,
+  MAX_GRACE_FROM_HOUR,
   MAX_GRACE_MINUTES,
+  MIN_GRACE_FROM_HOUR,
+  MAX_PLENA_HOURS,
   MAX_PLENA_THRESHOLD_HOURS,
+  MIN_PLENA_HOURS,
   MIN_PLENA_THRESHOLD_HOURS,
+  PLENA_THRESHOLD_MESSAGE,
+  plenaHoursSchema,
+  plenaThresholdFitsPlena,
   plenaThresholdSchema,
   ROUNDING_STEPS_COP,
   roundingStepSchema,
@@ -49,17 +57,26 @@ import {
 } from '@/components/ui/select'
 import { useTariffStore } from '@/store/tariff-store'
 
-const settingsFormSchema = z.object({
-  billingUnit: tariffBillingUnitSchema,
-  graceMinutes: z.number({ error: 'Ingresa los minutos de gracia' }).pipe(graceMinutesSchema),
-  taxEnabled: z.boolean(),
-  taxPercent: z.number({ error: 'Ingresa el porcentaje de IVA' }).pipe(taxPercentSchema),
-  taxIncludedInPrice: z.boolean(),
-  plenaThresholdHours: z
-    .number({ error: 'Ingresa el umbral de la plena' })
-    .pipe(plenaThresholdSchema),
-  roundingStepCop: z.number({ error: 'Selecciona un redondeo' }).pipe(roundingStepSchema),
-})
+const settingsFormSchema = z
+  .object({
+    billingUnit: tariffBillingUnitSchema,
+    graceMinutes: z.number({ error: 'Ingresa los minutos de gracia' }).pipe(graceMinutesSchema),
+    graceFromHour: z
+      .number({ error: 'Ingresa desde qué hora aplica la tolerancia' })
+      .pipe(graceFromHourSchema),
+    taxEnabled: z.boolean(),
+    taxPercent: z.number({ error: 'Ingresa el porcentaje de IVA' }).pipe(taxPercentSchema),
+    taxIncludedInPrice: z.boolean(),
+    plenaThresholdHours: z
+      .number({ error: 'Ingresa el umbral de la plena' })
+      .pipe(plenaThresholdSchema),
+    plenaHours: z.number({ error: 'Ingresa la duración de la plena' }).pipe(plenaHoursSchema),
+    roundingStepCop: z.number({ error: 'Selecciona un redondeo' }).pipe(roundingStepSchema),
+  })
+  .refine(plenaThresholdFitsPlena, {
+    path: ['plenaThresholdHours'],
+    message: PLENA_THRESHOLD_MESSAGE,
+  })
 
 type SettingsFormInput = z.input<typeof settingsFormSchema>
 type SettingsForm = z.output<typeof settingsFormSchema>
@@ -67,10 +84,12 @@ type SettingsForm = z.output<typeof settingsFormSchema>
 const toForm = (settings: TariffSettings): SettingsFormInput => ({
   billingUnit: settings.billingUnit,
   graceMinutes: settings.graceMinutes,
+  graceFromHour: settings.graceFromHour,
   taxEnabled: settings.taxEnabled,
   taxPercent: settings.taxPercent,
   taxIncludedInPrice: settings.taxIncludedInPrice,
   plenaThresholdHours: settings.plenaThresholdHours,
+  plenaHours: settings.plenaHours,
   roundingStepCop: settings.roundingStepCop,
 })
 
@@ -95,7 +114,9 @@ export function TariffSettingsCard(): React.JSX.Element {
   const taxEnabled = useWatch({ control, name: 'taxEnabled' })
   const billingUnit = useWatch({ control, name: 'billingUnit' })
   const graceMinutes = useWatch({ control, name: 'graceMinutes' })
+  const graceFromHour = useWatch({ control, name: 'graceFromHour' })
   const plenaThresholdHours = useWatch({ control, name: 'plenaThresholdHours' })
+  const plenaHours = useWatch({ control, name: 'plenaHours' })
 
   const persist = async (values: SettingsForm): Promise<void> => {
     const saved = await saveSettings(values)
@@ -171,9 +192,35 @@ export function TariffSettingsCard(): React.JSX.Element {
               <FieldDescription id="tariff-grace-hint">
                 {billingUnit === 'hour'
                   ? `Minutos de tolerancia sobre la fracción. Con ${graceMinutes} min, salir a la hora y ${graceMinutes} cobra una hora; a la hora y ${graceMinutes + 1} cobra dos.`
-                  : `Minutos iniciales sin costo. Al superarlos se cobra toda la permanencia, porque cobrando por minuto no existe una fracción.`}
+                  : graceFromHour === 0
+                    ? `Minutos iniciales sin costo. Al superarlos se cobra toda la permanencia, porque cobrando por minuto no existe una fracción.`
+                    : `Cobrando por minuto la tolerancia solo funciona como minutos iniciales sin costo, así que necesita empezar en la hora 0 para tener efecto.`}
               </FieldDescription>
               <FieldError errors={[formState.errors.graceMinutes]} />
+            </Field>
+
+            <Field data-invalid={Boolean(formState.errors.graceFromHour)}>
+              <FieldLabel htmlFor="tariff-grace-from">
+                La tolerancia aplica desde la hora
+              </FieldLabel>
+              <Input
+                id="tariff-grace-from"
+                className="min-h-11"
+                type="number"
+                inputMode="numeric"
+                min={MIN_GRACE_FROM_HOUR}
+                max={MAX_GRACE_FROM_HOUR}
+                step={1}
+                aria-invalid={Boolean(formState.errors.graceFromHour)}
+                aria-describedby="tariff-grace-from-hint"
+                {...register('graceFromHour', { valueAsNumber: true })}
+              />
+              <FieldDescription id="tariff-grace-from-hint">
+                {graceFromHour === 0
+                  ? `La tolerancia también perdona el primer tramo: salir antes de ${graceMinutes} min no genera cobro ni recibo.`
+                  : `Las primeras ${graceFromHour === 1 ? 'hora se cobra completa' : `${graceFromHour} horas se cobran completas`} desde el minuto uno. La tolerancia empieza a perdonar al pasar de la hora ${graceFromHour}.`}
+              </FieldDescription>
+              <FieldError errors={[formState.errors.graceFromHour]} />
             </Field>
 
             <Field>
@@ -266,10 +313,32 @@ export function TariffSettingsCard(): React.JSX.Element {
               />
               <FieldDescription>
                 {billingUnit === 'hour'
-                  ? `Al llegar a ${plenaThresholdHours} horas cobradas se cobra la plena de la tarifa en lugar de las horas sueltas. Cada 24 horas cuentan como una plena y el excedente vuelve a cobrarse por hora.`
+                  ? `Hasta ${plenaThresholdHours} horas cobradas se cobra por hora. La primera hora que las supera cambia el cobro por la plena de la tarifa.`
                   : 'La plena solo aplica cobrando por hora.'}
               </FieldDescription>
               <FieldError errors={[formState.errors.plenaThresholdHours]} />
+            </Field>
+
+            <Field data-invalid={Boolean(formState.errors.plenaHours)}>
+              <FieldLabel htmlFor="tariff-plena-hours">Duración de la plena</FieldLabel>
+              <Input
+                id="tariff-plena-hours"
+                className="min-h-11"
+                type="number"
+                inputMode="numeric"
+                min={MIN_PLENA_HOURS}
+                max={MAX_PLENA_HOURS}
+                step={1}
+                disabled={billingUnit !== 'hour'}
+                aria-invalid={Boolean(formState.errors.plenaHours)}
+                {...register('plenaHours', { valueAsNumber: true })}
+              />
+              <FieldDescription>
+                {billingUnit === 'hour'
+                  ? `La plena cubre hasta ${plenaHours} horas. Al superarlas vuelve a cobrarse por hora sobre la plena, y esas horas se convierten en otra plena al pasar de ${plenaThresholdHours}.`
+                  : 'La plena solo aplica cobrando por hora.'}
+              </FieldDescription>
+              <FieldError errors={[formState.errors.plenaHours]} />
             </Field>
 
             <Field>

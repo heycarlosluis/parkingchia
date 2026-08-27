@@ -188,6 +188,7 @@ export function RatePlansCard(): React.JSX.Element {
         billingUnit={settings.billingUnit satisfies TariffBillingUnit}
         graceMinutes={settings.graceMinutes}
         plenaThresholdHours={settings.plenaThresholdHours}
+        plenaHours={settings.plenaHours}
         error={dialogOpen ? error : null}
         onOpenChange={setDialogOpen}
         onSubmit={submitPlan}

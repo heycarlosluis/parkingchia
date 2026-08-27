@@ -54,6 +54,8 @@ beforeEach(() => {
   tariffs.updateSettings({
     billingUnit: 'hour',
     graceMinutes: 15,
+    // La suite mide la tolerancia clásica, activa desde el minuto cero.
+    graceFromHour: 0,
     taxEnabled: false,
     roundingStepCop: 0,
   })
@@ -337,6 +339,25 @@ describe('cotización y salida', () => {
       .get() as { total: number }
     expect(payments.total).toBe(0)
     expect(() => parking.findReceiptSnapshot(registration.sessionId)).toThrow(OperationError)
+  })
+
+  it('cobra la primera hora completa cuando la tolerancia arranca en la hora 1', () => {
+    tariffs.updateSettings({ graceFromHour: 1 })
+    const registration = parking.registerEntry(entry())
+    ageSession(registration.sessionId, 5)
+
+    const exit = parking.closeSession({
+      sessionId: registration.sessionId,
+      expectedTotalCop: 5000,
+      method: 'cash',
+      receivedCop: 5000,
+      notes: null,
+    })
+
+    expect(exit.charge.withinGrace).toBe(false)
+    expect(exit.charge.billedUnits).toBe(1)
+    expect(exit.charge.totalCop).toBe(5000)
+    expect(exit.receiptNumber).not.toBeNull()
   })
 
   it('numera los recibos de forma consecutiva', () => {

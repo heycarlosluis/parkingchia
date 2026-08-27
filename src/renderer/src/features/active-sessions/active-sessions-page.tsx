@@ -1,7 +1,7 @@
 import { CarFront, LogOut, Printer, RefreshCw, Search, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import type { ActiveSession, ExitRegistration } from '@shared/contracts'
-import { elapsedMinutesOrZero, formatCurrency } from '@shared/format'
+import { elapsedMinutesOrZero, formatCurrency, formatDateTime } from '@shared/format'
 import { describeElapsed, PAYMENT_METHOD_LABELS } from '@shared/parking'
 import { calculateChargeForMinutes, VEHICLE_TYPE_LABELS } from '@shared/tariff'
 import {
@@ -263,12 +263,7 @@ export function ActiveSessionsPage(): React.JSX.Element {
                           </Badge>
                         )}
                       </td>
-                      <td className="numeric tabular">
-                        {new Date(session.enteredAt).toLocaleTimeString('es-CO', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </td>
+                      <td className="numeric tabular">{formatDateTime(session.enteredAt)}</td>
                       <td className="numeric tabular">{describeElapsed(minutes)}</td>
                       <td className="numeric tabular">
                         {session.monthlyCoverage !== null

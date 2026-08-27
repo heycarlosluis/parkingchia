@@ -1,7 +1,7 @@
 import { History, Printer, RefreshCw, Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { ExitHistory, ExitRecord } from '@shared/contracts'
-import { formatCurrency } from '@shared/format'
+import { formatCurrency, formatDateTime } from '@shared/format'
 import { describeElapsed, MAX_HISTORY_PAGE_SIZE, PAYMENT_METHOD_LABELS } from '@shared/parking'
 import { describeBilledTime, VEHICLE_TYPE_LABELS } from '@shared/tariff'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -14,15 +14,6 @@ import { Input } from '@/components/ui/input'
 import { PageHeading } from '@/components/page-heading'
 
 const EMPTY_HISTORY: ExitHistory = { records: [], totalCount: 0, totalCollectedCop: 0 }
-
-function localTime(isoUtc: string): string {
-  return new Date(isoUtc).toLocaleString('es-CO', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
 
 export function HistoryPage(): React.JSX.Element {
   const [history, setHistory] = useState<ExitHistory>(EMPTY_HISTORY)
@@ -160,6 +151,9 @@ export function HistoryPage(): React.JSX.Element {
                     <th scope="col">Matrícula</th>
                     <th scope="col">Vehículo</th>
                     <th scope="col" className="numeric">
+                      Ingreso
+                    </th>
+                    <th scope="col" className="numeric">
                       Salida
                     </th>
                     <th scope="col" className="numeric">
@@ -182,7 +176,8 @@ export function HistoryPage(): React.JSX.Element {
                         {record.plate}
                       </th>
                       <td>{VEHICLE_TYPE_LABELS[record.vehicleType]}</td>
-                      <td className="numeric tabular">{localTime(record.exitedAt)}</td>
+                      <td className="numeric tabular">{formatDateTime(record.enteredAt)}</td>
+                      <td className="numeric tabular">{formatDateTime(record.exitedAt)}</td>
                       <td className="numeric tabular">{describeElapsed(record.totalMinutes)}</td>
                       <td>
                         {record.status === 'cancelled'

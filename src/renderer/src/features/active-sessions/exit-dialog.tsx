@@ -1,7 +1,7 @@
 import { LoaderCircle, LogOut } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { ActiveSession, ExitRegistration, SessionQuote } from '@shared/contracts'
-import { formatCurrency } from '@shared/format'
+import { formatCurrency, formatDateTime } from '@shared/format'
 import {
   calculateChange,
   describeElapsed,
@@ -132,6 +132,10 @@ export function ExitDialog({
         ) : !charge ? null : (
           <>
             <dl className="charge-breakdown">
+              <div>
+                <dt>Ingreso</dt>
+                <dd className="tabular">{formatDateTime(session.enteredAt)}</dd>
+              </div>
               <div>
                 <dt>Permanencia</dt>
                 <dd className="tabular">{describeElapsed(charge.totalMinutes)}</dd>

@@ -11,7 +11,7 @@ export function seedDevelopmentData(sqlite: Database.Database): void {
       VALUES (?, ?, ?, 'hour', ?, ?, ?, NULL, 'active', ?, ?)
     `)
     const carRateId = 'dev-rate-car-hour'
-    insertRate.run(carRateId, 'Automóvil por hora', 'car', 5000, 3000, 30000, now, now)
+    insertRate.run(carRateId, 'Automóvil por hora', 'car', 3500, 3500, 20000, now, now)
     insertRate.run(
       'dev-rate-motorcycle-hour',
       'Motocicleta por hora',
