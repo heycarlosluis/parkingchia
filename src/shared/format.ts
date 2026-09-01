@@ -42,6 +42,23 @@ export function elapsedMinutesOrZero(startedAtUtc: string, endedAtUtc: string): 
   return Math.floor((end - start) / 60_000)
 }
 
+/** Fecha local de una marca UTC, sin la hora. */
+export function formatDate(isoUtc: string): string {
+  return new Date(isoUtc).toLocaleDateString('es-CO', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
+}
+
+/** Hora local de una marca UTC, para separarla de la fecha en un listado denso. */
+export function formatTime(isoUtc: string): string {
+  return new Date(isoUtc).toLocaleTimeString('es-CO', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 /**
  * Fecha y hora local exactas de una marca UTC, para listados y comprobantes.
  *

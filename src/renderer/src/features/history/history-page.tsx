@@ -1,11 +1,18 @@
-import { History, Printer, RefreshCw, Search } from 'lucide-react'
+import { FilterX, History, Printer, RefreshCw, Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { ExitHistory, ExitRecord } from '@shared/contracts'
-import { formatCurrency, formatDateTime } from '@shared/format'
-import { describeElapsed, MAX_HISTORY_PAGE_SIZE, PAYMENT_METHOD_LABELS } from '@shared/parking'
+import { formatCurrency, formatDate, formatDateTime, formatTime } from '@shared/format'
+import {
+  describeElapsed,
+  EXIT_STATUS_LABELS,
+  exitStatusOf,
+  MAX_HISTORY_PAGE_SIZE,
+  PAYMENT_METHOD_LABELS,
+  type ExitStatus,
+} from '@shared/parking'
 import { describeBilledTime, VEHICLE_TYPE_LABELS } from '@shared/tariff'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
+import { Alert, AlertActions, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge, type BadgeProps } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -14,6 +21,21 @@ import { Input } from '@/components/ui/input'
 import { PageHeading } from '@/components/page-heading'
 
 const EMPTY_HISTORY: ExitHistory = { records: [], totalCount: 0, totalCollectedCop: 0 }
+
+const STATUS_VARIANTS: Record<ExitStatus, BadgeProps['variant']> = {
+  charged: 'success',
+  monthly: 'secondary',
+  free: 'warning',
+  cancelled: 'danger',
+}
+
+/** Detalle del cobro: la tarifa aplicada arriba y el porqué del importe debajo. */
+function describeCharge(record: ExitRecord): string {
+  if (record.status === 'cancelled') return 'El ingreso se anuló antes de cobrar'
+  if (record.monthlyCustomerName !== null) return `Cubierta por ${record.monthlyCustomerName}`
+  if (record.charge === null) return 'No generó cobro'
+  return describeBilledTime(record.charge)
+}
 
 export function HistoryPage(): React.JSX.Element {
   const [history, setHistory] = useState<ExitHistory>(EMPTY_HISTORY)
@@ -51,13 +73,22 @@ export function HistoryPage(): React.JSX.Element {
 
   const hasFilters = search !== '' || from !== '' || to !== ''
 
+  const clearFilters = (): void => {
+    setSearch('')
+    setFrom('')
+    setTo('')
+  }
+
+  // La consulta corta en MAX_HISTORY_PAGE_SIZE, pero el total cuenta todo el filtro.
+  const truncated = history.records.length < history.totalCount
+
   return (
     <div className="page-stack">
       <PageHeading
         title="Historial de salidas"
         description="Consulta las salidas cobradas, las que no generaron cobro y los ingresos anulados."
         action={
-          <Badge variant="secondary">{formatCurrency(history.totalCollectedCop)} cobrados</Badge>
+          <Badge variant="success">{formatCurrency(history.totalCollectedCop)} cobrados</Badge>
         }
       />
 
@@ -65,6 +96,22 @@ export function HistoryPage(): React.JSX.Element {
         <Alert variant="destructive">
           <AlertTitle>No fue posible consultar el historial</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {truncated ? (
+        <Alert variant="warning">
+          <AlertTitle>Se muestran las {history.records.length} salidas más recientes</AlertTitle>
+          <AlertDescription>
+            El filtro tiene {history.totalCount} salidas en total. Acota el rango de fechas para ver
+            las anteriores.
+          </AlertDescription>
+          <AlertActions>
+            <Button type="button" variant="outline" size="sm" onClick={clearFilters}>
+              <FilterX data-icon="inline-start" />
+              Limpiar filtros
+            </Button>
+          </AlertActions>
         </Alert>
       ) : null}
 
@@ -111,6 +158,12 @@ export function HistoryPage(): React.JSX.Element {
                 onChange={(event) => setTo(event.target.value)}
               />
             </Field>
+            {hasFilters ? (
+              <Button type="button" variant="ghost" onClick={clearFilters}>
+                <FilterX data-icon="inline-start" />
+                Limpiar filtros
+              </Button>
+            ) : null}
             <Button type="button" variant="outline" onClick={reload}>
               <RefreshCw data-icon="inline-start" />
               Actualizar
@@ -144,21 +197,14 @@ export function HistoryPage(): React.JSX.Element {
             <div className="table-scroll">
               <table className="data-table">
                 <caption className="sr-only">
-                  Salidas registradas con su permanencia, lo cobrado y el recibo emitido.
+                  Salidas registradas con su estado, permanencia, lo cobrado y el recibo emitido.
                 </caption>
                 <thead>
                   <tr>
                     <th scope="col">Matrícula</th>
-                    <th scope="col">Vehículo</th>
-                    <th scope="col" className="numeric">
-                      Ingreso
-                    </th>
-                    <th scope="col" className="numeric">
-                      Salida
-                    </th>
-                    <th scope="col" className="numeric">
-                      Permanencia
-                    </th>
+                    <th scope="col">Estado</th>
+                    <th scope="col">Salida</th>
+                    <th scope="col">Permanencia</th>
                     <th scope="col">Cobro</th>
                     <th scope="col" className="numeric">
                       Total
@@ -170,52 +216,76 @@ export function HistoryPage(): React.JSX.Element {
                   </tr>
                 </thead>
                 <tbody>
-                  {history.records.map((record) => (
-                    <tr key={record.sessionId} data-inactive={record.status === 'cancelled'}>
-                      <th scope="row" className="plate-cell">
-                        {record.plate}
-                      </th>
-                      <td>{VEHICLE_TYPE_LABELS[record.vehicleType]}</td>
-                      <td className="numeric tabular">{formatDateTime(record.enteredAt)}</td>
-                      <td className="numeric tabular">{formatDateTime(record.exitedAt)}</td>
-                      <td className="numeric tabular">{describeElapsed(record.totalMinutes)}</td>
-                      <td>
-                        {record.status === 'cancelled'
-                          ? 'Ingreso anulado'
-                          : record.monthlyCustomerName !== null
-                            ? `Mensualidad · ${record.monthlyCustomerName}`
-                            : record.charge === null
-                              ? 'Sin cobro'
-                              : describeBilledTime(record.charge)}
-                      </td>
-                      <td className="numeric tabular">{formatCurrency(record.totalCop)}</td>
-                      <td>
-                        {record.receiptNumber === null ? (
-                          '—'
-                        ) : (
-                          <span className="tabular">
-                            N.º {record.receiptNumber}
-                            {record.method === null
-                              ? ''
-                              : ` · ${PAYMENT_METHOD_LABELS[record.method]}`}
+                  {history.records.map((record) => {
+                    const status = exitStatusOf(record)
+                    return (
+                      <tr key={record.sessionId} data-inactive={status === 'cancelled'}>
+                        <th scope="row">
+                          <span className="cell-stack">
+                            <span className="plate-cell">{record.plate}</span>
+                            <span className="cell-note">
+                              {VEHICLE_TYPE_LABELS[record.vehicleType]}
+                            </span>
                           </span>
-                        )}
-                      </td>
-                      <td className="actions">
-                        {record.receiptNumber === null ? null : (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => void reprint(record)}
-                          >
-                            <Printer data-icon="inline-start" />
-                            Reimprimir
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                        </th>
+                        <td>
+                          <Badge variant={STATUS_VARIANTS[status]}>
+                            {EXIT_STATUS_LABELS[status]}
+                          </Badge>
+                        </td>
+                        <td>
+                          <span className="cell-stack">
+                            <span className="tabular">{formatTime(record.exitedAt)}</span>
+                            <span className="cell-note tabular">{formatDate(record.exitedAt)}</span>
+                          </span>
+                        </td>
+                        <td>
+                          <span className="cell-stack">
+                            <span className="tabular">{describeElapsed(record.totalMinutes)}</span>
+                            <span className="cell-note tabular">
+                              Desde {formatDateTime(record.enteredAt)}
+                            </span>
+                          </span>
+                        </td>
+                        <td className="cell-wide">
+                          <span className="cell-stack">
+                            <span>{record.ratePlanName ?? 'Tarifa eliminada'}</span>
+                            <span className="cell-note">{describeCharge(record)}</span>
+                          </span>
+                        </td>
+                        <td className="numeric tabular cell-total">
+                          {formatCurrency(record.totalCop)}
+                        </td>
+                        <td>
+                          {record.receiptNumber === null ? (
+                            <span aria-hidden="true">—</span>
+                          ) : (
+                            <span className="cell-stack">
+                              <span className="tabular">N.º {record.receiptNumber}</span>
+                              {record.method === null ? null : (
+                                <span className="cell-note">
+                                  {PAYMENT_METHOD_LABELS[record.method]}
+                                </span>
+                              )}
+                            </span>
+                          )}
+                        </td>
+                        <td className="actions">
+                          {record.receiptNumber === null ? null : (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => void reprint(record)}
+                            >
+                              <Printer data-icon="inline-start" />
+                              Reimprimir
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

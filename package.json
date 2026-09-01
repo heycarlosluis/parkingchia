@@ -1,6 +1,6 @@
 {
   "name": "parkingchia",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "Aplicación de escritorio offline-first para administrar Parking Chía",
   "main": "./out/main/index.js",
   "author": "heycarlosluis",
@@ -148,9 +148,7 @@
           ]
         }
       ],
-      "category": "public.app-category.business",
-      "identity": null,
-      "hardenedRuntime": false
+      "category": "public.app-category.business"
     },
     "dmg": {
       "sign": false

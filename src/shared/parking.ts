@@ -73,6 +73,35 @@ export const closeSessionSchema = z
 
 export const MAX_HISTORY_PAGE_SIZE = 100
 
+/** Cómo terminó una salida, ya resuelto para presentarlo en una sola columna. */
+export type ExitStatus = 'charged' | 'monthly' | 'free' | 'cancelled'
+
+export const EXIT_STATUS_LABELS: Record<ExitStatus, string> = {
+  charged: 'Cobrada',
+  monthly: 'Mensualidad',
+  free: 'Sin cobro',
+  cancelled: 'Anulada',
+}
+
+/**
+ * Estado de una salida a partir de lo que quedó registrado.
+ *
+ * El orden importa: un ingreso anulado nunca llegó a cobrarse, y una sesión
+ * cubierta por una mensualidad cierra sin recibo igual que una dentro de la
+ * tolerancia, así que la cobertura se comprueba antes que la ausencia de
+ * recibo. Recibe la forma mínima y no el registro completo para no depender
+ * de `contracts`, que a su vez depende de este archivo.
+ */
+export function exitStatusOf(record: {
+  status: 'closed' | 'cancelled'
+  monthlyCustomerName: string | null
+  receiptNumber: number | null
+}): ExitStatus {
+  if (record.status === 'cancelled') return 'cancelled'
+  if (record.monthlyCustomerName !== null) return 'monthly'
+  return record.receiptNumber === null ? 'free' : 'charged'
+}
+
 export const listExitsSchema = z
   .object({
     search: z.string().trim().max(20),

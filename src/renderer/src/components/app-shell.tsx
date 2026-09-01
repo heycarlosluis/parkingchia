@@ -7,6 +7,7 @@ import {
   History,
   LayoutDashboard,
   LogIn,
+  LogOut,
   Settings,
   UsersRound,
 } from 'lucide-react'
@@ -20,6 +21,7 @@ import { useCashStore } from '@/store/cash-store'
 const navigation = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/ingresos', label: 'Registrar ingreso', icon: LogIn },
+  { to: '/salidas', label: 'Registrar salida', icon: LogOut },
   { to: '/parqueo-activo', label: 'Parqueo activo', icon: CarFront },
   { to: '/historial', label: 'Historial', icon: History },
   { to: '/mensualidades', label: 'Mensualidades', icon: UsersRound },
@@ -36,6 +38,7 @@ const navigation = [
 export function AppShell(): React.JSX.Element {
   const initialize = useSystemStore((state) => state.initialize)
   const setUpdateState = useSystemStore((state) => state.setUpdateState)
+  const updateStatus = useSystemStore((state) => state.updateState?.status)
   const parkingName = useAccessStore((state) => state.state?.profile?.name ?? 'Parking Chía')
   const cashSession = useCashStore((state) => state.session)
   const cashLoading = useCashStore((state) => state.loading)
@@ -46,6 +49,15 @@ export function AppShell(): React.JSX.Element {
     void initializeCash()
     return window.parkingAPI.onUpdateState(setUpdateState)
   }, [initialize, initializeCash, setUpdateState])
+
+  const updateNotice =
+    updateStatus === 'downloaded'
+      ? 'Reiniciar para actualizar'
+      : updateStatus === 'downloading'
+        ? 'Descargando actualización'
+        : updateStatus === 'available'
+          ? 'Actualización disponible'
+          : null
 
   return (
     <div className="app-shell">
@@ -78,6 +90,12 @@ export function AppShell(): React.JSX.Element {
         </nav>
 
         <div className="sidebar-footer">
+          {updateNotice ? (
+            <NavLink to="/configuracion?tab=sistema" className="cash-indicator">
+              <span className="status-dot" aria-hidden="true" />
+              <span>{updateNotice}</span>
+            </NavLink>
+          ) : null}
           <NavLink to="/caja" className="cash-indicator" title="Ver la caja del turno">
             <span
               className={cn('status-dot', cashSession ? 'status-dot-open' : 'status-dot-closed')}

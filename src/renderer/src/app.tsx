@@ -6,6 +6,7 @@ import { ActiveSessionsPage } from '@/features/active-sessions/active-sessions-p
 import { CashPage } from '@/features/cash/cash-page'
 import { DashboardPage } from '@/features/dashboard/dashboard-page'
 import { EntriesPage } from '@/features/entries/entries-page'
+import { ExitPage } from '@/features/exits/exit-page'
 import { HistoryPage } from '@/features/history/history-page'
 import { MonthlyPage } from '@/features/monthly/monthly-page'
 import { SettingsPage } from '@/features/settings/settings-page'
@@ -61,6 +62,7 @@ export function App(): React.JSX.Element {
         <Route element={<AppShell />}>
           <Route index element={<DashboardPage />} />
           <Route path="ingresos" element={<EntriesPage />} />
+          <Route path="salidas" element={<ExitPage />} />
           <Route path="parqueo-activo" element={<ActiveSessionsPage />} />
           <Route path="historial" element={<HistoryPage />} />
           <Route path="tarifas" element={<Navigate to="/configuracion?tab=tarifas" replace />} />

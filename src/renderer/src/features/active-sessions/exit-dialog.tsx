@@ -81,7 +81,12 @@ export function ExitDialog({
   const total = quote?.charge.totalCop ?? 0
   const receivedValue = Number.isFinite(received) ? received : null
   const change = method === 'cash' ? calculateChange(total, receivedValue) : null
-  const missingCash = method === 'cash' && (receivedValue === null || receivedValue < total)
+  // Sin nada que cobrar no se pide efectivo, así que tampoco puede faltar: es la
+  // misma condición que aplica `closeSession` en el proceso principal. Sin el
+  // `total > 0`, una salida cubierta por mensualidad o dentro de la tolerancia
+  // dejaba el botón deshabilitado para siempre, sin campo donde corregirlo.
+  const missingCash =
+    total > 0 && method === 'cash' && (receivedValue === null || receivedValue < total)
 
   const confirm = async (): Promise<void> => {
     if (!quote) return

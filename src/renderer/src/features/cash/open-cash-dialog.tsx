@@ -1,12 +1,12 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { LoaderCircle, TriangleAlert } from 'lucide-react'
+import { LoaderCircle } from 'lucide-react'
 import { useEffect } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { Link } from 'react-router-dom'
 import { z } from 'zod'
 import type { OpenCashSessionInput } from '@shared/cash'
 import { MAX_AMOUNT_COP } from '@shared/tariff'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Alert, AlertActions, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -93,17 +93,18 @@ export function OpenCashDialog({
         </DialogHeader>
 
         {activeEmployees.length === 0 ? (
-          <Alert>
-            <TriangleAlert aria-hidden="true" />
+          <Alert variant="warning">
             <AlertTitle>Falta crear un empleado</AlertTitle>
-            <AlertDescription className="alert-with-action">
-              <p>Registra al menos un empleado activo antes de abrir una caja.</p>
+            <AlertDescription>
+              Registra al menos un empleado activo antes de abrir una caja.
+            </AlertDescription>
+            <AlertActions>
               <Button variant="outline" size="sm" asChild>
                 <Link to="/configuracion?tab=empleados" onClick={() => onOpenChange(false)}>
                   Ir a Empleados
                 </Link>
               </Button>
-            </AlertDescription>
+            </AlertActions>
           </Alert>
         ) : (
           <form onSubmit={(event) => void submit(event)} noValidate>

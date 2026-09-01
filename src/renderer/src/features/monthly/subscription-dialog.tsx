@@ -168,7 +168,7 @@ export function SubscriptionDialog({
         </DialogHeader>
 
         {missingRequirements ? (
-          <Alert>
+          <Alert variant="warning">
             <AlertTitle>Falta información para crear la mensualidad</AlertTitle>
             <AlertDescription>
               {activeCustomers.length === 0

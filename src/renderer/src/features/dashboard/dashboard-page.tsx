@@ -48,12 +48,20 @@ export function DashboardPage(): React.JSX.Element {
         title="Buen turno"
         description="Lo importante del parqueadero de un vistazo y los accesos a las tareas frecuentes."
         action={
-          <Button asChild>
-            <Link to="/ingresos">
-              <LogIn data-icon="inline-start" />
-              Registrar ingreso
-            </Link>
-          </Button>
+          <div className="page-heading-actions">
+            <Button asChild>
+              <Link to="/ingresos">
+                <LogIn data-icon="inline-start" />
+                Registrar ingreso
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link to="/salidas">
+                <LogOut data-icon="inline-start" />
+                Registrar salida
+              </Link>
+            </Button>
+          </div>
         }
       />
 
@@ -159,13 +167,13 @@ export function DashboardPage(): React.JSX.Element {
             </span>
             <ArrowRight aria-hidden="true" />
           </Link>
-          <Link className="action-tile" to="/parqueo-activo">
+          <Link className="action-tile" to="/salidas">
             <span className="action-icon">
               <LogOut aria-hidden="true" />
             </span>
             <span>
               <strong>Registrar salida</strong>
-              <small>Busca un vehículo activo y prepara el cobro.</small>
+              <small>Escribe la matrícula y cobra en el mismo paso.</small>
             </span>
             <ArrowRight aria-hidden="true" />
           </Link>

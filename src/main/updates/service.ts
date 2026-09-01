@@ -22,8 +22,6 @@ export class UpdateService {
   constructor(private readonly windows: () => BrowserWindow[]) {
     autoUpdater.autoDownload = false
     autoUpdater.autoInstallOnAppQuit = false
-    autoUpdater.allowPrerelease = false
-    autoUpdater.channel = 'latest'
 
     autoUpdater.on('checking-for-update', () => {
       this.setState({ status: 'checking', progress: null, message: 'Buscando actualizaciones…' })

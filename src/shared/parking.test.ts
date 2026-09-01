@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculateChange, closeSessionSchema, describeElapsed } from './parking'
+import { calculateChange, closeSessionSchema, describeElapsed, exitStatusOf } from './parking'
 
 describe('esquema de cierre de salida', () => {
   const base = {
@@ -47,5 +47,26 @@ describe('describeElapsed', () => {
     expect(describeElapsed(1500)).toBe('1 d 1 h')
     expect(describeElapsed(1505)).toBe('1 d 1 h 5 min')
     expect(describeElapsed(2900)).toBe('2 d 20 min')
+  })
+})
+
+describe('exitStatusOf', () => {
+  const closed = { status: 'closed' as const, monthlyCustomerName: null, receiptNumber: 7 }
+
+  it('distingue una salida cobrada de una que no generó recibo', () => {
+    expect(exitStatusOf(closed)).toBe('charged')
+    expect(exitStatusOf({ ...closed, receiptNumber: null })).toBe('free')
+  })
+
+  it('marca la cobertura por mensualidad aunque no haya recibo', () => {
+    expect(exitStatusOf({ ...closed, receiptNumber: null, monthlyCustomerName: 'Ana' })).toBe(
+      'monthly',
+    )
+  })
+
+  it('la anulación manda sobre cualquier otro rastro', () => {
+    expect(
+      exitStatusOf({ status: 'cancelled', monthlyCustomerName: 'Ana', receiptNumber: 7 }),
+    ).toBe('cancelled')
   })
 })

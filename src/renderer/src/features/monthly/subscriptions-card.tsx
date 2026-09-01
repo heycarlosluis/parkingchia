@@ -33,7 +33,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Alert, AlertActions, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -137,7 +137,7 @@ export function SubscriptionsCard(): React.JSX.Element {
       ) : null}
 
       {lastPayment ? (
-        <Alert className="exit-summary">
+        <Alert variant="success">
           <AlertTitle>
             Pago registrado · {lastPayment.plate} · {formatCurrency(lastPayment.amountCop)}
           </AlertTitle>
@@ -152,6 +152,10 @@ export function SubscriptionsCard(): React.JSX.Element {
                 ? ` · Saldo pendiente: ${formatCurrency(lastPayment.balanceCop)}`
                 : ' · Mensualidad pagada'}
             </span>
+            {/* El aviso ya es una región viva: anunciar aquí duplicaría la lectura. */}
+            <span className="reprint-status">{reprintMessage}</span>
+          </AlertDescription>
+          <AlertActions>
             <Button
               type="button"
               variant="outline"
@@ -172,10 +176,7 @@ export function SubscriptionsCard(): React.JSX.Element {
             >
               Cerrar aviso
             </Button>
-            <span className="reprint-status" role="status" aria-live="polite">
-              {reprintMessage}
-            </span>
-          </AlertDescription>
+          </AlertActions>
         </Alert>
       ) : null}
 

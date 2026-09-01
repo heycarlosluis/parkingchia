@@ -103,16 +103,16 @@ Los primeros builds no están firmados: Windows puede mostrar SmartScreen y macO
 
 ## Actualizaciones
 
-En builds empaquetados, la app consulta GitHub Releases después de iniciar sin bloquear la operación. El usuario decide cuándo descargar y cuándo reiniciar. Si autorizó una descarga, también podrá instalarse al cerrar. En desarrollo el actualizador permanece desactivado. La ausencia de Internet no afecta las funciones del parqueadero.
+En builds empaquetados, la app consulta GitHub Releases después de iniciar sin bloquear la operación y muestra el aviso en la navegación. El usuario decide cuándo descargar y cuándo reiniciar desde **Configuración > Sistema**. Si autorizó una descarga, también podrá instalarse al cerrar. Las pre-releases siguen el canal de la versión instalada y las versiones estables no reciben pruebas. En desarrollo el actualizador permanece desactivado. La ausencia de Internet no afecta las funciones del parqueadero.
 
-El proveedor está fijado a `heycarlosluis/parkingchia` y no contiene tokens. El canal estable es el predeterminado. Consulta [docs/releases.md](docs/releases.md) para el futuro canal de pre-releases.
+El proveedor está fijado al repositorio público `heycarlosluis/parkingchia` y no contiene tokens. Consulta [docs/releases.md](docs/releases.md) para el flujo de publicación, los canales y la firma.
 
 ## Crear una release
 
-1. Actualiza la versión sin modificar una ya publicada: `npm version prerelease --preid=alpha`.
+1. Confirma primero los cambios funcionales, verifica que `git status` esté limpio y actualiza la versión sin crear todavía el tag: `npm version prerelease --preid=alpha --no-git-tag-version`.
 2. Ejecuta `npm run format:check && npm run typecheck && npm run lint && npm run test:run && npm run build`.
-3. Haz commit: `git commit -am "chore: release 0.1.0-alpha.2"`.
-4. Crea el tag: `git tag v0.1.0-alpha.2` si `npm version` no lo creó.
+3. Agrega `package.json` y `package-lock.json` y haz commit: `git commit -m "chore: release 0.1.0-alpha.2"`.
+4. Crea el tag que coincida con `package.json`: `git tag v0.1.0-alpha.2`.
 5. Sube commit y tag: `git push origin main && git push origin v0.1.0-alpha.2`.
 6. Verifica el workflow `Release` en GitHub Actions.
 7. Confirma que instaladores, YAML y blockmaps estén publicados.

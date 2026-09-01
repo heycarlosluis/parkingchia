@@ -14,6 +14,11 @@ const badgeVariants = cva(
         destructive:
           'border-transparent bg-destructive text-destructive-foreground shadow hover:bg-destructive/80',
         outline: 'text-foreground',
+        // Tonos suaves para marcar el estado de una fila sin saturar la tabla.
+        success: 'border-success-border bg-success-surface text-success',
+        warning: 'border-warning-border bg-warning-surface text-warning',
+        danger: 'border-destructive-border bg-destructive-surface text-destructive',
+        muted: 'border-border bg-muted text-muted-foreground',
       },
     },
     defaultVariants: {
