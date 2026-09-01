@@ -7,9 +7,9 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 ## Línea base
 
 - Rama de referencia: `main`.
-- Versión preparada en el árbol de trabajo: `0.1.0-alpha.2` (todavía no publicada).
-- Versión publicada más reciente: `0.1.0-alpha.1`.
-- Tag: `v0.1.0-alpha.1`.
+- Versión del corte: `0.1.0-alpha.3`.
+- Versión publicada más reciente: `0.1.0-alpha.3`.
+- Tag: `v0.1.0-alpha.3`.
 - CI de la línea base: aprobado.
 - Release multiplataforma de la línea base: aprobada y publicada como pre-release.
 - Artefactos publicados: NSIS Windows x64; DMG y ZIP macOS x64/arm64; metadatos YAML y blockmaps.
@@ -119,3 +119,5 @@ Los avisos se rehicieron como un sistema de cuatro tonos con rejilla fija y acci
 Las actualizaciones quedaron alineadas con las releases de GitHub (D-033): las instalaciones pre-release ya no fuerzan el canal estable, el workflow verifica que tag y `package.json` coincidan y se niega a reemplazar artefactos publicados. El pipeline puede firmar Windows y firmar/notarizar macOS cuando existan los secretos correspondientes; sin ellos sigue produciendo únicamente builds de prueba. Se verificaron el YAML del workflow, la coincidencia del tag, format, typecheck, lint, 247 pruebas, build y `CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:mac -- --publish never`; el paquete generó ZIP, DMG, blockmaps y `latest-mac.yml` para x64 y arm64. Falta ejecutar una prueba extremo a extremo entre dos versiones publicadas, validar el instalador Windows en GitHub Actions y, para macOS, adquirir y configurar las credenciales Developer ID de Apple.
 
 Se preparó `0.1.0-alpha.2` y se generó desde macOS un instalador NSIS Windows x64 de prueba con `npmRebuild=false`, usando el binario precompilado que `better-sqlite3` 13 distribuye para `win32-x64`. Se verificó que tanto el instalador como el módulo nativo sean PE de Windows y se copió el `.exe` a Descargas con SHA-256 coincidente. El instalador no está firmado y no puede someterse a una prueba funcional en macOS; la release oficial debe volver a construirlo y probarlo en el runner Windows.
+
+`0.1.0-alpha.3` es la primera actualización de prueba destinada a validar el flujo completo desde una instalación local de `alpha.2`: detección al iniciar, aviso persistente, descarga, reinicio e instalación. El cambio visible deliberadamente pequeño está en Configuración > Sistema, donde se aclara que las actualizaciones conservan los datos locales. El resultado extremo a extremo solo puede darse por confirmado después de publicar los artefactos y probar el salto en Windows.

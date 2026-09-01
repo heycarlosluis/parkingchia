@@ -60,7 +60,8 @@ export function SystemSettings(): React.JSX.Element {
             <RefreshCw aria-hidden="true" /> Actualizaciones
           </CardTitle>
           <CardDescription>
-            Versión instalada: <span className="tabular">{version}</span>
+            Versión instalada: <span className="tabular">{version}</span>. Las actualizaciones
+            conservan tus datos locales.
           </CardDescription>
         </CardHeader>
         <CardContent className="settings-section-content">

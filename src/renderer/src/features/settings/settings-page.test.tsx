@@ -78,6 +78,7 @@ describe('Configuración', () => {
 
     await userEvent.click(screen.getByRole('tab', { name: 'Sistema' }))
     expect(await screen.findByText('Actualizaciones')).toBeInTheDocument()
+    expect(screen.getByText(/Las actualizaciones conservan tus datos locales/)).toBeInTheDocument()
     expect(screen.getByText('Datos y copias de seguridad')).toBeInTheDocument()
   })
 
