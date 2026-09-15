@@ -39,6 +39,8 @@ export type ParkingProfile = {
   name: string
   address: string
   phone: string
+  /** Logo local en PNG, JPEG o WebP; nunca contiene una ruta del sistema. */
+  logoDataUrl?: string | null
 }
 
 export type AccessState = {
@@ -181,6 +183,7 @@ export type EntryRegistration = {
   sessionId: string
   plate: string
   vehicleType: VehicleType
+  ratePlanId: string
   ratePlanName: string
   /** Precio de una unidad de cobro de la tarifa, en pesos colombianos enteros. */
   ratePlanAmountCop: number
@@ -188,6 +191,9 @@ export type EntryRegistration = {
   billingUnit: TariffBillingUnit
   enteredAt: string
   graceMinutes: number
+  /** Empleado de la caja que recibió el vehículo. */
+  employeeName: string | null
+  notes: string | null
   printed: boolean
   printMessage: string
 }
@@ -398,6 +404,7 @@ export interface ParkingApi {
     ratePlanId: string
     notes: string | null
   }) => Promise<ApiResult<EntryRegistration>>
+  resolveExitTarget: (input: { code: string }) => Promise<ApiResult<ActiveSession>>
   listActiveSessions: (input: { search: string }) => Promise<ApiResult<ActiveSession[]>>
   quoteSessionExit: (input: { sessionId: string }) => Promise<ApiResult<SessionQuote>>
   closeSession: (input: {

@@ -74,4 +74,36 @@ describe('acceso local y onboarding', () => {
       database.close()
     }
   })
+
+  it('guarda y elimina el logo del perfil sin usar rutas del sistema', () => {
+    const { database, access } = createServices()
+    try {
+      access.completeOnboarding({
+        name: 'Parqueadero Central',
+        address: 'Carrera 10 # 12-34',
+        phone: '300 123 4567',
+        pin: '',
+      })
+      const logoDataUrl = 'data:image/png;base64,aGVsbG8='
+      expect(
+        access.updateProfile({
+          name: 'Parqueadero Central',
+          address: 'Carrera 10 # 12-34',
+          phone: '300 123 4567',
+          logoDataUrl,
+        }).profile,
+      ).toMatchObject({ logoDataUrl })
+
+      expect(
+        access.updateProfile({
+          name: 'Parqueadero Central',
+          address: 'Carrera 10 # 12-34',
+          phone: '300 123 4567',
+          logoDataUrl: null,
+        }).profile,
+      ).toMatchObject({ logoDataUrl: null })
+    } finally {
+      database.close()
+    }
+  })
 })

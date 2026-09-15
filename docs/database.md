@@ -21,6 +21,8 @@ Recrear una tabla referenciada exige que las claves foráneas estén desactivada
 
 `app_settings` conserva ajustes de impresión, perfil, finalización del onboarding, el hash del PIN opcional y la configuración de tarifas bajo el prefijo `tariff.` (unidad de cobro, gracia, hora desde la que aplica la gracia, umbral y duración de la plena, IVA, modo de IVA y redondeo). El PIN se deriva con `scrypt` y sal aleatoria; nunca se persiste en texto plano ni se expone al renderer. Añadir estas claves no requiere alterar el esquema tabular.
 
+El logo opcional vive en `app_settings` bajo `parking.logo` como un data URL validado de imagen, con límite de 1 MB en el contrato IPC. No se persisten rutas del sistema ni se habilita acceso al sistema de archivos desde React.
+
 ## Migraciones y datos de desarrollo
 
 ```bash
@@ -37,9 +39,11 @@ La migración `0002` agrega `plena_cop` a `rate_plans` copiando los valores de `
 
 La migración `0004` incorpora notas a clientes y suscripciones mensuales, índices de búsqueda y la referencia `parking_sessions.subscription_id` que enlaza una salida con la mensualidad que la cubrió. La migración `0005` crea `employees` y añade `cash_register_sessions.employee_id` para identificar quién operó cada turno de caja.
 
+La migración `0006` añade `parking_sessions.entry_snapshot_json`. Es anulable para conservar las sesiones creadas por versiones anteriores; los ingresos nuevos guardan allí la versión del formato, referencia, matrícula, vehículo, tarifa y precio, hora UTC, gracia, empleado y nota que existían al entrar.
+
 ## Ciclo de una sesión de parqueo
 
-Un ingreso crea o reutiliza la fila de `vehicles` correspondiente a la matrícula normalizada y abre una fila en `parking_sessions` con estado `active`. El índice parcial único `parking_sessions_one_active_vehicle` garantiza que un vehículo no tenga dos sesiones abiertas.
+Un ingreso crea o reutiliza la fila de `vehicles` correspondiente a la matrícula normalizada y abre una fila en `parking_sessions` con estado `active`, junto con el snapshot inmutable del tiquete. El índice parcial único `parking_sessions_one_active_vehicle` garantiza que un vehículo no tenga dos sesiones abiertas.
 
 La salida ocurre en una sola transacción: actualiza la sesión a `closed` con `exited_at` y `calculated_amount_cop`, inserta el pago en `payments` y emite el recibo en `receipts` con un consecutivo calculado dentro de la misma transacción. `receipts.snapshot_json` guarda una copia inmutable del cobro (matrícula, tarifa, permanencia, desglose de IVA, medio de pago, recibido y cambio) para poder reimprimir sin recalcular.
 

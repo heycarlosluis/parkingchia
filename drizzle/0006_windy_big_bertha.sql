@@ -1,0 +1,1 @@
+ALTER TABLE `parking_sessions` ADD `entry_snapshot_json` text;

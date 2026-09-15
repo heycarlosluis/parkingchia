@@ -9,17 +9,21 @@ const profile = {
   name: 'Parqueadero <Central>',
   address: 'Carrera 10 # 12-34',
   phone: '300 123 4567',
+  logoDataUrl: 'data:image/png;base64,aGVsbG8=',
 }
 
 const entry: EntryRegistration = {
-  sessionId: 'session-1',
+  sessionId: '123e4567-e89b-12d3-a456-426614174000',
   plate: 'ABC123',
   vehicleType: 'motorcycle',
+  ratePlanId: 'rate-motorcycle',
   ratePlanName: 'Motocicleta por hora',
   ratePlanAmountCop: 2500,
   billingUnit: 'hour',
   enteredAt: '2026-08-18T15:00:00.000Z',
   graceMinutes: 15,
+  employeeName: 'Ana Ruiz',
+  notes: 'Casco en depósito',
   printed: false,
   printMessage: '',
 }
@@ -54,6 +58,12 @@ describe('tiquete de ingreso', () => {
     expect(html).toContain('Motocicleta por hora')
     expect(html).toContain('Costo por hora')
     expect(html).toContain('15 min')
+    expect(html).toContain('Ana Ruiz')
+    expect(html).toContain('Casco en depósito')
+    expect(html).toContain('data:image/png;base64,aGVsbG8=')
+    expect(html).toContain('Escanee para registrar la salida')
+    expect(html).toContain('<svg')
+    expect(html).toContain('Referencia 123e4567-e89b-12d3-a456-426614174000')
     expect(html).toContain('Parqueadero &lt;Central&gt;')
     expect(html).not.toContain('<Central>')
   })

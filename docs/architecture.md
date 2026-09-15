@@ -34,3 +34,9 @@ La ventana usa `nodeIntegration: false`, `contextIsolation: true`, sandbox y CSP
 El bloqueo de instancia única impide dos procesos concurrentes sobre la misma base. La lógica comercial vive en servicios de dominio del proceso principal y no se traslada a componentes React.
 
 Antes de montar las rutas operativas, el renderer consulta el estado de acceso. Onboarding y desbloqueo son las únicas operaciones disponibles sin autorización; los handlers restantes validan en el proceso principal que la configuración inicial esté completa y la aplicación desbloqueada.
+
+## Tiquetes y lectores
+
+`src/shared/entry-ticket.ts` define un formato versionado para el QR del ingreso y una referencia compacta para Code 128. El proceso principal genera ambos símbolos al imprimir y guarda el mismo snapshot en SQLite. El renderer solo envía la cadena leída por el canal concreto `parking:resolve-exit-target`; la valida Zod y `ParkingService` decide qué sesión activa corresponde. Los valores del papel sirven para identificar y verificar el ingreso, no para liquidar el cobro.
+
+Los lectores se integran por USB HID en modo teclado. El renderer admite el escaneo en el campo de salida y una escucha global limitada a prefijos propios, fuera de formularios y diálogos. No se expone una API de dispositivos ni se añade acceso de Node al renderer.

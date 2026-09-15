@@ -4,7 +4,7 @@ Aplicación de escritorio offline-first para administrar la operación de un par
 
 ## Estado actual
 
-La primera ejecución presenta un onboarding para guardar el nombre, dirección y teléfono del parqueadero. La protección con un PIN local de 8 dígitos es opcional y puede administrarse después desde Configuración. La aplicación abre una interfaz navegable con Dashboard, ingreso, parqueo activo, mensualidades, caja, reportes y configuración. SQLite, IPC, lista de impresoras, ticket de prueba, copia de seguridad y estados de actualización tienen implementaciones reales. La lógica definitiva de tarifas, cobro, salida, cierre de caja y reportes aún no forma parte de esta fase.
+La primera ejecución presenta un onboarding para guardar el nombre, dirección y teléfono del parqueadero. La protección con un PIN local de 8 dígitos es opcional y puede administrarse después desde Configuración. La aplicación abre una interfaz navegable con Dashboard, ingresos, salida por matrícula o lector de códigos, parqueo activo, mensualidades, caja, historial, reportes y configuración. Tarifas, cobro, recibos, cierre de caja, SQLite, IPC, impresión térmica, copias de seguridad y actualizaciones tienen implementaciones reales. Reportes continúa como base de interfaz pendiente de lógica comercial.
 
 ## Stack
 
@@ -83,7 +83,7 @@ Desde Configuración es posible editar los datos, crear o cambiar el PIN, bloque
 
 ## Impresión
 
-Configuración permite listar impresoras del sistema, escoger 58 u 80 mm y enviar un ticket de prueba. El diálogo del sistema está activado inicialmente. Un error de driver o la ausencia de impresora devuelve un mensaje controlado sin cerrar la aplicación. Más detalles en [docs/printing.md](docs/printing.md).
+Configuración permite definir un logo, listar impresoras del sistema, escoger 58 u 80 mm y enviar un ticket de prueba. El tiquete de ingreso imprime los datos originales de la entrada, QR y Code 128; Registrar salida acepta ambos códigos desde lectores USB en modo teclado. El diálogo del sistema está activado inicialmente. Un error de driver o la ausencia de impresora devuelve un mensaje controlado sin cerrar la aplicación. Más detalles en [docs/printing.md](docs/printing.md).
 
 ## Copias de seguridad
 
@@ -129,11 +129,11 @@ No publiques `1.0.0` hasta que la lógica comercial y las migraciones de producc
 
 ## Limitaciones y próximos módulos
 
-- Falta la lógica comercial definitiva de entradas, salidas, tarifas, cobros y cierres de caja.
+- Reportes todavía no tiene lógica comercial.
 - Falta restauración guiada de copias; por seguridad, esta fase solo crea respaldos.
 - ESC/POS, corte de papel y cajón portamonedas quedan como adapters futuros.
 - No hay firma de Windows ni firma/notarización de macOS.
 - Los iconos finales `.ico` e `.icns` deben añadirse antes de una distribución comercial; por ahora se conserva el icono predeterminado de Electron.
-- Próximos módulos: sesiones operativas, liquidación de tarifas, caja, mensualidades, recibos, auditoría consultable y reportes.
+- Próximos módulos: reportes, restauración guiada y auditoría consultable.
 
 No se agregó una licencia; esa decisión corresponde al propietario del repositorio.

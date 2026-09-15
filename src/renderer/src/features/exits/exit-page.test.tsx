@@ -45,7 +45,7 @@ describe('Registrar salida', () => {
   it('busca la matrícula y abre el cobro con los datos de ese vehículo', async () => {
     renderExits()
 
-    await userEvent.type(await screen.findByLabelText('Matrícula'), 'abc 123')
+    await userEvent.type(await screen.findByLabelText('Tiquete o matrícula'), 'abc 123')
     await userEvent.click(screen.getByRole('button', { name: /Registrar salida/ }))
 
     const dialog = await screen.findByRole('dialog')
@@ -54,43 +54,52 @@ describe('Registrar salida', () => {
     expect(within(dialog).getByText('ABC123')).toBeInTheDocument()
     expect(await within(dialog).findByText('Total a cobrar')).toBeInTheDocument()
 
-    expect(window.parkingAPI.listActiveSessions).toHaveBeenCalledWith({ search: 'ABC123' })
+    expect(window.parkingAPI.resolveExitTarget).toHaveBeenCalledWith({ code: 'abc 123' })
   })
 
   it('avisa cuando la matrícula no está en el parqueadero y no abre el cobro', async () => {
+    vi.mocked(window.parkingAPI.resolveExitTarget).mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: 'SESSION_NOT_FOUND',
+        message: 'No hay ningún ingreso activo con la matrícula QQQ999.',
+      },
+    })
     renderExits()
 
-    await userEvent.type(await screen.findByLabelText('Matrícula'), 'qqq999')
+    await userEvent.type(await screen.findByLabelText('Tiquete o matrícula'), 'qqq999')
     await userEvent.click(screen.getByRole('button', { name: /Registrar salida/ }))
 
-    expect(await screen.findByText('QQQ999 no está en el parqueadero')).toBeInTheDocument()
+    expect(
+      await screen.findByText('No hay ningún ingreso activo con la matrícula QQQ999.'),
+    ).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('no confunde una coincidencia parcial con la matrícula buscada', async () => {
+  it('envía un código escaneado completo sin modificarlo', async () => {
     renderExits()
 
-    // El proceso principal busca por coincidencia parcial: «ABC» trae ABC123.
-    await userEvent.type(await screen.findByLabelText('Matrícula'), 'abc')
+    const code = 'PC1Q.eyJ2ZXJzaW9uIjoxLCJwbGF0ZSI6IkFCQzEyMyJ9'
+    await userEvent.type(await screen.findByLabelText('Tiquete o matrícula'), code)
     await userEvent.click(screen.getByRole('button', { name: /Registrar salida/ }))
 
-    expect(await screen.findByText('ABC no está en el parqueadero')).toBeInTheDocument()
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(window.parkingAPI.resolveExitTarget).toHaveBeenCalledWith({ code })
   })
 
-  it('el campo de matrícula solo admite letras y números', async () => {
+  it('el campo conserva los caracteres necesarios para códigos QR', async () => {
     renderExits()
 
-    const plate = await screen.findByLabelText('Matrícula')
-    await userEvent.type(plate, 'a-b c@1!2')
+    const code = await screen.findByLabelText('Tiquete o matrícula')
+    await userEvent.type(code, 'PC1Q.a-b_c')
 
-    expect(plate).toHaveValue('ABC12')
+    expect(code).toHaveValue('PC1Q.a-b_c')
   })
 
   it('cobra y deja el foco listo para la siguiente salida', async () => {
     renderExits()
 
-    await userEvent.type(await screen.findByLabelText('Matrícula'), 'ABC123')
+    await userEvent.type(await screen.findByLabelText('Tiquete o matrícula'), 'ABC123')
     await userEvent.click(screen.getByRole('button', { name: /Registrar salida/ }))
 
     const dialog = await screen.findByRole('dialog')
@@ -106,9 +115,9 @@ describe('Registrar salida', () => {
 
     // Encadenar con la siguiente devuelve el foco a la matrícula, ya vacía.
     await userEvent.click(again)
-    const plate = await screen.findByLabelText('Matrícula')
-    expect(plate).toHaveValue('')
-    expect(plate).toHaveFocus()
+    const code = await screen.findByLabelText('Tiquete o matrícula')
+    expect(code).toHaveValue('')
+    expect(code).toHaveFocus()
   })
 
   it('registra la salida de un vehículo con mensualidad vigente sin cobrar', async () => {
@@ -119,9 +128,9 @@ describe('Registrar salida', () => {
       endsAt: '2026-09-01T05:00:00.000Z',
     }
     const covered = { ...activeSession, monthlyCoverage: coverage }
-    vi.mocked(window.parkingAPI.listActiveSessions).mockResolvedValueOnce({
+    vi.mocked(window.parkingAPI.resolveExitTarget).mockResolvedValueOnce({
       ok: true,
-      data: [covered],
+      data: covered,
     })
     vi.mocked(window.parkingAPI.quoteSessionExit).mockResolvedValueOnce({
       ok: true,
@@ -133,7 +142,7 @@ describe('Registrar salida', () => {
     })
     renderExits()
 
-    await userEvent.type(await screen.findByLabelText('Matrícula'), 'ABC123')
+    await userEvent.type(await screen.findByLabelText('Tiquete o matrícula'), 'ABC123')
     await userEvent.click(screen.getByRole('button', { name: /Registrar salida/ }))
 
     const dialog = await screen.findByRole('dialog')
@@ -160,7 +169,7 @@ describe('Registrar salida', () => {
     })
     renderExits()
 
-    await userEvent.type(await screen.findByLabelText('Matrícula'), 'ABC123')
+    await userEvent.type(await screen.findByLabelText('Tiquete o matrícula'), 'ABC123')
     await userEvent.click(screen.getByRole('button', { name: /Registrar salida/ }))
 
     const dialog = await screen.findByRole('dialog')

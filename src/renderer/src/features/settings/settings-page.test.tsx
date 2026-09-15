@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_TARIFF_SETTINGS } from '@shared/tariff'
 import { useAccessStore } from '@/store/access-store'
 import { useEmployeeStore } from '@/store/employee-store'
@@ -54,6 +54,19 @@ describe('Configuración', () => {
 
     expect(await screen.findByLabelText('Nombre del parqueadero')).toHaveValue('Parking Chía')
     expect(screen.queryByLabelText('Unidad de cobro')).not.toBeInTheDocument()
+  })
+
+  it('permite guardar un logo local para los documentos impresos', async () => {
+    renderSettings()
+    const logo = new File(['logo-local'], 'logo.png', { type: 'image/png' })
+
+    await userEvent.upload(await screen.findByLabelText('Logo del parqueadero'), logo)
+    expect(await screen.findByAltText('Vista previa del logo del parqueadero')).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar datos' }))
+
+    expect(vi.mocked(window.parkingAPI.updateParkingProfile)).toHaveBeenCalledWith(
+      expect.objectContaining({ logoDataUrl: expect.stringMatching(/^data:image\/png;base64,/) }),
+    )
   })
 
   it('carga las tarifas al abrir su pestaña', async () => {

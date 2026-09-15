@@ -141,6 +141,8 @@ export const parkingSessions = sqliteTable(
       onDelete: 'restrict',
     }),
     enteredAt: text('entered_at').notNull(),
+    /** Copia inmutable de los datos impresos y codificados al registrar el ingreso. */
+    entrySnapshotJson: text('entry_snapshot_json'),
     exitedAt: text('exited_at'),
     status: text('status', { enum: ['active', 'closed', 'cancelled'] })
       .notNull()

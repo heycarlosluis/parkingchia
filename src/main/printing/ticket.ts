@@ -1,5 +1,6 @@
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import bwipjs from 'bwip-js/node'
 import type {
   CashCloseSummary,
   EntryRegistration,
@@ -10,6 +11,12 @@ import { formatCurrency } from '@shared/format'
 import { describeElapsed, PAYMENT_METHOD_LABELS } from '@shared/parking'
 import { describeBilledTime, describeBillingUnit, VEHICLE_TYPE_LABELS } from '@shared/tariff'
 import { describeCoverage } from '@shared/monthly'
+import {
+  encodeEntryTicketBarcode,
+  encodeEntryTicketQr,
+  ENTRY_TICKET_VERSION,
+  type EntryTicketPayload,
+} from '@shared/entry-ticket'
 import type { MonthlyReceiptSnapshot } from '@main/monthly/service'
 import type { ReceiptSnapshot } from '@main/parking/service'
 
@@ -38,6 +45,29 @@ function escapeHtml(value: string): string {
   })
 }
 
+function logoHtml(profile: ParkingProfile | null): string {
+  const logo = profile?.logoDataUrl
+  if (!logo || !/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(logo)) return ''
+  return `<img class="logo" src="${escapeHtml(logo)}" alt="" />`
+}
+
+function entryTicketPayload(entry: EntryRegistration): EntryTicketPayload {
+  return {
+    version: ENTRY_TICKET_VERSION,
+    sessionId: entry.sessionId,
+    plate: entry.plate,
+    vehicleType: entry.vehicleType,
+    ratePlanId: entry.ratePlanId,
+    ratePlanName: entry.ratePlanName,
+    ratePlanAmountCop: entry.ratePlanAmountCop,
+    billingUnit: entry.billingUnit,
+    enteredAt: entry.enteredAt,
+    graceMinutes: entry.graceMinutes,
+    employeeName: entry.employeeName,
+    notes: entry.notes,
+  }
+}
+
 export function createTestTicketHtml(
   paperWidth: PaperWidth,
   profile: ParkingProfile | null,
@@ -55,6 +85,7 @@ export function createTestTicketHtml(
       @page { size: ${width}mm auto; margin: 3mm; }
       * { box-sizing: border-box; }
       body { width: ${width - 6}mm; margin: 0; color: #000; background: #fff; font: 11px/1.35 ui-monospace, monospace; }
+      .logo { display: block; max-width: 34mm; max-height: 16mm; object-fit: contain; margin: 0 auto 2mm; }
       h1 { margin: 0 0 2mm; text-align: center; font-size: 17px; }
       .subtitle { margin: 0 0 3mm; text-align: center; font-weight: 700; }
       .rule { border-top: 1px dashed #000; margin: 2mm 0; }
@@ -67,6 +98,7 @@ export function createTestTicketHtml(
     </style>
   </head>
   <body>
+    ${logoHtml(profile)}
     <h1>${escapeHtml(profile?.name ?? 'Parking Chía')}</h1>
     ${profile ? `<p class="subtitle">${escapeHtml(profile.address)}<br />${escapeHtml(profile.phone)}</p>` : ''}
     <p class="subtitle">Ticket de prueba</p>
@@ -104,6 +136,7 @@ function documentShell(
       @page { size: ${width}mm auto; margin: 3mm; }
       * { box-sizing: border-box; }
       body { width: ${width - 6}mm; margin: 0; color: #000; background: #fff; font: 11px/1.35 ui-monospace, monospace; }
+      .logo { display: block; max-width: 34mm; max-height: 16mm; object-fit: contain; margin: 0 auto 2mm; }
       h1 { margin: 0 0 2mm; text-align: center; font-size: 17px; }
       .subtitle { margin: 0 0 3mm; text-align: center; font-weight: 700; }
       .rule { border-top: 1px dashed #000; margin: 2mm 0; }
@@ -114,11 +147,17 @@ function documentShell(
       .plate { text-align: center; font-size: 22px; font-weight: 700; letter-spacing: 2px; margin: 2mm 0; }
       .total { font-size: 14px; }
       .note { margin: 2mm 0 0; text-align: left; }
+      .scan-block { break-inside: avoid; margin-top: 2mm; text-align: center; }
+      .scan-title { margin: 0 0 1mm; font-size: 10px; font-weight: 700; }
+      .qr svg { display: block; width: 31mm; height: 31mm; margin: 0 auto; }
+      .barcode svg { display: block; width: 100%; max-height: 15mm; margin: 1mm auto 0; }
+      .ticket-reference { margin: 1mm 0 0; font-size: 8px; overflow-wrap: anywhere; }
       .reprint-mark { margin: 0 0 3mm; text-align: center; font-weight: 700; letter-spacing: 1px; }
       .footer { margin-top: 3mm; text-align: center; font-size: 9px; }
     </style>
   </head>
   <body>
+    ${logoHtml(profile)}
     <h1>${escapeHtml(profile?.name ?? 'Parking Chía')}</h1>
     ${profile ? `<p class="subtitle">${escapeHtml(profile.address)}<br />${escapeHtml(profile.phone)}</p>` : ''}
     <p class="subtitle">${escapeHtml(title)}</p>
@@ -139,6 +178,25 @@ export function createEntryTicketHtml(
   entry: EntryRegistration,
   options: TicketRenderOptions = {},
 ): string {
+  const payload = entryTicketPayload(entry)
+  const qrValue = encodeEntryTicketQr(payload)
+  const barcodeValue = encodeEntryTicketBarcode(entry.sessionId)
+  const qrSvg = bwipjs.toSVG({ bcid: 'qrcode', text: qrValue, scale: 2, padding: 0 })
+  const barcodeSvg = bwipjs.toSVG({
+    bcid: 'code128',
+    text: barcodeValue,
+    scale: 1,
+    height: 8,
+    padding: 0,
+  })
+  const employeeRow =
+    entry.employeeName === null
+      ? ''
+      : `<div class="row"><dt>Recibió</dt><dd>${escapeHtml(entry.employeeName)}</dd></div>`
+  const notesBlock =
+    entry.notes === null || entry.notes.trim() === ''
+      ? ''
+      : `<p class="note">Nota: ${escapeHtml(entry.notes)}</p>`
   const body = `
     <p class="plate">${escapeHtml(entry.plate)}</p>
     <dl>
@@ -147,7 +205,16 @@ export function createEntryTicketHtml(
       <div class="row"><dt>Costo por ${escapeHtml(describeBillingUnit(entry.billingUnit))}</dt><dd>${escapeHtml(formatCurrency(entry.ratePlanAmountCop))}</dd></div>
       <div class="row"><dt>Ingreso</dt><dd>${escapeHtml(localDateTime(entry.enteredAt))}</dd></div>
       <div class="row"><dt>Gracia</dt><dd>${entry.graceMinutes} min</dd></div>
+      ${employeeRow}
     </dl>
+    ${notesBlock}
+    <div class="rule"></div>
+    <section class="scan-block" aria-label="Códigos del tiquete">
+      <p class="scan-title">Escanee para registrar la salida</p>
+      <div class="qr">${qrSvg}</div>
+      <div class="barcode">${barcodeSvg}</div>
+      <p class="ticket-reference">Referencia ${escapeHtml(entry.sessionId)}</p>
+    </section>
     <div class="rule"></div>
     <p class="footer">Conserve este tiquete. Se exige para retirar el vehículo.</p>`
   return documentShell(paperWidth, profile, 'Tiquete de ingreso', body, options)

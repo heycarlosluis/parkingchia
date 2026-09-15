@@ -344,15 +344,19 @@ const parkingApi: ParkingApi = {
       sessionId: 'session-new',
       plate: input.plate,
       vehicleType: input.vehicleType,
+      ratePlanId: input.ratePlanId,
       ratePlanName: 'Automóvil por hora',
       ratePlanAmountCop: ratePlan.amountCop,
       billingUnit: 'hour' as const,
       enteredAt: new Date().toISOString(),
       graceMinutes: DEFAULT_TARIFF_SETTINGS.graceMinutes,
+      employeeName: 'Laura Torres',
+      notes: input.notes,
       printed: false,
       printMessage: 'No hay impresoras disponibles en el sistema.',
     }),
   ),
+  resolveExitTarget: vi.fn(async () => ok(activeSession)),
   listActiveSessions: vi.fn(async (input) =>
     ok(
       input.search === '' || activeSession.plate.includes(input.search.toUpperCase())

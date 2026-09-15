@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { plateSchema } from './validation'
 import { MAX_AMOUNT_COP, ratePlanIdSchema, vehicleTypeSchema } from './tariff'
+import { MAX_ENTRY_SCAN_LENGTH } from './entry-ticket'
 
 /**
  * Contratos de entrada del módulo de parqueo.
@@ -38,6 +39,16 @@ export const registerEntrySchema = z
   .strict()
 
 export const listActiveSessionsSchema = z.object({ search: z.string().trim().max(20) }).strict()
+
+export const resolveExitTargetSchema = z
+  .object({
+    code: z
+      .string()
+      .trim()
+      .min(3, 'Escanea un tiquete o escribe una matrícula válida')
+      .max(MAX_ENTRY_SCAN_LENGTH, 'El código escaneado es demasiado largo'),
+  })
+  .strict()
 
 export const quoteSessionSchema = z.object({ sessionId: sessionIdSchema }).strict()
 

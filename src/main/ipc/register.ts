@@ -29,6 +29,7 @@ import {
   quoteSessionSchema,
   registerEntrySchema,
   registerSubscriptionPaymentSchema,
+  resolveExitTargetSchema,
   removePinSchema,
   renewSubscriptionSchema,
   setPinSchema,
@@ -175,6 +176,11 @@ export function registerIpcHandlers(services: Services): void {
   ipcMain.handle(IPC_CHANNELS.PARKING_ACTIVE_LIST, (_event, rawInput: unknown) =>
     withAccess(() =>
       services.parking.listActiveSessions(parseOrReject(listActiveSessionsSchema, rawInput)),
+    ),
+  )
+  ipcMain.handle(IPC_CHANNELS.PARKING_RESOLVE_EXIT, (_event, rawInput: unknown) =>
+    withAccess(() =>
+      services.parking.resolveExitTarget(parseOrReject(resolveExitTargetSchema, rawInput).code),
     ),
   )
   ipcMain.handle(IPC_CHANNELS.PARKING_QUOTE_EXIT, (_event, rawInput: unknown) =>

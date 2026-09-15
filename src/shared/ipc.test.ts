@@ -32,4 +32,30 @@ describe('esquema IPC de configuración', () => {
       }).success,
     ).toBe(false)
   })
+
+  it('acepta solo logos locales en formatos de imagen permitidos', () => {
+    const profile = {
+      name: 'Parqueadero Central',
+      address: 'Carrera 10 # 12-34',
+      phone: '300 123 4567',
+    }
+    expect(
+      parkingProfileSchema.safeParse({
+        ...profile,
+        logoDataUrl: 'data:image/png;base64,aGVsbG8=',
+      }).success,
+    ).toBe(true)
+    expect(
+      parkingProfileSchema.safeParse({
+        ...profile,
+        logoDataUrl: 'file:///Users/operador/logo.png',
+      }).success,
+    ).toBe(false)
+    expect(
+      parkingProfileSchema.safeParse({
+        ...profile,
+        logoDataUrl: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+      }).success,
+    ).toBe(false)
+  })
 })

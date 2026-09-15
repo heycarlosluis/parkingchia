@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils'
 import { useSystemStore } from '@/store/system-store'
 import { useAccessStore } from '@/store/access-store'
 import { useCashStore } from '@/store/cash-store'
+import { useEntryTicketScanner } from '@/hooks/use-entry-ticket-scanner'
 
 const navigation = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -36,6 +37,7 @@ const navigation = [
 }>
 
 export function AppShell(): React.JSX.Element {
+  useEntryTicketScanner()
   const initialize = useSystemStore((state) => state.initialize)
   const setUpdateState = useSystemStore((state) => state.setUpdateState)
   const updateStatus = useSystemStore((state) => state.updateState?.status)

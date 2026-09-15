@@ -18,6 +18,7 @@ const api: ParkingApi = {
   deleteRatePlan: (input) => ipcRenderer.invoke(IPC_CHANNELS.TARIFF_PLAN_DELETE, input),
   simulateCharge: (input) => ipcRenderer.invoke(IPC_CHANNELS.TARIFF_SIMULATE, input),
   registerEntry: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_ENTRY, input),
+  resolveExitTarget: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_RESOLVE_EXIT, input),
   listActiveSessions: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_ACTIVE_LIST, input),
   quoteSessionExit: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_QUOTE_EXIT, input),
   closeSession: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_CLOSE, input),

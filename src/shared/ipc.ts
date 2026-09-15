@@ -14,6 +14,7 @@ export {
   listExitsSchema,
   quoteSessionSchema,
   registerEntrySchema,
+  resolveExitTargetSchema,
 } from './parking'
 export {
   cancelSubscriptionSchema,
@@ -54,6 +55,20 @@ export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>
 const requiredText = (label: string, min: number, max: number) =>
   z.string().trim().min(min, `${label} es obligatorio`).max(max, `${label} es demasiado largo`)
 
+/** Un logo de 1 MB ocupa cerca de 1,4 MB al viajar como data URL base64. */
+export const MAX_LOGO_BYTES = 1_000_000
+const MAX_LOGO_DATA_URL_LENGTH = 1_400_000
+
+export const parkingLogoSchema = z
+  .string()
+  .max(MAX_LOGO_DATA_URL_LENGTH, 'El logo debe pesar máximo 1 MB')
+  .regex(
+    /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/,
+    'Usa un logo PNG, JPEG o WebP válido',
+  )
+  .nullable()
+  .optional()
+
 export const parkingProfileSchema = z
   .object({
     name: requiredText('El nombre', 2, 80),
@@ -68,6 +83,7 @@ export const parkingProfileSchema = z
         const digits = value.replace(/\D/g, '')
         return digits.length >= 7 && digits.length <= 15
       }, 'Usa un número de teléfono entre 7 y 15 dígitos'),
+    logoDataUrl: parkingLogoSchema,
   })
   .strict()
 

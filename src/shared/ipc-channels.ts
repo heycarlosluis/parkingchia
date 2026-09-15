@@ -14,6 +14,7 @@ export const IPC_CHANNELS = {
   TARIFF_PLAN_DELETE: 'tariff:delete-plan',
   TARIFF_SIMULATE: 'tariff:simulate-charge',
   PARKING_ENTRY: 'parking:register-entry',
+  PARKING_RESOLVE_EXIT: 'parking:resolve-exit-target',
   PARKING_ACTIVE_LIST: 'parking:list-active',
   PARKING_QUOTE_EXIT: 'parking:quote-exit',
   PARKING_CLOSE: 'parking:close-session',

@@ -1,49 +1,51 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { CheckCircle2, LoaderCircle, LogOut, Printer } from 'lucide-react'
+import { Barcode, CheckCircle2, LoaderCircle, LogOut, Printer, ScanLine } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
-import { Link } from 'react-router-dom'
-import { z } from 'zod'
+import { Link, useLocation } from 'react-router-dom'
+import type { z } from 'zod'
 import type { ActiveSession, ExitRegistration } from '@shared/contracts'
+import { MAX_ENTRY_SCAN_LENGTH } from '@shared/entry-ticket'
 import { formatCurrency, formatDateTime } from '@shared/format'
-import { describeElapsed, PAYMENT_METHOD_LABELS } from '@shared/parking'
+import { describeElapsed, PAYMENT_METHOD_LABELS, resolveExitTargetSchema } from '@shared/parking'
 import { describeCoverage } from '@shared/monthly'
 import { VEHICLE_TYPE_LABELS } from '@shared/tariff'
-import { MAX_PLATE_LENGTH, plateSchema, sanitizePlateInput } from '@shared/validation'
 import { Alert, AlertActions, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter } from '@/components/ui/card'
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 import { ExitDialog } from '@/features/active-sessions/exit-dialog'
 import { useCashStore } from '@/store/cash-store'
 import { useParkingStore } from '@/store/parking-store'
 
-const exitFormSchema = z.object({ plate: plateSchema })
+type ExitFormInput = z.input<typeof resolveExitTargetSchema>
+type ExitForm = z.output<typeof resolveExitTargetSchema>
 
-type ExitFormInput = z.input<typeof exitFormSchema>
-type ExitForm = z.output<typeof exitFormSchema>
+type ExitRouteState = { entryTicketCode?: string; scanNonce?: number } | null
 
 export function ExitPage(): React.JSX.Element {
+  const location = useLocation()
   const cashSession = useCashStore((store) => store.session)
   const cashLoading = useCashStore((store) => store.loading)
   const clearParkingError = useParkingStore((store) => store.clearError)
   const [session, setSession] = useState<ActiveSession | null>(null)
   const [lastExit, setLastExit] = useState<ExitRegistration | null>(null)
-  const [notFound, setNotFound] = useState('')
   const [lookupError, setLookupError] = useState('')
   const [searching, setSearching] = useState(false)
   const [reprinting, setReprinting] = useState(false)
   const [reprintMessage, setReprintMessage] = useState('')
   const continueRef = useRef<HTMLButtonElement>(null)
+  const handledScanNonce = useRef<number | undefined>(undefined)
 
   const { control, handleSubmit, reset, setFocus, formState } = useForm<
     ExitFormInput,
     unknown,
     ExitForm
   >({
-    resolver: zodResolver(exitFormSchema),
-    defaultValues: { plate: '' },
+    resolver: zodResolver(resolveExitTargetSchema),
+    defaultValues: { code: '' },
   })
 
   // Cerrada la salida, Enter debe encadenar con la siguiente sin tocar el ratón.
@@ -51,35 +53,38 @@ export function ExitPage(): React.JSX.Element {
     if (lastExit) continueRef.current?.focus()
   }, [lastExit])
 
-  const submit = handleSubmit(async (values) => {
-    setNotFound('')
+  const lookup = async (code: string): Promise<void> => {
     setLookupError('')
     setSearching(true)
-    const result = await window.parkingAPI.listActiveSessions({ search: values.plate })
+    const result = await window.parkingAPI.resolveExitTarget({ code })
     setSearching(false)
     if (!result.ok) {
       setLookupError(result.error.message)
       return
     }
-    // La búsqueda del proceso principal es parcial; aquí solo sirve la exacta.
-    // Una matrícula tiene como mucho un ingreso activo, así que no hay que elegir.
-    const match = result.data.find((item) => item.plate === values.plate)
-    if (!match) {
-      setNotFound(values.plate)
-      return
-    }
     // El diálogo muestra el error del store: un fallo anterior no es de esta salida.
     clearParkingError()
-    setSession(match)
-  })
+    setSession(result.data)
+  }
+
+  const submit = handleSubmit((values) => lookup(values.code))
+
+  useEffect(() => {
+    const state = location.state as ExitRouteState
+    if (!state?.entryTicketCode || state.scanNonce === handledScanNonce.current) return
+    handledScanNonce.current = state.scanNonce
+    reset({ code: state.entryTicketCode })
+    void lookup(state.entryTicketCode)
+    // `lookup` usa únicamente setters estables y la API segura; el nonce evita relecturas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, reset])
 
   const startAnother = (): void => {
     setLastExit(null)
-    setNotFound('')
     setLookupError('')
     setReprintMessage('')
-    reset({ plate: '' })
-    setFocus('plate')
+    reset({ code: '' })
+    setFocus('code')
   }
 
   const reprint = async (): Promise<void> => {
@@ -96,8 +101,20 @@ export function ExitPage(): React.JSX.Element {
     <div className="page-stack quick-page">
       <header className="quick-heading">
         <h1>Registrar salida</h1>
-        <p>Escribe la matrícula y presiona Enter.</p>
+        <p>Escanea el tiquete o escribe la matrícula para preparar el cobro.</p>
       </header>
+
+      {!lastExit ? (
+        <div className="scanner-ready" role="status">
+          <span className="scanner-ready-icon" aria-hidden="true">
+            <ScanLine />
+          </span>
+          <span>
+            <strong>Lector listo</strong>
+            <small>Compatible con lectores USB que funcionan como teclado</small>
+          </span>
+        </div>
+      ) : null}
 
       {!cashLoading && !cashSession ? (
         <Alert variant="warning">
@@ -115,18 +132,8 @@ export function ExitPage(): React.JSX.Element {
 
       {lookupError ? (
         <Alert variant="destructive">
-          <AlertTitle>No fue posible buscar la matrícula</AlertTitle>
+          <AlertTitle>No fue posible encontrar el ingreso</AlertTitle>
           <AlertDescription>{lookupError}</AlertDescription>
-        </Alert>
-      ) : null}
-
-      {notFound !== '' ? (
-        <Alert variant="warning">
-          <AlertTitle>{notFound} no está en el parqueadero</AlertTitle>
-          <AlertDescription>
-            No hay ningún ingreso activo con esa matrícula. Revisa el parqueo activo por si se
-            registró con otra.
-          </AlertDescription>
           <AlertActions>
             <Button variant="outline" size="sm" asChild>
               <Link to="/parqueo-activo">Ver parqueo activo</Link>
@@ -216,34 +223,34 @@ export function ExitPage(): React.JSX.Element {
         <Card className="quick-card">
           <form onSubmit={(event) => void submit(event)} noValidate>
             <CardContent className="quick-form">
-              <Field data-invalid={Boolean(formState.errors.plate)} className="quick-plate-field">
-                <FieldLabel htmlFor="exit-plate">Matrícula</FieldLabel>
+              <Field data-invalid={Boolean(formState.errors.code)} className="quick-plate-field">
+                <FieldLabel htmlFor="exit-code">Tiquete o matrícula</FieldLabel>
                 <Controller
                   control={control}
-                  name="plate"
+                  name="code"
                   render={({ field }) => (
-                    <input
-                      id="exit-plate"
-                      className="plate-input"
+                    <Input
+                      id="exit-code"
+                      className="scanner-code-input"
                       autoComplete="off"
                       autoFocus
                       spellCheck={false}
                       enterKeyHint="done"
-                      maxLength={MAX_PLATE_LENGTH}
-                      placeholder="ABC123"
-                      aria-invalid={Boolean(formState.errors.plate)}
-                      name={field.name}
-                      ref={field.ref}
-                      value={field.value}
-                      onBlur={field.onBlur}
+                      maxLength={MAX_ENTRY_SCAN_LENGTH}
+                      placeholder="Escanea aquí o escribe ABC123"
+                      aria-invalid={Boolean(formState.errors.code)}
+                      {...field}
                       onChange={(event) => {
-                        setNotFound('')
-                        field.onChange(sanitizePlateInput(event.target.value))
+                        setLookupError('')
+                        field.onChange(event)
                       }}
                     />
                   )}
                 />
-                <FieldError errors={[formState.errors.plate]} />
+                <p className="field-hint">
+                  <Barcode aria-hidden="true" /> El lector completa el campo y continúa con Enter.
+                </p>
+                <FieldError errors={[formState.errors.code]} />
               </Field>
 
               <Button type="submit" size="lg" className="quick-submit" disabled={searching}>
@@ -266,7 +273,7 @@ export function ExitPage(): React.JSX.Element {
           onOpenChange={(open) => {
             if (!open) {
               setSession(null)
-              setFocus('plate')
+              setFocus('code')
             }
           }}
           onClosed={(exit) => {

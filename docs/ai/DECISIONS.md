@@ -277,6 +277,15 @@ Estados posibles: `propuesta`, `aceptada`, `reemplazada` o `descartada`.
 - Motivo: forzar `allowPrerelease = false` y `channel = 'latest'` hacía que la única versión publicada, `0.1.0-alpha.1`, buscara exclusivamente una release estable y no pudiera recibir la siguiente `alpha`. Publicar cada push no sirve sin incrementar SemVer y enviaría trabajo no liberado a los equipos. El reinicio desatendido puede interrumpir un cobro o una impresión. En macOS, Electron exige firma para actualizar y el sistema exige notarización para una distribución normal fuera de la App Store.
 - Consecuencia: enviar `main` solo ejecuta CI; distribuir exige incrementar la versión y enviar su tag. `0.1.0-alpha.1` necesita una actualización manual única si la siguiente versión también es pre-release, mientras que los instaladores creados después de esta decisión siguen su canal automáticamente. GitHub Actions rechaza tags incongruentes y releases duplicadas. Los secretos `WIN_CSC_*`, `CSC_*` y `APPLE_*` nunca se versionan; hasta configurarlos, Windows continúa con advertencias y macOS no se considera apto para actualización automática real.
 
+## D-034 — El tiquete guarda un snapshot y los lectores operan como teclado
+
+- Fecha: 2026-09-15
+- Estado: aceptada
+- Reemplaza: la parte de D-023 que reconstruía el tiquete con la tarifa vigente; complementa D-031
+- Decisión: cada ingreso nuevo guarda en `parking_sessions.entry_snapshot_json` una copia versionada de los datos emitidos. El papel incluye un QR `PC1Q` con ese snapshot y un Code 128 `PC1S` con la referencia compacta de la sesión. La salida acepta cualquiera de esos códigos o una matrícula mediante el canal validado `parking:resolve-exit-target`. Los lectores se soportan por USB HID en modo teclado, con Enter o Tab como terminador; no se integra un SDK de fabricante. Un logo opcional validado se conserva en `app_settings` y se imprime sin exponer rutas al renderer.
+- Motivo: el tiquete debe demostrar qué matrícula, tarifa, hora y operador existían al recibir el vehículo, incluso si la configuración cambia antes de reimprimir. El lector YHD-9300 comprado soporta QR y Code 128, pero usar el estándar de teclado mantiene el flujo compatible con muchos modelos 1D/2D y completamente offline. El Code 128 corto evita intentar meter todo el snapshot en un símbolo lineal excesivamente ancho.
+- Consecuencia: SQLite sigue siendo la autoridad para cobrar. Un QR se contrasta con el snapshot almacenado y un código de una sesión cerrada o alterado no abre el cobro; nunca se liquida usando el precio impreso. Las sesiones anteriores a `0006` conservan `NULL` y todavía pueden resolverse por matrícula o por referencia. La escucha global solo reconoce prefijos propios y se desactiva cuando el foco está en un campo o existe un diálogo, para no interferir con la operación.
+
 ## Plantilla para una nueva decisión
 
 ```markdown

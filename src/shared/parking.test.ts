@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { calculateChange, closeSessionSchema, describeElapsed, exitStatusOf } from './parking'
+import {
+  calculateChange,
+  closeSessionSchema,
+  describeElapsed,
+  exitStatusOf,
+  resolveExitTargetSchema,
+} from './parking'
+
+describe('esquema de lectura del tiquete', () => {
+  it('acepta una matrícula o un código y rechaza entradas vacías o excesivas', () => {
+    expect(resolveExitTargetSchema.safeParse({ code: 'ABC123' }).success).toBe(true)
+    expect(resolveExitTargetSchema.safeParse({ code: 'PC1S123456' }).success).toBe(true)
+    expect(resolveExitTargetSchema.safeParse({ code: '  ' }).success).toBe(false)
+    expect(resolveExitTargetSchema.safeParse({ code: 'X'.repeat(4097) }).success).toBe(false)
+  })
+})
 
 describe('esquema de cierre de salida', () => {
   const base = {

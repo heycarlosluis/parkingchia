@@ -27,6 +27,14 @@ import {
   type VehicleType,
 } from '@shared/tariff'
 import { elapsedMinutes, elapsedMinutesOrZero } from '@shared/format'
+import {
+  decodeEntryTicketCode,
+  entryTicketPayloadSchema,
+  ENTRY_TICKET_VERSION,
+  isEntryTicketCode,
+  type EntryTicketPayload,
+} from '@shared/entry-ticket'
+import { normalizePlate, plateSchema } from '@shared/validation'
 import { OperationError } from '@main/ipc/errors'
 import type { CashService } from '@main/cash/service'
 import type { MonthlyService } from '@main/monthly/service'
@@ -131,12 +139,13 @@ type SessionRow = {
   rate_plan_id: string | null
   rate_plan_name: string | null
   entered_at: string
+  entry_snapshot_json: string | null
   notes: string | null
 }
 
 const ACTIVE_SESSION_QUERY = `
   SELECT s.id, s.vehicle_id, v.plate, v.vehicle_type, s.rate_plan_id, r.name AS rate_plan_name,
-         s.entered_at, s.notes
+         s.entered_at, s.entry_snapshot_json, s.notes
   FROM parking_sessions s
   JOIN vehicles v ON v.id = s.vehicle_id
   LEFT JOIN rate_plans r ON r.id = s.rate_plan_id
@@ -152,7 +161,8 @@ export class ParkingService {
   ) {}
 
   registerEntry(input: RegisterEntryInput): EntryRegistration {
-    if (this.cash.getOpenSessionId() === null) {
+    const cashSessionId = this.cash.getOpenSessionId()
+    if (cashSessionId === null) {
       throw new OperationError('NO_CASH_SESSION', 'Abre la caja antes de registrar ingresos.')
     }
 
@@ -188,6 +198,22 @@ export class ParkingService {
 
     const now = new Date().toISOString()
     const sessionId = randomUUID()
+    const graceMinutes = plan.graceMinutes ?? this.tariffs.getSettings().graceMinutes
+    const employeeName = this.cash.getOpenSessionEmployeeName()
+    const snapshot: EntryTicketPayload = {
+      version: ENTRY_TICKET_VERSION,
+      sessionId,
+      plate: input.plate,
+      vehicleType: input.vehicleType,
+      ratePlanId: plan.id,
+      ratePlanName: plan.name,
+      ratePlanAmountCop: plan.amountCop,
+      billingUnit: plan.billingUnit,
+      enteredAt: now,
+      graceMinutes,
+      employeeName,
+      notes: input.notes,
+    }
 
     this.sqlite.transaction(() => {
       const vehicle = this.sqlite
@@ -211,10 +237,11 @@ export class ParkingService {
       this.sqlite
         .prepare(
           `INSERT INTO parking_sessions
-           (id, vehicle_id, rate_plan_id, entered_at, status, notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`,
+           (id, vehicle_id, rate_plan_id, entered_at, entry_snapshot_json, status, notes,
+            created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
         )
-        .run(sessionId, vehicleId, plan.id, now, input.notes, now, now)
+        .run(sessionId, vehicleId, plan.id, now, JSON.stringify(snapshot), input.notes, now, now)
 
       this.writeAudit('parking.entry_registered', 'parking_session', sessionId, now, {
         plate: input.plate,
@@ -227,22 +254,21 @@ export class ParkingService {
       sessionId,
       plate: input.plate,
       vehicleType: input.vehicleType,
+      ratePlanId: plan.id,
       ratePlanName: plan.name,
       ratePlanAmountCop: plan.amountCop,
       billingUnit: plan.billingUnit,
       enteredAt: now,
-      graceMinutes: plan.graceMinutes ?? this.tariffs.getSettings().graceMinutes,
+      graceMinutes,
+      employeeName,
+      notes: input.notes,
       printed: false,
       printMessage: '',
     }
   }
 
   /**
-   * Reconstruye el tiquete de ingreso de una sesión activa para reimprimirlo.
-   *
-   * A diferencia del recibo de salida, el tiquete de ingreso no guarda un
-   * snapshot: es informativo y se reimprime con los datos vigentes de la
-   * tarifa, que de todos modos no puede eliminarse mientras la sesión la use.
+   * Recupera el snapshot del ingreso de una sesión activa para reimprimirlo.
    *
    * Solo se reimprime mientras la sesión sigue activa. Un tiquete es lo que el
    * cliente entrega para retirar el vehículo, así que reemitirlo después de la
@@ -252,7 +278,8 @@ export class ParkingService {
   findEntryRegistration(sessionId: string): EntryRegistration {
     const row = this.sqlite
       .prepare(
-        `SELECT s.id, v.plate, v.vehicle_type, s.entered_at,
+        `SELECT s.id, v.plate, v.vehicle_type, s.rate_plan_id, s.entered_at,
+                s.entry_snapshot_json, s.notes,
                 r.name AS rate_plan_name, r.amount_cop AS rate_plan_amount_cop,
                 r.billing_unit, r.grace_minutes
          FROM parking_sessions s
@@ -265,7 +292,10 @@ export class ParkingService {
           id: string
           plate: string
           vehicle_type: VehicleType
+          rate_plan_id: string | null
           entered_at: string
+          entry_snapshot_json: string | null
+          notes: string | null
           rate_plan_name: string | null
           rate_plan_amount_cop: number | null
           billing_unit: RatePlanBillingUnit | null
@@ -279,19 +309,60 @@ export class ParkingService {
       )
     }
 
+    const stored = this.parseEntrySnapshot(row.entry_snapshot_json)
+    if (stored !== null) return this.registrationFromSnapshot(stored)
+
     const settings = this.tariffs.getSettings()
     return {
       sessionId: row.id,
       plate: row.plate,
       vehicleType: row.vehicle_type,
+      ratePlanId: row.rate_plan_id ?? 'legacy',
       ratePlanName: row.rate_plan_name ?? 'Sin tarifa',
       ratePlanAmountCop: row.rate_plan_amount_cop ?? 0,
       billingUnit: asTariffBillingUnit(row.billing_unit, settings.billingUnit),
       enteredAt: row.entered_at,
       graceMinutes: row.grace_minutes ?? settings.graceMinutes,
+      employeeName: null,
+      notes: row.notes,
       printed: false,
       printMessage: '',
     }
+  }
+
+  /** Resuelve una salida por QR, Code 128 o matrícula escrita. */
+  resolveExitTarget(code: string): ActiveSession {
+    const scanned = decodeEntryTicketCode(code)
+    if (isEntryTicketCode(code) && scanned === null) {
+      throw new OperationError(
+        'ENTRY_TICKET_INVALID',
+        'El código del tiquete está incompleto o no se pudo leer. Intenta escanearlo nuevamente.',
+      )
+    }
+
+    if (scanned !== null) {
+      const row = this.requireActiveSession(scanned.sessionId)
+      if (scanned.kind === 'qr') this.assertTicketMatchesSession(scanned.payload, row)
+      return this.toActiveSession(row, new Date().toISOString())
+    }
+
+    const plateResult = plateSchema.safeParse(normalizePlate(code))
+    if (!plateResult.success) {
+      throw new OperationError(
+        'PLATE_OR_TICKET_INVALID',
+        'Escanea un tiquete de ingreso o escribe una matrícula válida.',
+      )
+    }
+    const row = this.sqlite
+      .prepare(`${ACTIVE_SESSION_QUERY} AND v.plate = ?`)
+      .get(plateResult.data) as SessionRow | undefined
+    if (!row) {
+      throw new OperationError(
+        'SESSION_NOT_FOUND',
+        `No hay ningún ingreso activo con la matrícula ${plateResult.data}.`,
+      )
+    }
+    return this.toActiveSession(row, new Date().toISOString())
   }
 
   listActiveSessions(input: ListActiveSessionsInput): ActiveSession[] {
@@ -625,6 +696,42 @@ export class ParkingService {
       plenaCop: plan.plenaCop,
       graceMinutes: plan.graceMinutes,
     }
+  }
+
+  private parseEntrySnapshot(snapshotJson: string | null): EntryTicketPayload | null {
+    if (snapshotJson === null) return null
+    try {
+      const parsed = entryTicketPayloadSchema.safeParse(JSON.parse(snapshotJson) as unknown)
+      return parsed.success ? parsed.data : null
+    } catch {
+      return null
+    }
+  }
+
+  private registrationFromSnapshot(snapshot: EntryTicketPayload): EntryRegistration {
+    return {
+      ...snapshot,
+      printed: false,
+      printMessage: '',
+    }
+  }
+
+  private assertTicketMatchesSession(payload: EntryTicketPayload, row: SessionRow): void {
+    const stored = this.parseEntrySnapshot(row.entry_snapshot_json)
+    const matchesStored = stored !== null && JSON.stringify(stored) === JSON.stringify(payload)
+    const matchesLegacy =
+      stored === null &&
+      payload.sessionId === row.id &&
+      payload.plate === row.plate &&
+      payload.vehicleType === row.vehicle_type &&
+      payload.ratePlanId === row.rate_plan_id &&
+      payload.enteredAt === row.entered_at
+    if (matchesStored || matchesLegacy) return
+
+    throw new OperationError(
+      'ENTRY_TICKET_MISMATCH',
+      'El código no coincide con los datos guardados para este ingreso. Escribe la matrícula para continuar.',
+    )
   }
 
   private requireRatePlan(id: string): {

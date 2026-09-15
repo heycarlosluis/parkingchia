@@ -6,6 +6,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DatabaseManager } from '@main/database/connection'
 import { OperationError } from '@main/ipc/errors'
 import { coverageEndDate, todayLocalDate } from '@shared/monthly'
+import {
+  encodeEntryTicketBarcode,
+  encodeEntryTicketQr,
+  ENTRY_TICKET_VERSION,
+} from '@shared/entry-ticket'
 import { CashService } from '@main/cash/service'
 import { EmployeeService } from '@main/employee/service'
 import { MonthlyService } from '@main/monthly/service'
@@ -85,6 +90,7 @@ describe('registro de ingreso', () => {
       billingUnit: 'hour',
     })
     expect(registration.graceMinutes).toBe(15)
+    expect(registration.employeeName).toBe('Operador de prueba')
 
     const active = parking.listActiveSessions({ search: '' })
     expect(active).toHaveLength(1)
@@ -92,7 +98,11 @@ describe('registro de ingreso', () => {
   })
 
   it('reconstruye el tiquete de ingreso para reimprimirlo', () => {
-    const registration = parking.registerEntry(entry())
+    const registration = parking.registerEntry({ ...entry(), notes: 'Llaves en recepción' })
+    manager
+      .getNativeConnection()
+      .prepare('UPDATE rate_plans SET name = ?, amount_cop = ?, grace_minutes = ? WHERE id = ?')
+      .run('Tarifa modificada', 9000, 30, ratePlanId)
     const reprint = parking.findEntryRegistration(registration.sessionId)
     expect(reprint).toMatchObject({
       sessionId: registration.sessionId,
@@ -102,7 +112,60 @@ describe('registro de ingreso', () => {
       ratePlanAmountCop: 5000,
       billingUnit: 'hour',
       graceMinutes: 15,
+      employeeName: 'Operador de prueba',
+      notes: 'Llaves en recepción',
     })
+  })
+
+  it('resuelve el ingreso por QR, Code 128 o matrícula escrita', () => {
+    const registration = parking.registerEntry(entry())
+    const payload = {
+      version: ENTRY_TICKET_VERSION as 1,
+      sessionId: registration.sessionId,
+      plate: registration.plate,
+      vehicleType: registration.vehicleType,
+      ratePlanId: registration.ratePlanId,
+      ratePlanName: registration.ratePlanName,
+      ratePlanAmountCop: registration.ratePlanAmountCop,
+      billingUnit: registration.billingUnit,
+      enteredAt: registration.enteredAt,
+      graceMinutes: registration.graceMinutes,
+      employeeName: registration.employeeName,
+      notes: registration.notes,
+    }
+
+    expect(parking.resolveExitTarget(encodeEntryTicketQr(payload)).id).toBe(registration.sessionId)
+    expect(parking.resolveExitTarget(encodeEntryTicketBarcode(registration.sessionId)).id).toBe(
+      registration.sessionId,
+    )
+    expect(parking.resolveExitTarget('abc 123').id).toBe(registration.sessionId)
+  })
+
+  it('rechaza un QR alterado y un tiquete cuya sesión ya terminó', () => {
+    const registration = parking.registerEntry(entry())
+    const tampered = encodeEntryTicketQr({
+      version: ENTRY_TICKET_VERSION,
+      sessionId: registration.sessionId,
+      plate: 'XYZ789',
+      vehicleType: registration.vehicleType,
+      ratePlanId: registration.ratePlanId,
+      ratePlanName: registration.ratePlanName,
+      ratePlanAmountCop: registration.ratePlanAmountCop,
+      billingUnit: registration.billingUnit,
+      enteredAt: registration.enteredAt,
+      graceMinutes: registration.graceMinutes,
+      employeeName: registration.employeeName,
+      notes: registration.notes,
+    })
+    expect(() => parking.resolveExitTarget(tampered)).toThrow(OperationError)
+
+    parking.cancelSession({
+      sessionId: registration.sessionId,
+      reason: 'Ingreso de prueba terminado',
+    })
+    expect(() =>
+      parking.resolveExitTarget(encodeEntryTicketBarcode(registration.sessionId)),
+    ).toThrow(OperationError)
   })
 
   it('explica el reloj atrasado en lugar de fallar sin motivo al cotizar', () => {

@@ -114,3 +114,37 @@ describe('actualización del esquema de tarifas', () => {
     expect(session.rate_plan_id).toBe('legacy-car')
   })
 })
+
+describe('snapshot del tiquete de ingreso', () => {
+  it('agrega el snapshot sin perder sesiones activas existentes', () => {
+    const databasePath = path.join(directory, 'entry-ticket.sqlite')
+    const now = new Date().toISOString()
+    const legacy = new DatabaseManager(databasePath, migrationsUpTo(5))
+    legacy.initialize()
+    const sqlite = legacy.getNativeConnection()
+    sqlite
+      .prepare(
+        `INSERT INTO vehicles (id, plate, vehicle_type, status, created_at, updated_at)
+         VALUES ('vehicle-before-ticket', 'OLD123', 'car', 'active', ?, ?)`,
+      )
+      .run(now, now)
+    sqlite
+      .prepare(
+        `INSERT INTO parking_sessions
+         (id, vehicle_id, entered_at, status, created_at, updated_at)
+         VALUES ('session-before-ticket', 'vehicle-before-ticket', ?, 'active', ?, ?)`,
+      )
+      .run(now, now, now)
+    legacy.close()
+
+    const upgraded = new DatabaseManager(databasePath, path.resolve('drizzle'))
+    upgraded.initialize()
+    const session = upgraded
+      .getNativeConnection()
+      .prepare('SELECT status, entry_snapshot_json FROM parking_sessions WHERE id = ?')
+      .get('session-before-ticket') as { status: string; entry_snapshot_json: string | null }
+    upgraded.close()
+
+    expect(session).toEqual({ status: 'active', entry_snapshot_json: null })
+  })
+})
