@@ -1,6 +1,6 @@
 # Parking Chía
 
-Aplicación de escritorio offline-first para administrar la operación de un parqueadero. La versión `0.1.0-alpha.3` establece una base funcional y extensible: Electron, interfaz React, SQLite local, impresión térmica, respaldos, actualizaciones y distribución multiplataforma.
+Aplicación de escritorio offline-first para administrar la operación de un parqueadero. La versión `0.1.0-alpha.4` establece una base funcional y extensible: Electron, interfaz React, SQLite local, impresión térmica, respaldos, actualizaciones y distribución multiplataforma.
 
 ## Estado actual
 
@@ -103,7 +103,7 @@ Los primeros builds no están firmados: Windows puede mostrar SmartScreen y macO
 
 ## Actualizaciones
 
-En builds empaquetados, la app consulta GitHub Releases después de iniciar sin bloquear la operación y muestra el aviso en la navegación. El usuario decide cuándo descargar y cuándo reiniciar desde **Configuración > Sistema**. Si autorizó una descarga, también podrá instalarse al cerrar. Las pre-releases siguen el canal de la versión instalada y las versiones estables no reciben pruebas. En desarrollo el actualizador permanece desactivado. La ausencia de Internet no afecta las funciones del parqueadero.
+En builds empaquetados, la app consulta GitHub Releases después de iniciar sin bloquear la operación y muestra el aviso en la navegación. El usuario decide cuándo descargar y cuándo reiniciar desde **Configuración > Sistema**. Al confirmar la instalación, la app libera la base local, cierra sus ventanas e inicia el instalador; un cierre forzado de respaldo evita que Electron quede activo en segundo plano. Las pre-releases siguen el canal de la versión instalada y las versiones estables no reciben pruebas. En desarrollo el actualizador permanece desactivado. La ausencia de Internet no afecta las funciones del parqueadero.
 
 El proveedor está fijado al repositorio público `heycarlosluis/parkingchia` y no contiene tokens. Consulta [docs/releases.md](docs/releases.md) para el flujo de publicación, los canales y la firma.
 

@@ -53,13 +53,15 @@ export function AppShell(): React.JSX.Element {
   }, [initialize, initializeCash, setUpdateState])
 
   const updateNotice =
-    updateStatus === 'downloaded'
-      ? 'Reiniciar para actualizar'
-      : updateStatus === 'downloading'
-        ? 'Descargando actualización'
-        : updateStatus === 'available'
-          ? 'Actualización disponible'
-          : null
+    updateStatus === 'installing'
+      ? 'Cerrando para actualizar'
+      : updateStatus === 'downloaded'
+        ? 'Reiniciar para actualizar'
+        : updateStatus === 'downloading'
+          ? 'Descargando actualización'
+          : updateStatus === 'available'
+            ? 'Actualización disponible'
+            : null
 
   return (
     <div className="app-shell">

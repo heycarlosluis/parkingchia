@@ -286,6 +286,15 @@ Estados posibles: `propuesta`, `aceptada`, `reemplazada` o `descartada`.
 - Motivo: el tiquete debe demostrar qué matrícula, tarifa, hora y operador existían al recibir el vehículo, incluso si la configuración cambia antes de reimprimir. El lector YHD-9300 comprado soporta QR y Code 128, pero usar el estándar de teclado mantiene el flujo compatible con muchos modelos 1D/2D y completamente offline. El Code 128 corto evita intentar meter todo el snapshot en un símbolo lineal excesivamente ancho.
 - Consecuencia: SQLite sigue siendo la autoridad para cobrar. Un QR se contrasta con el snapshot almacenado y un código de una sesión cerrada o alterado no abre el cobro; nunca se liquida usando el precio impreso. Las sesiones anteriores a `0006` conservan `NULL` y todavía pueden resolverse por matrícula o por referencia. La escucha global solo reconoce prefijos propios y se desactiva cuando el foco está en un campo o existe un diálogo, para no interferir con la operación.
 
+## D-035 — La instalación cierra recursos y ventanas antes de ejecutar NSIS
+
+- Fecha: 2026-09-15
+- Estado: aceptada
+- Complementa: D-007 y D-033
+- Decisión: **Reiniciar e instalar** cambia primero al estado `installing` y devuelve ese estado al renderer. Tras una pausa breve para entregar la respuesta IPC, el proceso principal bloquea la reapertura de ventanas, desregistra los handlers, cierra SQLite, destruye todas las ventanas y ejecuta `quitAndInstall` silenciosamente con relanzamiento. Si Electron siguiera activo cinco segundos después, `app.exit(0)` lo finaliza. `autoInstallOnAppQuit` permanece desactivado aun con la descarga completa.
+- Motivo: el flujo anterior iniciaba el instalador interactivo antes de que `quitAndInstall` solicitara el cierre de Electron y además activaba una segunda ruta implícita al cerrar. En Windows el instalador podía detectar Parking Chía todavía activo y quedar esperando, que impedía completar la actualización desde el botón.
+- Consecuencia: instalar sigue requiriendo la confirmación explícita del operador y no ocurre por un cierre ordinario. La base se libera antes de reemplazar archivos, no se crean ventanas nuevas durante el apagado y las llamadas repetidas al botón no lanzan más de un instalador. La salida forzada solo se arma después de cerrar los recursos locales y debe conservarse mientras `electron-updater` inicie NSIS antes de terminar el proceso padre.
+
 ## Plantilla para una nueva decisión
 
 ```markdown

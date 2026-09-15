@@ -25,9 +25,15 @@ if (!hasSingleInstanceLock) {
 } else {
   let mainWindow: BrowserWindow | null = null
   let databaseManager: DatabaseManager | null = null
+  let isInstallingUpdate = false
+
+  const closeDatabase = (): void => {
+    databaseManager?.close()
+    databaseManager = null
+  }
 
   app.on('second-instance', () => {
-    if (mainWindow) {
+    if (!isInstallingUpdate && mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore()
       mainWindow.focus()
     }
@@ -51,7 +57,14 @@ if (!hasSingleInstanceLock) {
       const settings = new SettingsService(databaseManager.getNativeConnection())
       const access = new AccessService(databaseManager.getNativeConnection())
       const printing = new ElectronTicketPrinter(() => mainWindow, settings, access)
-      const updates = new UpdateService(() => BrowserWindow.getAllWindows())
+      const updates = new UpdateService(
+        () => BrowserWindow.getAllWindows(),
+        () => {
+          isInstallingUpdate = true
+          unregisterIpcHandlers()
+          closeDatabase()
+        },
+      )
       const tariffs = new TariffService(databaseManager.getNativeConnection())
       const cash = new CashService(databaseManager.getNativeConnection())
       const employees = new EmployeeService(databaseManager.getNativeConnection())
@@ -78,7 +91,9 @@ if (!hasSingleInstanceLock) {
 
       app.on('browser-window-created', (_event, window) => optimizer.watchWindowShortcuts(window))
       app.on('activate', () => {
-        if (BrowserWindow.getAllWindows().length === 0) mainWindow = createMainWindow()
+        if (!isInstallingUpdate && BrowserWindow.getAllWindows().length === 0) {
+          mainWindow = createMainWindow()
+        }
       })
     })
     .catch(() => {
@@ -91,10 +106,10 @@ if (!hasSingleInstanceLock) {
 
   app.on('before-quit', () => {
     unregisterIpcHandlers()
-    databaseManager?.close()
+    closeDatabase()
   })
 
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit()
+    if (!isInstallingUpdate && process.platform !== 'darwin') app.quit()
   })
 }

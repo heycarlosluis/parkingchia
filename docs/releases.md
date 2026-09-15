@@ -33,16 +33,16 @@ Verifica en GitHub Actions que ambos builds terminaron y que el release contiene
 
 ```bash
 npm run build
-npx electron-builder --win nsis --x64 --publish never -c.npmRebuild=false
+npx electron-builder --win nsis --x64 --publish never -c.npmRebuild=false -c.toolsets.nsis=1.2.1
 ```
 
-Antes de usar el resultado, verifica que `app.asar.unpacked` contenga `node_modules/better-sqlite3/prebuilds/win32-x64.node`. Este camino no reemplaza el job Windows de GitHub Actions para una release oficial ni permite ejecutar la prueba funcional del instalador en macOS.
+`toolsets.nsis=1.2.1` selecciona el paquete unificado de NSIS 3.12, cuyo ejecutable funciona de forma nativa en macOS ARM; el paquete heredado incluye un `makensis` Intel que exige Rosetta. Antes de usar el resultado, verifica que `app.asar.unpacked` contenga `node_modules/better-sqlite3/prebuilds/win32-x64.node`. Este camino no reemplaza el job Windows de GitHub Actions para una release oficial ni permite ejecutar la prueba funcional del instalador en macOS.
 
 ## Canal y firma
 
 El canal se deriva de la versión instalada. Una instalación `alpha` recibe nuevas versiones `alpha` y puede avanzar a `beta` o estable; una instalación `beta` no vuelve a `alpha`; una instalación estable solo recibe releases estables. La aplicación no fuerza manualmente `latest`, porque hacerlo impediría que una pre-release encontrara la siguiente pre-release en GitHub.
 
-En cada inicio empaquetado la app consulta GitHub sin bloquear la operación. Si encuentra una versión más reciente, muestra un aviso persistente en la navegación que abre **Configuración > Sistema**; allí el operador la descarga y elige **Reiniciar e instalar** cuando no haya un cobro o una impresión en curso. Después de autorizar la descarga, cerrar normalmente la aplicación también deja preparada la instalación. El desarrollo local nunca consulta GitHub.
+En cada inicio empaquetado la app consulta GitHub sin bloquear la operación. Si encuentra una versión más reciente, muestra un aviso persistente en la navegación que abre **Configuración > Sistema**; allí el operador la descarga y elige **Reiniciar e instalar** cuando no haya un cobro o una impresión en curso. Esa confirmación libera SQLite e IPC, cierra todas las ventanas e inicia NSIS en modo silencioso; si Electron no termina por sí solo, una salida de respaldo lo finaliza después de cinco segundos. Cerrar normalmente la aplicación no instala una descarga: la instalación siempre requiere la acción explícita del operador. El desarrollo local nunca consulta GitHub.
 
 La versión `0.1.0-alpha.1` publicada el 18 de agosto de 2026 forzaba el canal estable y no puede descubrir otra pre-release. Como no registra descargas, instala en los equipos la siguiente versión publicada con esta corrección; si ya existiera una instalación de `alpha.1`, deberá actualizarse una vez con el instalador nuevo. Una futura release estable sí sería visible para `alpha.1`.
 

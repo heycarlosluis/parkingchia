@@ -4,6 +4,8 @@ import type { UpdateState } from '@shared/contracts'
 import { IPC_CHANNELS } from '@shared/ipc'
 
 const { autoUpdater } = updater
+const INSTALL_START_DELAY_MS = 250
+const FORCE_EXIT_DELAY_MS = 5_000
 
 const initialState = (): UpdateState => ({
   status: 'idle',
@@ -18,8 +20,12 @@ const initialState = (): UpdateState => ({
 
 export class UpdateService {
   private state = initialState()
+  private installRequested = false
 
-  constructor(private readonly windows: () => BrowserWindow[]) {
+  constructor(
+    private readonly windows: () => BrowserWindow[],
+    private readonly prepareToInstall: () => void = () => undefined,
+  ) {
     autoUpdater.autoDownload = false
     autoUpdater.autoInstallOnAppQuit = false
 
@@ -49,7 +55,6 @@ export class UpdateService {
       })
     })
     autoUpdater.on('update-downloaded', (info) => {
-      autoUpdater.autoInstallOnAppQuit = true
       this.setState({
         status: 'downloaded',
         availableVersion: info.version,
@@ -92,10 +97,20 @@ export class UpdateService {
     return this.getState()
   }
 
-  install(): void {
-    if (app.isPackaged && this.state.status === 'downloaded') {
-      autoUpdater.quitAndInstall(false, true)
+  install(): UpdateState {
+    if (!app.isPackaged || this.state.status !== 'downloaded' || this.installRequested) {
+      return this.getState()
     }
+
+    this.installRequested = true
+    this.setState({
+      status: 'installing',
+      canCheck: false,
+      message: 'Cerrando Parking Chía para instalar la actualización…',
+    })
+
+    setTimeout(() => this.startInstallation(), INSTALL_START_DELAY_MS)
+    return this.getState()
   }
 
   scheduleInitialCheck(): void {
@@ -109,5 +124,21 @@ export class UpdateService {
       if (!window.isDestroyed())
         window.webContents.send(IPC_CHANNELS.UPDATE_STATE_CHANGED, this.state)
     }
+  }
+
+  private startInstallation(): void {
+    this.prepareToInstall()
+
+    const forceExitTimer = setTimeout(() => app.exit(0), FORCE_EXIT_DELAY_MS)
+    forceExitTimer.unref()
+
+    for (const window of this.windows()) {
+      if (!window.isDestroyed()) window.destroy()
+    }
+
+    // El instalador silencioso evita que NSIS quede esperando una ventana de
+    // confirmación mientras Electron termina; el temporizador cubre un cierre
+    // bloqueado por el runtime o por una ventana secundaria.
+    autoUpdater.quitAndInstall(true, true)
   }
 }

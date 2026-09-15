@@ -7,11 +7,11 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 ## Línea base
 
 - Rama de referencia: `main`.
-- Versión del corte: `0.1.0-alpha.3`.
+- Versión del corte: `0.1.0-alpha.4`.
 - Versión publicada más reciente: `0.1.0-alpha.3`.
-- Tag: `v0.1.0-alpha.3`.
-- CI de la línea base: aprobado.
-- Release multiplataforma de la línea base: aprobada y publicada como pre-release.
+- Tag publicado más reciente: `v0.1.0-alpha.3`.
+- CI de la versión publicada: aprobado.
+- Release multiplataforma publicada: `0.1.0-alpha.3`, aprobada como pre-release.
 - Artefactos publicados: NSIS Windows x64; DMG y ZIP macOS x64/arm64; metadatos YAML y blockmaps.
 
 ## Implementado y funcional
@@ -44,7 +44,7 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 - Configuración persistente de logo, impresora, ancho de papel y diálogo del sistema.
 - Listado de impresoras y ticket HTML de prueba mediante APIs nativas de Electron.
 - Respaldo manual con diálogo nativo y respaldos automáticos previos a migrar.
-- Máquina de estados de actualizaciones y proveedor GitHub Releases: consulta al iniciar, aviso persistente en la navegación, canal derivado del SemVer instalado, descarga y reinicio explícitos, y publicación protegida contra tags incongruentes o reemplazo de una release existente (D-033).
+- Máquina de estados de actualizaciones y proveedor GitHub Releases: consulta al iniciar, aviso persistente en la navegación, canal derivado del SemVer instalado, descarga y reinicio explícitos, cierre coordinado de ventanas, IPC y SQLite antes de iniciar NSIS, salida forzada de respaldo, y publicación protegida contra tags incongruentes o reemplazo de una release existente (D-033 y D-035).
 - Módulo de mensualidades completo: clientes mensuales, planes con unidad `month`, suscripciones con vigencia de días completos, renovación a continuación, cancelación con motivo, pagos parciales o totales con recibo inmutable y reimprimible, y resumen de vigentes, por vencer, saldo por cobrar y recaudado del mes.
 - La exención por mensualidad se integra al cobro por horas: una sesión activa cubierta por una mensualidad vigente sale con total en cero conservando la permanencia visible, y el historial marca el cliente mensual que la cubrió. El diálogo de salida solo exige efectivo cuando hay algo que cobrar, de modo que las salidas sin cobro (mensualidad o tolerancia) se confirman con normalidad (D-032).
 - Módulo de Caja completo: apertura con fondo inicial y empleado asignado, asociación automática de cada pago de parqueo y de mensualidad a la caja abierta, arqueo en vivo (recaudado, anulado y esperado), anulación de un cobro con motivo, cierre con efectivo contado y diferencia, recibo de cierre reimprimible e historial de cierres anteriores.
@@ -87,6 +87,7 @@ El workflow de release verificó además `npm run dist:win` en Windows y `npm ru
 
 - Los instaladores todavía no están firmados. Windows puede mostrar SmartScreen y macOS puede bloquear o advertir sobre la aplicación.
 - Las actualizaciones automáticas reales en macOS requieren firma de código.
+- El cierre reforzado de `0.1.0-alpha.4` está cubierto por pruebas automatizadas, pero el salto completo entre dos releases debe certificarse en Windows después de publicar la versión.
 - `0.1.0-alpha.1` fuerza el canal estable y no puede descubrir otra pre-release; como la release no registra descargas, los equipos deben instalar directamente la siguiente versión. Si ya existiera una instalación de `alpha.1`, necesitará esa actualización manual una sola vez.
 - Se usa el icono predeterminado de Electron hasta disponer de `.ico` e `.icns` definitivos.
 - La impresión está implementada y falla de forma controlada, pero no se ha certificado todavía con hardware térmico físico ni drivers específicos.
@@ -124,3 +125,7 @@ El tiquete de ingreso y la salida por lector se rediseñaron en D-034. Los ingre
 Se preparó `0.1.0-alpha.2` y se generó desde macOS un instalador NSIS Windows x64 de prueba con `npmRebuild=false`, usando el binario precompilado que `better-sqlite3` 13 distribuye para `win32-x64`. Se verificó que tanto el instalador como el módulo nativo sean PE de Windows y se copió el `.exe` a Descargas con SHA-256 coincidente. El instalador no está firmado y no puede someterse a una prueba funcional en macOS; la release oficial debe volver a construirlo y probarlo en el runner Windows.
 
 `0.1.0-alpha.3` es la primera actualización de prueba destinada a validar el flujo completo desde una instalación local de `alpha.2`: detección al iniciar, aviso persistente, descarga, reinicio e instalación. El cambio visible deliberadamente pequeño está en Configuración > Sistema, donde se aclara que las actualizaciones conservan los datos locales. El resultado extremo a extremo solo puede darse por confirmado después de publicar los artefactos y probar el salto en Windows.
+
+`0.1.0-alpha.4` corrige el cierre al elegir **Reiniciar e instalar** (D-035). El estado `installing` se devuelve al renderer antes de iniciar el apagado; después se cierran IPC, SQLite y todas las ventanas, NSIS se ejecuta silenciosamente con relanzamiento y un temporizador finaliza el proceso si Electron siguiera vivo cinco segundos más tarde. `autoInstallOnAppQuit` permanece desactivado para que cerrar la aplicación por otra causa nunca instale una descarga sin confirmación. El commit en `main` no distribuye esta versión: se requiere publicar el tag coincidente en una acción separada y explícita.
+
+Para este corte pasaron `format:check`, `typecheck`, `lint`, 30 archivos con 258 pruebas y `build`. Desde macOS ARM se generó el NSIS Windows x64 con el paquete unificado NSIS 3.12 y `npmRebuild=false`; se verificaron como PE de Windows el ejecutable empaquetado y `better-sqlite3/prebuilds/win32-x64.node`. El instalador de 126.320.489 bytes se copió a Descargas y ambas copias tienen SHA-256 `580142f14bea80ffc9cab8a0d05c1656ef656ffeb2cca75c8d5d0f26705e08ff`. Sigue pendiente ejecutarlo y probar la actualización extremo a extremo en Windows.

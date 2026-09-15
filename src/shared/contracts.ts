@@ -267,7 +267,14 @@ export type BackupResult = {
 }
 
 export type UpdateStateName =
-  'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'not-available'
+  | 'downloading'
+  | 'downloaded'
+  | 'installing'
+  | 'error'
 
 export type UpdateState = {
   status: UpdateStateName
@@ -472,6 +479,6 @@ export interface ParkingApi {
   getUpdateState: () => Promise<ApiResult<UpdateState>>
   checkForUpdates: () => Promise<ApiResult<UpdateState>>
   downloadUpdate: () => Promise<ApiResult<UpdateState>>
-  installUpdate: () => Promise<ApiResult<void>>
+  installUpdate: () => Promise<ApiResult<UpdateState>>
   onUpdateState: (listener: (state: UpdateState) => void) => () => void
 }

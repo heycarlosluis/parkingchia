@@ -34,6 +34,13 @@ export function SystemSettings(): React.JSX.Element {
     else setError(result.error.message)
   }
 
+  const installUpdate = async (): Promise<void> => {
+    setError('')
+    const result = await window.parkingAPI.installUpdate()
+    if (result.ok) setUpdateState(result.data)
+    else setError(result.error.message)
+  }
+
   const createBackup = async (): Promise<void> => {
     setError('')
     setMessage('')
@@ -69,7 +76,9 @@ export function SystemSettings(): React.JSX.Element {
             <p className="system-label">Estado actual</p>
             <p>{updateState?.message ?? 'Consultando el estado…'}</p>
           </div>
-          {updateState?.status === 'downloading' || updateState?.status === 'downloaded' ? (
+          {updateState?.status === 'downloading' ||
+          updateState?.status === 'downloaded' ||
+          updateState?.status === 'installing' ? (
             <div className="progress-stack">
               <Progress value={updateState.progress ?? 0} aria-label="Progreso de descarga" />
               <span className="tabular">{updateState.progress ?? 0}%</span>
@@ -92,7 +101,7 @@ export function SystemSettings(): React.JSX.Element {
             </Button>
           ) : null}
           {updateState?.status === 'downloaded' ? (
-            <Button onClick={() => void window.parkingAPI.installUpdate()}>
+            <Button onClick={() => void installUpdate()}>
               <RotateCcw data-icon="inline-start" />
               Reiniciar e instalar
             </Button>

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => {
   type Listener = (payload?: unknown) => void
@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => {
 
   return {
     app: {
+      exit: vi.fn(),
       getVersion: vi.fn(() => '0.1.0-alpha.1'),
       isPackaged: true,
     },
@@ -46,6 +47,7 @@ import { UpdateService } from './service'
 
 describe('UpdateService', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
     mocks.listeners.clear()
     mocks.app.isPackaged = true
     mocks.updater.autoDownload = true
@@ -53,6 +55,10 @@ describe('UpdateService', () => {
     mocks.updater.allowPrerelease = true
     mocks.updater.channel = undefined
     vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('conserva el canal que electron-updater deriva de la versión instalada', () => {
@@ -83,15 +89,38 @@ describe('UpdateService', () => {
     expect(send).toHaveBeenCalledOnce()
   })
 
-  it('solo reinicia cuando la descarga terminó', () => {
-    const service = new UpdateService(() => [])
+  it('cierra recursos y ventanas antes de iniciar una instalación silenciosa', async () => {
+    const prepareToInstall = vi.fn()
+    const destroy = vi.fn()
+    const service = new UpdateService(
+      () =>
+        [
+          {
+            isDestroyed: () => false,
+            destroy,
+            webContents: { send: vi.fn() },
+          },
+        ] as never,
+      prepareToInstall,
+    )
 
     service.install()
     expect(mocks.updater.quitAndInstall).not.toHaveBeenCalled()
 
     mocks.emit('update-downloaded', { version: '0.1.0-alpha.2' })
-    service.install()
+    expect(service.install()).toMatchObject({ status: 'installing', canCheck: false })
+    expect(service.install()).toMatchObject({ status: 'installing' })
 
-    expect(mocks.updater.quitAndInstall).toHaveBeenCalledWith(false, true)
+    await vi.advanceTimersByTimeAsync(250)
+
+    expect(prepareToInstall).toHaveBeenCalledOnce()
+    expect(destroy).toHaveBeenCalledOnce()
+    expect(mocks.updater.quitAndInstall).toHaveBeenCalledOnce()
+    expect(mocks.updater.quitAndInstall).toHaveBeenCalledWith(true, true)
+    expect(mocks.updater.autoInstallOnAppQuit).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(mocks.app.exit).toHaveBeenCalledWith(0)
   })
 })

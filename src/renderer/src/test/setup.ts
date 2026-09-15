@@ -467,7 +467,7 @@ const parkingApi: ParkingApi = {
   getUpdateState: vi.fn(async () => ok(updateState)),
   checkForUpdates: vi.fn(async () => ok(updateState)),
   downloadUpdate: vi.fn(async () => ok(updateState)),
-  installUpdate: vi.fn(async () => ok(undefined)),
+  installUpdate: vi.fn(async () => ok(updateState)),
   onUpdateState: vi.fn(() => () => undefined),
 }
 

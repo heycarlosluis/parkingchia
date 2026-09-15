@@ -379,11 +379,7 @@ export function registerIpcHandlers(services: Services): void {
   ipcMain.handle(IPC_CHANNELS.UPDATE_GET_STATE, () => withAccess(() => services.updates.getState()))
   ipcMain.handle(IPC_CHANNELS.UPDATE_CHECK, () => withAccess(() => services.updates.check()))
   ipcMain.handle(IPC_CHANNELS.UPDATE_DOWNLOAD, () => withAccess(() => services.updates.download()))
-  ipcMain.handle(IPC_CHANNELS.UPDATE_INSTALL, () =>
-    withAccess(() => {
-      services.updates.install()
-    }),
-  )
+  ipcMain.handle(IPC_CHANNELS.UPDATE_INSTALL, () => withAccess(() => services.updates.install()))
 }
 
 export function unregisterIpcHandlers(): void {
