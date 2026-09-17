@@ -295,6 +295,23 @@ Estados posibles: `propuesta`, `aceptada`, `reemplazada` o `descartada`.
 - Motivo: el flujo anterior iniciaba el instalador interactivo antes de que `quitAndInstall` solicitara el cierre de Electron y además activaba una segunda ruta implícita al cerrar. En Windows el instalador podía detectar Parking Chía todavía activo y quedar esperando, que impedía completar la actualización desde el botón.
 - Consecuencia: instalar sigue requiriendo la confirmación explícita del operador y no ocurre por un cierre ordinario. La base se libera antes de reemplazar archivos, no se crean ventanas nuevas durante el apagado y las llamadas repetidas al botón no lanzan más de un instalador. La salida forzada solo se arma después de cerrar los recursos locales y debe conservarse mientras `electron-updater` inicie NSIS antes de terminar el proceso padre.
 
+## D-036 — El NIT del parqueadero se valida con el dígito de verificación de la DIAN
+
+- Fecha: 2026-09-17
+- Estado: aceptada
+- Decisión: el perfil del parqueadero admite un NIT opcional guardado en `app_settings` con la clave `parking.nit`, en forma compacta `base-DV` (`800197268-4`). Se acepta escrito con puntos, espacios o comas, exige el dígito de verificación tras un guion y lo contrasta con el módulo 11 de la DIAN. La base admite de 3 a 10 dígitos para cubrir con una sola regla a personas jurídicas (9 dígitos), personas naturales (su cédula) y otros inscritos en el RUT. Se muestra y se imprime agrupado (`800.197.268-4`) bajo el nombre en todos los documentos.
+- Motivo: el NIT identifica al responsable en tiquetes y recibos. Distinguir tipos de persona solo cambiaría el largo esperado, mientras que el dígito de verificación detecta un número mal escrito en cualquiera de ellos. El guion obligatorio evita confundir una cédula de 10 dígitos con un NIT de 9 dígitos y su DV pegado.
+- Consecuencia: no hay migración de esquema; las instalaciones existentes quedan sin NIT hasta que el operador lo registre. Un perfil que omite el campo conserva el valor guardado y un campo vacío lo elimina. Si más adelante se requiere facturación electrónica, el tipo de persona y la responsabilidad frente al IVA deberán modelarse aparte.
+
+## D-037 — Los tipos de vehículo son una lista compartida respaldada por restricciones
+
+- Fecha: 2026-09-17
+- Estado: aceptada
+- Complementa: D-027
+- Decisión: `VEHICLE_TYPES` en `src/shared/tariff.ts` define el valor, el orden visible y, junto a `VEHICLE_TYPE_LABELS`, la etiqueta en español de cada tipo. La lista pasa a diez: `car`, `pickup`, `van`, `taxi`, `bus`, `truck`, `motorcycle`, `scooter`, `bicycle` y `other`. Las columnas `vehicle_type` de `vehicles` y `rate_plans` conservan una restricción `CHECK` con los mismos valores; la migración `0007` recrea ambas tablas preservando filas y referencias. `src/main/database/schema.ts` repite la lista porque drizzle-kit no resuelve los alias del proyecto, y `migration.test.ts` verifica que ambas coincidan.
+- Motivo: un parqueadero cobra distinto a una camioneta, un camión o un bus, y con cuatro tipos esas tarifas se mezclaban en «Otro». Mantener la lista en un solo módulo evita que cada pantalla arme su propio menú, y la restricción en SQLite impide que un valor inventado entre por IPC o por una migración futura.
+- Consecuencia: agregar o retirar un tipo exige una migración y actualizar la lista de `schema.ts`; un tipo retirado necesitaría además reasignar las filas que lo usen. La pantalla de ingreso no se recarga de opciones porque solo muestra los tipos con una tarifa activa (D-027). Los iconos de cada tipo viven en el renderer y no forman parte del contrato.
+
 ## Plantilla para una nueva decisión
 
 ```markdown
