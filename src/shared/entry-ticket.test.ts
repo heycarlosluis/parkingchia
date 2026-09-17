@@ -3,6 +3,7 @@ import {
   decodeEntryTicketCode,
   encodeEntryTicketBarcode,
   encodeEntryTicketQr,
+  sanitizeExitCodeInput,
   type EntryTicketPayload,
 } from './entry-ticket'
 
@@ -45,5 +46,20 @@ describe('códigos del tiquete de ingreso', () => {
     expect(decodeEntryTicketCode('PC1Qcontenido-invalido')).toBeNull()
     expect(decodeEntryTicketCode('PC1S1234')).toBeNull()
     expect(decodeEntryTicketCode(`PC1S${'9'.repeat(39)}`)).toBeNull()
+  })
+})
+
+describe('campo de Registrar salida', () => {
+  it('filtra una matrícula como el campo de ingreso', () => {
+    expect(sanitizeExitCodeInput('abc-12ñ')).toBe('ABC12N')
+    expect(sanitizeExitCodeInput('abcd123456')).toBe('ABCD1234')
+  })
+
+  it('conserva intactos los códigos del tiquete', () => {
+    const qr = encodeEntryTicketQr(payload)
+    expect(sanitizeExitCodeInput(qr)).toBe(qr)
+    // El prefijo sobrevive al filtro mientras el lector lo escribe.
+    expect(sanitizeExitCodeInput('PC1')).toBe('PC1')
+    expect(sanitizeExitCodeInput('PC1Q.a-b_c')).toBe('PC1Q.a-b_c')
   })
 })

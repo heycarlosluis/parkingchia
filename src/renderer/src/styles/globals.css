@@ -328,11 +328,13 @@ a {
   text-indent: 0.18em;
 }
 .quick-plate-field .scanner-code-input {
-  min-height: 4.5rem;
-  font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  /* Conserva el alto del campo de matrícula para que escanear no mueva la pantalla. */
   font-size: 1.15rem;
   font-weight: 650;
-  text-align: center;
+  letter-spacing: normal;
+  text-indent: 0;
+  /* El QR distingue mayúsculas: se muestra tal como llegó. */
+  text-transform: none;
 }
 .quick-plate-field .field-hint svg {
   display: inline-block;

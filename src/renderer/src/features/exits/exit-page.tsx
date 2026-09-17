@@ -5,7 +5,11 @@ import { Controller, useForm } from 'react-hook-form'
 import { Link, useLocation } from 'react-router-dom'
 import type { z } from 'zod'
 import type { ActiveSession, ExitRegistration } from '@shared/contracts'
-import { MAX_ENTRY_SCAN_LENGTH } from '@shared/entry-ticket'
+import {
+  isEntryTicketCode,
+  MAX_ENTRY_SCAN_LENGTH,
+  sanitizeExitCodeInput,
+} from '@shared/entry-ticket'
 import { formatCurrency, formatDateTime } from '@shared/format'
 import { describeElapsed, PAYMENT_METHOD_LABELS, resolveExitTargetSchema } from '@shared/parking'
 import { describeCoverage } from '@shared/monthly'
@@ -15,7 +19,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter } from '@/components/ui/card'
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
 import { ExitDialog } from '@/features/active-sessions/exit-dialog'
 import { useCashStore } from '@/store/cash-store'
 import { useParkingStore } from '@/store/parking-store'
@@ -229,20 +232,29 @@ export function ExitPage(): React.JSX.Element {
                   control={control}
                   name="code"
                   render={({ field }) => (
-                    <Input
+                    <input
                       id="exit-code"
-                      className="scanner-code-input"
+                      // Un código escaneado es largo: se muestra compacto en lugar de a tamaño de matrícula.
+                      className={
+                        isEntryTicketCode(field.value)
+                          ? 'plate-input scanner-code-input'
+                          : 'plate-input'
+                      }
                       autoComplete="off"
                       autoFocus
                       spellCheck={false}
                       enterKeyHint="done"
                       maxLength={MAX_ENTRY_SCAN_LENGTH}
-                      placeholder="Escanea aquí o escribe ABC123"
+                      placeholder="ABC123"
                       aria-invalid={Boolean(formState.errors.code)}
-                      {...field}
+                      name={field.name}
+                      ref={field.ref}
+                      value={field.value}
+                      onBlur={field.onBlur}
+                      // Igual que en Registrar ingreso: solo letras y dígitos, salvo un tiquete escaneado.
                       onChange={(event) => {
                         setLookupError('')
-                        field.onChange(event)
+                        field.onChange(sanitizeExitCodeInput(event.target.value))
                       }}
                     />
                   )}

@@ -54,7 +54,7 @@ describe('Registrar salida', () => {
     expect(within(dialog).getByText('ABC123')).toBeInTheDocument()
     expect(await within(dialog).findByText('Total a cobrar')).toBeInTheDocument()
 
-    expect(window.parkingAPI.resolveExitTarget).toHaveBeenCalledWith({ code: 'abc 123' })
+    expect(window.parkingAPI.resolveExitTarget).toHaveBeenCalledWith({ code: 'ABC123' })
   })
 
   it('avisa cuando la matrícula no está en el parqueadero y no abre el cobro', async () => {
@@ -85,6 +85,15 @@ describe('Registrar salida', () => {
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(window.parkingAPI.resolveExitTarget).toHaveBeenCalledWith({ code })
+  })
+
+  it('filtra la matrícula igual que Registrar ingreso', async () => {
+    renderExits()
+
+    const code = await screen.findByLabelText('Tiquete o matrícula')
+    await userEvent.type(code, 'ab-c 1ñ23456789')
+
+    expect(code).toHaveValue('ABC1N234')
   })
 
   it('el campo conserva los caracteres necesarios para códigos QR', async () => {

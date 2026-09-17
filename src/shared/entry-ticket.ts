@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { ratePlanIdSchema, tariffBillingUnitSchema, vehicleTypeSchema } from './tariff'
-import { plateSchema } from './validation'
+import { plateSchema, sanitizePlateInput } from './validation'
 
 /** Versión del contenido inmutable que se guarda al registrar un ingreso. */
 export const ENTRY_TICKET_VERSION = 1
@@ -112,4 +112,18 @@ export function decodeEntryTicketCode(value: string): DecodedEntryTicket | null 
 export function isEntryTicketCode(value: string): boolean {
   const code = value.trim().toUpperCase()
   return code.startsWith(ENTRY_TICKET_QR_PREFIX) || code.startsWith(ENTRY_TICKET_BARCODE_PREFIX)
+}
+
+/**
+ * Valor del campo de Registrar salida mientras se escribe.
+ *
+ * Una matrícula se filtra igual que en Registrar ingreso. Un código propio se
+ * conserva intacto: el QR viaja en base64url, que distingue mayúsculas y usa
+ * `-` y `_`. Los prefijos son alfanuméricos, así que sobreviven al filtro de
+ * matrícula mientras el lector los escribe carácter por carácter.
+ */
+export function sanitizeExitCodeInput(value: string): string {
+  return isEntryTicketCode(value)
+    ? value.slice(0, MAX_ENTRY_SCAN_LENGTH)
+    : sanitizePlateInput(value)
 }
