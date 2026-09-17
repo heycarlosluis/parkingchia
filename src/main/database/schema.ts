@@ -12,13 +12,27 @@ export const appSettings = sqliteTable('app_settings', {
   ...timestamps,
 })
 
+// La lista de tipos de vehículo se mantiene en paralelo con `VEHICLE_TYPES` de
+// `@shared/tariff`: este archivo lo lee drizzle-kit, que no resuelve los alias
+// del proyecto. `migration.test.ts` verifica que ambas listas coincidan.
 export const vehicles = sqliteTable(
   'vehicles',
   {
     id: text('id').primaryKey(),
     plate: text('plate').notNull(),
     vehicleType: text('vehicle_type', {
-      enum: ['car', 'motorcycle', 'bicycle', 'other'],
+      enum: [
+        'car',
+        'pickup',
+        'van',
+        'taxi',
+        'bus',
+        'truck',
+        'motorcycle',
+        'scooter',
+        'bicycle',
+        'other',
+      ],
     }).notNull(),
     description: text('description'),
     status: text('status', { enum: ['active', 'inactive'] })
@@ -33,7 +47,7 @@ export const vehicles = sqliteTable(
     check('vehicles_plate_length', sql`length(${table.plate}) between 3 and 8`),
     check(
       'vehicles_type_valid',
-      sql`${table.vehicleType} in ('car', 'motorcycle', 'bicycle', 'other')`,
+      sql`${table.vehicleType} in ('car', 'pickup', 'van', 'taxi', 'bus', 'truck', 'motorcycle', 'scooter', 'bicycle', 'other')`,
     ),
     check('vehicles_status_valid', sql`${table.status} in ('active', 'inactive')`),
   ],
@@ -45,7 +59,18 @@ export const ratePlans = sqliteTable(
     id: text('id').primaryKey(),
     name: text('name').notNull(),
     vehicleType: text('vehicle_type', {
-      enum: ['car', 'motorcycle', 'bicycle', 'other'],
+      enum: [
+        'car',
+        'pickup',
+        'van',
+        'taxi',
+        'bus',
+        'truck',
+        'motorcycle',
+        'scooter',
+        'bicycle',
+        'other',
+      ],
     }).notNull(),
     billingUnit: text('billing_unit', { enum: ['minute', 'hour', 'day', 'month'] }).notNull(),
     amountCop: integer('amount_cop').notNull(),
@@ -67,7 +92,7 @@ export const ratePlans = sqliteTable(
     ),
     check(
       'rate_plans_vehicle_type_valid',
-      sql`${table.vehicleType} in ('car', 'motorcycle', 'bicycle', 'other')`,
+      sql`${table.vehicleType} in ('car', 'pickup', 'van', 'taxi', 'bus', 'truck', 'motorcycle', 'scooter', 'bicycle', 'other')`,
     ),
     check('rate_plans_unit_valid', sql`${table.billingUnit} in ('minute', 'hour', 'day', 'month')`),
     check('rate_plans_status_valid', sql`${table.status} in ('active', 'inactive')`),

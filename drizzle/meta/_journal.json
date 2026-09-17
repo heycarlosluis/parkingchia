@@ -50,6 +50,13 @@
       "when": 1789475700432,
       "tag": "0006_windy_big_bertha",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1789670455336,
+      "tag": "0007_serious_avengers",
+      "breakpoints": true
     }
   ]
 }

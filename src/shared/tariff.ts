@@ -28,7 +28,30 @@ export const ROUNDING_STEPS_COP = [0, 50, 100, 500, 1000] as const
 export type TariffCurrency = typeof TARIFF_CURRENCY
 export type TariffBillingUnit = 'hour' | 'minute'
 export type RatePlanBillingUnit = TariffBillingUnit | 'day' | 'month'
-export type VehicleType = 'car' | 'motorcycle' | 'bicycle' | 'other'
+/**
+ * Tipos de vehículo que pueden entrar a un parqueadero.
+ *
+ * El orden es el que ve el operador y va de lo más frecuente a lo más raro.
+ * Ningún tipo aparece en Registrar ingreso hasta que exista una tarifa activa
+ * para él (D-027), así que ampliar la lista no complica la pantalla.
+ *
+ * Cada valor es también parte de las restricciones `CHECK` de `vehicles` y
+ * `rate_plans`: agregar uno exige una migración.
+ */
+export const VEHICLE_TYPES = [
+  'car',
+  'pickup',
+  'van',
+  'taxi',
+  'bus',
+  'truck',
+  'motorcycle',
+  'scooter',
+  'bicycle',
+  'other',
+] as const
+
+export type VehicleType = (typeof VEHICLE_TYPES)[number]
 export type RatePlanStatus = 'active' | 'inactive'
 export type RoundingStepCop = (typeof ROUNDING_STEPS_COP)[number]
 
@@ -131,7 +154,13 @@ export type ParkingCharge = {
 
 export const VEHICLE_TYPE_LABELS: Record<VehicleType, string> = {
   car: 'Automóvil',
+  pickup: 'Camioneta',
+  van: 'Van o furgón',
+  taxi: 'Taxi',
+  bus: 'Autobús',
+  truck: 'Camión',
   motorcycle: 'Motocicleta',
+  scooter: 'Patineta eléctrica',
   bicycle: 'Bicicleta',
   other: 'Otro',
 }
@@ -369,7 +398,7 @@ const copAmount = (label: string) =>
 
 export const tariffBillingUnitSchema = z.enum(['hour', 'minute'])
 export const ratePlanBillingUnitSchema = z.enum(['hour', 'minute', 'day', 'month'])
-export const vehicleTypeSchema = z.enum(['car', 'motorcycle', 'bicycle', 'other'])
+export const vehicleTypeSchema = z.enum(VEHICLE_TYPES)
 export const ratePlanStatusSchema = z.enum(['active', 'inactive'])
 
 export const graceMinutesSchema = z

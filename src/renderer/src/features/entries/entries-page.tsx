@@ -1,7 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
   Bike,
+  Bus,
   Car,
+  CarFront,
+  CarTaxiFront,
+  Caravan,
   CheckCircle2,
   CircleEllipsis,
   LoaderCircle,
@@ -9,7 +13,9 @@ import {
   Motorbike,
   Plus,
   Printer,
+  Scooter,
   Settings2,
+  Truck,
   type LucideIcon,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -71,7 +77,13 @@ type EntryForm = z.output<typeof entryFormSchema>
 
 const VEHICLE_TYPE_ICONS: Record<VehicleType, LucideIcon> = {
   car: Car,
+  pickup: CarFront,
+  van: Caravan,
+  taxi: CarTaxiFront,
+  bus: Bus,
+  truck: Truck,
   motorcycle: Motorbike,
+  scooter: Scooter,
   bicycle: Bike,
   other: CircleEllipsis,
 }
