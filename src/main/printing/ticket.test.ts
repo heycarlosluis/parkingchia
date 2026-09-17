@@ -3,12 +3,18 @@ import { describe, expect, it } from 'vitest'
 import type { EntryRegistration } from '@shared/contracts'
 import { calculateChargeForMinutes, DEFAULT_TARIFF_SETTINGS } from '@shared/tariff'
 import type { ReceiptSnapshot } from '@main/parking/service'
-import { createEntryTicketHtml, createExitReceiptHtml } from './ticket'
+import {
+  createCashCloseReceiptHtml,
+  createEntryTicketHtml,
+  createExitReceiptHtml,
+  createTestTicketHtml,
+} from './ticket'
 
 const profile = {
   name: 'Parqueadero <Central>',
   address: 'Carrera 10 # 12-34',
   phone: '300 123 4567',
+  nit: '800197268-4',
   logoDataUrl: 'data:image/png;base64,aGVsbG8=',
 }
 
@@ -64,6 +70,7 @@ describe('tiquete de ingreso', () => {
     expect(html).toContain('Escanee para registrar la salida')
     expect(html).toContain('<svg')
     expect(html).toContain('Referencia 123e4567-e89b-12d3-a456-426614174000')
+    expect(html).toContain('NIT 800.197.268-4')
     expect(html).toContain('Parqueadero &lt;Central&gt;')
     expect(html).not.toContain('<Central>')
   })
@@ -91,7 +98,8 @@ describe('recibo de salida', () => {
     expect(html).toContain('IVA (19 %)')
     expect(html).toContain('Recibido')
     expect(html).toContain('Cambio')
-    expect(html).toContain('@page { size: 58mm auto')
+    // Se maqueta sobre el ancho que imprime el cabezal, no sobre el del rollo.
+    expect(html).toContain('body { width: 48mm;')
   })
 
   it('deja constancia del empleado del turno y de la nota de la salida', () => {
@@ -137,5 +145,39 @@ describe('recibo de salida', () => {
     expect(html).not.toContain('IVA')
     expect(html).not.toContain('Recibido')
     expect(html).toContain('Tarjeta')
+  })
+})
+
+describe('legibilidad en papel térmico', () => {
+  it('no usa negrita en ningún documento', () => {
+    const documents = [
+      createTestTicketHtml('80mm', profile),
+      createEntryTicketHtml('80mm', profile, entry, { reprint: true }),
+      createExitReceiptHtml('58mm', profile, receipt, { reprint: true }),
+      createCashCloseReceiptHtml('80mm', profile, {
+        sessionId: 'cash-1',
+        employeeName: 'Ana Ruiz',
+        openedAt: '2026-08-18T12:00:00.000Z',
+        closedAt: '2026-08-18T23:00:00.000Z',
+        openingAmountCop: 100_000,
+        collectedCop: 50_000,
+        voidedCop: 0,
+        expectedAmountCop: 150_000,
+        closingAmountCop: 150_000,
+        differenceCop: 0,
+        movementCount: 4,
+      }),
+    ]
+    for (const html of documents) {
+      // El reset anula la negrita por defecto de títulos y énfasis.
+      expect(html).toContain('font-weight: 400;')
+      expect(html).not.toMatch(/font-weight:\s*(?:[5-9]00|bold)|<(?:strong|b)>/)
+    }
+  })
+
+  it('destaca el total en un recuadro con la fecha partida solo entre fecha y hora', () => {
+    const html = createExitReceiptHtml('80mm', profile, receipt)
+    expect(html).toContain('<span class="total-label">Total</span>')
+    expect(html).toMatch(/<span class="nowrap">\d{2}\/\d{2}\/\d{4}<\/span> <span class="nowrap">/)
   })
 })

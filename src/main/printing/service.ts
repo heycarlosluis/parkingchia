@@ -17,6 +17,7 @@ import {
   createExitReceiptHtml,
   createMonthlyReceiptHtml,
   createTestTicketHtml,
+  PRINTABLE_WIDTH_MM,
   type TicketRenderOptions,
 } from './ticket'
 
@@ -127,14 +128,14 @@ export class ElectronTicketPrinter implements TicketPrinter {
     try {
       const html = buildHtml(settings.paperWidth, this.access.getState().profile)
       await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
-      const paperWidthMicrons = settings.paperWidth === '58mm' ? 58_000 : 80_000
+      const pageSize = await measurePage(printWindow, settings.paperWidth)
 
       await new Promise<void>((resolve, reject) => {
         const options: Electron.WebContentsPrintOptions = {
           silent: !settings.showPrintDialog,
           printBackground: false,
           margins: { marginType: 'none' },
-          pageSize: { width: paperWidthMicrons, height: 200_000 },
+          pageSize,
         }
         if (settings.printerName) options.deviceName = settings.printerName
         printWindow.webContents.print(options, (success, failureReason) => {
@@ -152,4 +153,34 @@ export class ElectronTicketPrinter implements TicketPrinter {
       if (!printWindow.isDestroyed()) printWindow.destroy()
     }
   }
+}
+
+const MICRONS_PER_MM = 1000
+const MICRONS_PER_CSS_PIXEL = 25_400 / 96
+/** Evita páginas degeneradas si el documento no pudo medirse. */
+const MIN_PAGE_HEIGHT_MM = 40
+/** Holgura ante diferencias mínimas entre la maqueta en pantalla y la de impresión. */
+const PAGE_HEIGHT_SLACK_MM = 2
+
+/**
+ * Página del ancho imprimible y del alto exacto del documento.
+ *
+ * Un alto fijo desperdicia rollo en los recibos cortos y parte en dos hojas
+ * los tiquetes largos con logo, QR y Code 128. El cuerpo ya se maqueta con el
+ * ancho de la página, así que su alto en pantalla es el alto impreso.
+ */
+async function measurePage(
+  window: BrowserWindow,
+  paperWidth: AppSettings['paperWidth'],
+): Promise<{ width: number; height: number }> {
+  const heightPx: unknown = await window.webContents.executeJavaScript(
+    'Math.ceil(document.body.getBoundingClientRect().height)',
+  )
+  const contentMicrons =
+    typeof heightPx === 'number' && Number.isFinite(heightPx) ? heightPx * MICRONS_PER_CSS_PIXEL : 0
+  const height = Math.max(
+    MIN_PAGE_HEIGHT_MM * MICRONS_PER_MM,
+    Math.ceil(contentMicrons + PAGE_HEIGHT_SLACK_MM * MICRONS_PER_MM),
+  )
+  return { width: PRINTABLE_WIDTH_MM[paperWidth] * MICRONS_PER_MM, height }
 }

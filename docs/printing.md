@@ -4,6 +4,10 @@
 
 La configuración persistida incluye impresora, papel de 58 u 80 mm, uso del diálogo del sistema y un logo opcional en PNG, JPEG o WebP de máximo 1 MB. El logo se guarda como dato local validado, no como una ruta del equipo, y aparece en todos los documentos.
 
+Los documentos se maquetan sobre el ancho que imprime el cabezal, no sobre el ancho del rollo: 72 mm para papel de 80 mm y 48 mm para papel de 58 mm, que es el tamaño que publican los drivers térmicos. La página se envía sin márgenes y con el alto medido del documento, de modo que el contenido queda centrado, un recibo corto no desperdicia papel y un tiquete largo no se parte en dos hojas.
+
+Ningún documento usa negrita: en el cabezal térmico el trazo grueso se empasta y dificulta la lectura. La jerarquía se construye con tamaño, mayúsculas espaciadas y recuadros sobre una sans de sistema (Arial o Helvetica) con cifras tabulares. Todos comparten el mismo esquema: encabezado centrado con logo, nombre, contacto, tipo de documento y número; la matrícula grande con el tipo de vehículo; filas etiqueta y valor; el importe principal en un recuadro; y un pie breve. La duplicación se marca con un recuadro «REIMPRESIÓN» bajo el encabezado. Las fechas usan el formato local de la aplicación y, si no caben, se parten entre la fecha y la hora.
+
 El tiquete de ingreso es HTML monocromático y conserva matrícula, tipo de vehículo, tarifa y precio de entrada, fecha y hora local hasta el minuto, gracia, empleado del turno y nota. Incluye dos símbolos generados localmente con `bwip-js`:
 
 - Un QR `PC1Q` con el snapshot completo del ingreso.
