@@ -39,6 +39,8 @@ export type ParkingProfile = {
   name: string
   address: string
   phone: string
+  /** NIT con dígito de verificación, sin separadores de miles: `900123456-8`. */
+  nit?: string | null
   /** Logo local en PNG, JPEG o WebP; nunca contiene una ruta del sistema. */
   logoDataUrl?: string | null
 }

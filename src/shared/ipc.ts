@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { describeNitError, normalizeNit, parseNit } from './nit'
 export { IPC_CHANNELS } from './ipc-channels'
 export {
   cashSessionReceiptSchema,
@@ -69,6 +70,23 @@ export const parkingLogoSchema = z
   .nullable()
   .optional()
 
+/**
+ * NIT opcional. Un campo vacío lo elimina; cualquier otro valor se valida con
+ * el dígito de verificación de la DIAN y se guarda sin separadores de miles.
+ */
+export const parkingNitSchema = z
+  .string()
+  .max(40, 'El NIT es demasiado largo')
+  .transform((value, context) => {
+    if (value.trim() === '') return null
+    const parsed = parseNit(value)
+    if (parsed.ok) return normalizeNit(parsed.base, parsed.checkDigit)
+    context.addIssue({ code: 'custom', message: describeNitError(parsed) })
+    return z.NEVER
+  })
+  .nullable()
+  .optional()
+
 export const parkingProfileSchema = z
   .object({
     name: requiredText('El nombre', 2, 80),
@@ -83,6 +101,7 @@ export const parkingProfileSchema = z
         const digits = value.replace(/\D/g, '')
         return digits.length >= 7 && digits.length <= 15
       }, 'Usa un número de teléfono entre 7 y 15 dígitos'),
+    nit: parkingNitSchema,
     logoDataUrl: parkingLogoSchema,
   })
   .strict()

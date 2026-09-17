@@ -5,6 +5,7 @@ import { useForm, useWatch } from 'react-hook-form'
 import type { z } from 'zod'
 import type { ParkingProfile } from '@shared/contracts'
 import { MAX_LOGO_BYTES, parkingProfileSchema } from '@shared/ipc'
+import { formatNit } from '@shared/nit'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -19,9 +20,22 @@ import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field
 import { Input } from '@/components/ui/input'
 import { useAccessStore } from '@/store/access-store'
 
-const EMPTY_PROFILE: ParkingProfile = { name: '', address: '', phone: '', logoDataUrl: null }
 type ProfileFormInput = z.input<typeof parkingProfileSchema>
 type ProfileForm = z.output<typeof parkingProfileSchema>
+
+const EMPTY_FORM: ProfileFormInput = {
+  name: '',
+  address: '',
+  phone: '',
+  nit: '',
+  logoDataUrl: null,
+}
+
+/** El NIT se guarda compacto y se edita con puntos, como aparece en el RUT. */
+function toFormValues(profile: ParkingProfile | null | undefined): ProfileFormInput {
+  if (!profile) return EMPTY_FORM
+  return { ...profile, nit: profile.nit ? formatNit(profile.nit) : '' }
+}
 
 export function ParkingProfileSettings(): React.JSX.Element {
   const accessState = useAccessStore((store) => store.state)
@@ -31,12 +45,12 @@ export function ParkingProfileSettings(): React.JSX.Element {
   const { register, handleSubmit, reset, setError, clearErrors, setValue, control, formState } =
     useForm<ProfileFormInput, unknown, ProfileForm>({
       resolver: zodResolver(parkingProfileSchema),
-      defaultValues: accessState?.profile ?? EMPTY_PROFILE,
+      defaultValues: toFormValues(accessState?.profile),
     })
   const logoDataUrl = useWatch({ control, name: 'logoDataUrl' })
 
   useEffect(() => {
-    reset(accessState?.profile ?? EMPTY_PROFILE)
+    reset(toFormValues(accessState?.profile))
   }, [accessState?.profile, reset])
 
   const saveProfile = handleSubmit(async (values) => {
@@ -45,12 +59,13 @@ export function ParkingProfileSettings(): React.JSX.Element {
       name: values.name,
       address: values.address,
       phone: values.phone,
+      nit: values.nit ?? null,
       ...(values.logoDataUrl === undefined ? {} : { logoDataUrl: values.logoDataUrl }),
     }
     const result = await window.parkingAPI.updateParkingProfile(profile)
     if (result.ok) {
       setAccessState(result.data)
-      reset(result.data.profile ?? EMPTY_PROFILE)
+      reset(toFormValues(result.data.profile))
       setMessage('Datos del parqueadero guardados.')
     } else setError('root', { message: result.error.message })
   })
@@ -157,6 +172,28 @@ export function ParkingProfileSettings(): React.JSX.Element {
                 {...register('name')}
               />
               <FieldError id="settings-parking-name-error" errors={[formState.errors.name]} />
+            </Field>
+            <Field data-invalid={Boolean(formState.errors.nit)}>
+              <FieldLabel htmlFor="settings-parking-nit">NIT (opcional)</FieldLabel>
+              <Input
+                id="settings-parking-nit"
+                className="min-h-11 tabular"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="900.123.456-8"
+                aria-invalid={Boolean(formState.errors.nit)}
+                aria-describedby={
+                  formState.errors.nit
+                    ? 'settings-parking-nit-hint settings-parking-nit-error'
+                    : 'settings-parking-nit-hint'
+                }
+                {...register('nit')}
+              />
+              <p id="settings-parking-nit-hint" className="field-hint">
+                Escríbelo como aparece en el RUT, con el dígito de verificación después del guion.
+                Sirve para empresas y para personas naturales.
+              </p>
+              <FieldError id="settings-parking-nit-error" errors={[formState.errors.nit]} />
             </Field>
             <Field data-invalid={Boolean(formState.errors.address)}>
               <FieldLabel htmlFor="settings-parking-address">Dirección</FieldLabel>

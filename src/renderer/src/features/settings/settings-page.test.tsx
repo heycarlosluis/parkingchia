@@ -69,6 +69,28 @@ describe('Configuración', () => {
     )
   })
 
+  it('guarda el NIT y avisa cuando el dígito de verificación no corresponde', async () => {
+    vi.mocked(window.parkingAPI.updateParkingProfile).mockClear()
+    renderSettings()
+    const nit = await screen.findByLabelText('NIT (opcional)')
+
+    await userEvent.type(nit, '800.197.268-5')
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar datos' }))
+    expect(
+      await screen.findByText(
+        'El dígito de verificación no corresponde a este número. Revísalo en el RUT',
+      ),
+    ).toBeInTheDocument()
+    expect(vi.mocked(window.parkingAPI.updateParkingProfile)).not.toHaveBeenCalled()
+
+    await userEvent.clear(nit)
+    await userEvent.type(nit, '800.197.268-4')
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar datos' }))
+    expect(vi.mocked(window.parkingAPI.updateParkingProfile)).toHaveBeenCalledWith(
+      expect.objectContaining({ nit: '800197268-4' }),
+    )
+  })
+
   it('carga las tarifas al abrir su pestaña', async () => {
     renderSettings()
 

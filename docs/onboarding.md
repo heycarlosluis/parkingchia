@@ -27,7 +27,7 @@ Después de cinco intentos incorrectos, la aplicación impone una pausa local de
 
 ## Administración
 
-La pestaña General de Configuración permite editar nombre, dirección y teléfono. La pestaña Seguridad permite:
+La pestaña General de Configuración permite editar nombre, NIT opcional con su dígito de verificación, dirección, teléfono y logo. La pestaña Seguridad permite:
 
 - Crear un PIN si la aplicación estaba sin protección.
 - Cambiar el PIN confirmando el actual.

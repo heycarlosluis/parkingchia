@@ -8,6 +8,7 @@ const SETTING_KEYS = {
   parkingName: 'parking.name',
   parkingAddress: 'parking.address',
   parkingPhone: 'parking.phone',
+  parkingNit: 'parking.nit',
   parkingLogo: 'parking.logo',
   pinHash: 'security.pinHash',
 } as const
@@ -55,6 +56,7 @@ export class AccessService {
       this.upsertSetting(SETTING_KEYS.parkingName, input.name, now)
       this.upsertSetting(SETTING_KEYS.parkingAddress, input.address, now)
       this.upsertSetting(SETTING_KEYS.parkingPhone, input.phone, now)
+      if (input.nit) this.upsertSetting(SETTING_KEYS.parkingNit, input.nit, now)
       if (input.logoDataUrl) this.upsertSetting(SETTING_KEYS.parkingLogo, input.logoDataUrl, now)
       if (input.pin) this.upsertSetting(SETTING_KEYS.pinHash, this.hashPin(input.pin), now)
       else this.deleteSetting(SETTING_KEYS.pinHash)
@@ -76,6 +78,8 @@ export class AccessService {
       this.upsertSetting(SETTING_KEYS.parkingName, input.name, now)
       this.upsertSetting(SETTING_KEYS.parkingAddress, input.address, now)
       this.upsertSetting(SETTING_KEYS.parkingPhone, input.phone, now)
+      if (input.nit === null) this.deleteSetting(SETTING_KEYS.parkingNit)
+      else if (input.nit !== undefined) this.upsertSetting(SETTING_KEYS.parkingNit, input.nit, now)
       if (input.logoDataUrl === null) this.deleteSetting(SETTING_KEYS.parkingLogo)
       else if (input.logoDataUrl !== undefined) {
         this.upsertSetting(SETTING_KEYS.parkingLogo, input.logoDataUrl, now)
@@ -173,7 +177,13 @@ export class AccessService {
     const address = this.getSetting(SETTING_KEYS.parkingAddress)
     const phone = this.getSetting(SETTING_KEYS.parkingPhone)
     if (!name || !address || !phone) return null
-    return { name, address, phone, logoDataUrl: this.getSetting(SETTING_KEYS.parkingLogo) }
+    return {
+      name,
+      address,
+      phone,
+      nit: this.getSetting(SETTING_KEYS.parkingNit),
+      logoDataUrl: this.getSetting(SETTING_KEYS.parkingLogo),
+    }
   }
 
   private result(

@@ -33,6 +33,19 @@ describe('esquema IPC de configuración', () => {
     ).toBe(false)
   })
 
+  it('valida el NIT del parqueadero y lo guarda sin separadores', () => {
+    const profile = {
+      name: 'Parqueadero Central',
+      address: 'Carrera 10 # 12-34',
+      phone: '300 123 4567',
+    }
+    expect(parkingProfileSchema.parse({ ...profile, nit: '800.197.268-4' }).nit).toBe('800197268-4')
+    // Vaciar el campo elimina el NIT guardado.
+    expect(parkingProfileSchema.parse({ ...profile, nit: '  ' }).nit).toBeNull()
+    expect(parkingProfileSchema.safeParse({ ...profile, nit: '800.197.268-5' }).success).toBe(false)
+    expect(parkingProfileSchema.safeParse({ ...profile, nit: '800197268' }).success).toBe(false)
+  })
+
   it('acepta solo logos locales en formatos de imagen permitidos', () => {
     const profile = {
       name: 'Parqueadero Central',

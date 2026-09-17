@@ -75,6 +75,28 @@ describe('acceso local y onboarding', () => {
     }
   })
 
+  it('guarda y elimina el NIT del perfil', () => {
+    const { database, access } = createServices()
+    try {
+      const profile = {
+        name: 'Parqueadero Central',
+        address: 'Carrera 10 # 12-34',
+        phone: '300 123 4567',
+      }
+      access.completeOnboarding({ ...profile, pin: '' })
+      expect(access.getState().profile).toMatchObject({ nit: null })
+
+      expect(access.updateProfile({ ...profile, nit: '800197268-4' }).profile).toMatchObject({
+        nit: '800197268-4',
+      })
+      // Un perfil que no menciona el NIT lo conserva.
+      expect(access.updateProfile(profile).profile).toMatchObject({ nit: '800197268-4' })
+      expect(access.updateProfile({ ...profile, nit: null }).profile).toMatchObject({ nit: null })
+    } finally {
+      database.close()
+    }
+  })
+
   it('guarda y elimina el logo del perfil sin usar rutas del sistema', () => {
     const { database, access } = createServices()
     try {
