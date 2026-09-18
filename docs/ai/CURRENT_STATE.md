@@ -1,15 +1,15 @@
 # Estado actual del proyecto
 
-Última actualización: **2026-09-17**.
+Última actualización: **2026-09-18**.
 
 Este archivo describe el último corte conocido, no sustituye la verificación de `git status`, `package.json`, GitHub Actions ni el comportamiento ejecutable.
 
 ## Línea base
 
 - Rama de referencia: `main`.
-- Versión del corte: `0.1.0-alpha.5`.
-- Versión publicada más reciente: `0.1.0-alpha.3`.
-- Tag publicado más reciente: `v0.1.0-alpha.3`.
+- Versión del corte: `0.1.0-alpha.6`.
+- Versión publicada más reciente: `0.1.0-alpha.5`.
+- Tag publicado más reciente: `v0.1.0-alpha.5`.
 - CI de la versión publicada: aprobado.
 - Release multiplataforma publicada: `0.1.0-alpha.3`, aprobada como pre-release.
 - Artefactos publicados: NSIS Windows x64; DMG y ZIP macOS x64/arm64; metadatos YAML y blockmaps.
@@ -141,3 +141,7 @@ Los tipos de vehículo pasaron de cuatro a diez (D-037): automóvil, camioneta, 
 El recibo de salida dejó de imprimir la fila «Cobrado»: la permanencia y la tarifa ya explican el cobro y el desglose del tiempo facturado sigue disponible en el Historial. El recuadro del importe principal conserva el borde pero usa el mismo tamaño de letra que el resto del documento, en todos los comprobantes.
 
 `0.1.0-alpha.5` reúne el trabajo del 2026-09-17 y es la primera versión publicada desde `0.1.0-alpha.3`: el filtro de matrícula en Registrar salida, el NIT del parqueadero, el rediseño de los comprobantes impresos y los diez tipos de vehículo con la migración `0007`. `0.1.0-alpha.4` quedó en el historial sin publicarse; su corrección del cierre antes de instalar viaja dentro de esta versión y todavía debe certificarse en Windows saltando desde una instalación anterior.
+
+El 2026-09-18 se revisó el flujo del lector porque el YHD-9601D del cliente no abría la salida (D-038). Se encontraron cuatro causas. El QR llevaba el snapshot en base64url y, con el teclado en distribución latinoamericana, el lector convertía `-` y `_` en `'` y `?`. El Code 128 tenía módulos de 1,7 puntos, con barras irregulares de 1 o 2 puntos. Un prefijo en minúsculas por el bloqueo de mayúsculas se rechazaba. Un lector con Tab como sufijo no buscaba desde el campo de salida. Ahora ambos símbolos llevan un código de 16 dígitos con verificación Luhn, impreso también en texto para teclearlo, con módulos de 3 u 8 puntos en 80 mm y 2 o 6 en 58 mm, y el campo de salida busca también con Tab. Los tiquetes antiguos se siguen leyendo y su QR se repara si llega dañado por el teclado. Rasterizando a 8 puntos por milímetro en blanco y negro, ambos símbolos se decodifican en los dos anchos; en 80 mm también con un punto de sangrado y con desenfoque, y en 58 mm el Code 128 falla con sangrado mientras el QR se sigue leyendo. Falta confirmar la lectura con el lector y la impresora físicos.
+
+`0.1.0-alpha.5` se publicó el 2026-09-17 tras subir los artefactos a mano, porque la API de subida de GitHub devolvió errores 500 intermitentes y el job de publicación agotó sus 15 minutos. Para `0.1.0-alpha.6`, que distribuye la corrección del lector (D-038), el workflow crea el release como borrador, sube cada archivo con hasta cinco reintentos, comprueba que estén todos y solo entonces lo publica; volver a ejecutar el job reutiliza el borrador en lugar de fallar, y una versión ya publicada sigue sin poder reemplazarse.
