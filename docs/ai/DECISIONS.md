@@ -312,6 +312,15 @@ Estados posibles: `propuesta`, `aceptada`, `reemplazada` o `descartada`.
 - Motivo: un parqueadero cobra distinto a una camioneta, un camión o un bus, y con cuatro tipos esas tarifas se mezclaban en «Otro». Mantener la lista en un solo módulo evita que cada pantalla arme su propio menú, y la restricción en SQLite impide que un valor inventado entre por IPC o por una migración futura.
 - Consecuencia: agregar o retirar un tipo exige una migración y actualizar la lista de `schema.ts`; un tipo retirado necesitaría además reasignar las filas que lo usen. La pantalla de ingreso no se recarga de opciones porque solo muestra los tipos con una tarifa activa (D-027). Los iconos de cada tipo viven en el renderer y no forman parte del contrato.
 
+## D-038 — El tiquete imprime un código numérico en lugar del snapshot
+
+- Fecha: 2026-09-18
+- Estado: aceptada
+- Reemplaza: la parte de D-034 que ponía el snapshot en el QR y el UUID decimal en el Code 128
+- Decisión: el QR y el Code 128 del tiquete llevan el mismo código de 16 dígitos: los primeros 48 bits del UUID de la sesión en decimal (15 dígitos) y un dígito de verificación Luhn. El proceso principal busca la sesión activa cuyo identificador empieza por ese prefijo y pide la matrícula si hubiera más de una. Los módulos se dibujan con un número entero de puntos del cabezal y con zona de silencio propia. El snapshot sigue guardándose en `parking_sessions.entry_snapshot_json` para reimprimir; solo deja de viajar en el papel. Los códigos `PC1Q` y `PC1S` ya impresos se siguen leyendo, reparando los daños conocidos del teclado.
+- Motivo: el lector funciona como un teclado estadounidense. En la distribución latinoamericana del cliente, el `-` y el `_` del base64url llegaban como `'` y `?`, y el bloqueo de mayúsculas invertía las letras, así que el QR con el snapshot fallaba. El Code 128 de 43 caracteres ocupaba el ancho completo con módulos de 1,7 puntos: sus barras salían de 1 o 2 puntos según la posición y no respetaban las proporciones del símbolo; en 58 mm ni siquiera se decodificaba en una simulación a 8 puntos por milímetro. Un código numérico corto es idéntico en cualquier distribución, cabe con módulos de 2 o 3 puntos y un dígito de verificación detecta errores al teclearlo.
+- Consecuencia: el papel ya no permite comprobar sin la base qué datos tenía el ingreso; SQLite sigue siendo la única autoridad del cobro. Un código de 16 dígitos no puede confundirse con una matrícula, por lo que no lleva prefijo. Cambiar el tamaño de los módulos exige verificar de nuevo la lectura rasterizando a 8 puntos por milímetro, y el Code 128 en 58 mm debe considerarse un respaldo del QR.
+
 ## Plantilla para una nueva decisión
 
 ```markdown

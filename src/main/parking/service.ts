@@ -340,6 +340,12 @@ export class ParkingService {
       )
     }
 
+    if (scanned?.kind === 'reference') {
+      return this.toActiveSession(
+        this.requireActiveSessionByPrefix(scanned.sessionIdPrefix),
+        new Date().toISOString(),
+      )
+    }
     if (scanned !== null) {
       const row = this.requireActiveSession(scanned.sessionId)
       if (scanned.kind === 'qr') this.assertTicketMatchesSession(scanned.payload, row)
@@ -778,6 +784,32 @@ export class ParkingService {
       throw new OperationError(
         'SESSION_NOT_ACTIVE',
         'Esa sesión ya no está activa. Actualiza el listado de parqueo.',
+      )
+    }
+    return row
+  }
+
+  /**
+   * Sesión activa cuyo UUID empieza por el prefijo del código del tiquete.
+   *
+   * Los 48 bits del prefijo hacen improbable una coincidencia; si ocurriera,
+   * se pide la matrícula en lugar de escoger una sesión al azar.
+   */
+  private requireActiveSessionByPrefix(prefix: string): SessionRow {
+    const rows = this.sqlite
+      .prepare(`${ACTIVE_SESSION_QUERY} AND s.id LIKE ? LIMIT 2`)
+      .all(`${prefix}%`) as SessionRow[]
+    const [row] = rows
+    if (!row) {
+      throw new OperationError(
+        'SESSION_NOT_ACTIVE',
+        'Ese tiquete no corresponde a ningún vehículo en el parqueadero. Puede que ya haya salido.',
+      )
+    }
+    if (rows.length > 1) {
+      throw new OperationError(
+        'ENTRY_TICKET_AMBIGUOUS',
+        'El código coincide con más de un ingreso. Escribe la matrícula para continuar.',
       )
     }
     return row

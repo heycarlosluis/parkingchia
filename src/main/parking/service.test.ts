@@ -8,6 +8,7 @@ import { OperationError } from '@main/ipc/errors'
 import { coverageEndDate, todayLocalDate } from '@shared/monthly'
 import {
   encodeEntryTicketBarcode,
+  encodeEntryTicketReference,
   encodeEntryTicketQr,
   ENTRY_TICKET_VERSION,
 } from '@shared/entry-ticket'
@@ -139,6 +140,27 @@ describe('registro de ingreso', () => {
       registration.sessionId,
     )
     expect(parking.resolveExitTarget('abc 123').id).toBe(registration.sessionId)
+  })
+
+  it('resuelve el ingreso con el código numérico que imprimen el QR y el Code 128', () => {
+    const registration = parking.registerEntry(entry())
+    const reference = encodeEntryTicketReference(registration.sessionId)
+
+    expect(parking.resolveExitTarget(reference).id).toBe(registration.sessionId)
+    // El operador puede teclearlo con los espacios del papel.
+    expect(parking.resolveExitTarget(reference.replace(/(\d{4})(?=\d)/g, '$1 ')).id).toBe(
+      registration.sessionId,
+    )
+
+    parking.cancelSession({ sessionId: registration.sessionId, reason: 'Ingreso de prueba' })
+    expect(() => parking.resolveExitTarget(reference)).toThrow(
+      'Ese tiquete no corresponde a ningún vehículo en el parqueadero',
+    )
+  })
+
+  it('pide escanear de nuevo cuando el código llega dañado', () => {
+    parking.registerEntry(entry())
+    expect(() => parking.resolveExitTarget('1234567890123450')).toThrow(OperationError)
   })
 
   it('rechaza un QR alterado y un tiquete cuya sesión ya terminó', () => {

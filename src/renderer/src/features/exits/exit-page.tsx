@@ -14,6 +14,7 @@ import { formatCurrency, formatDateTime } from '@shared/format'
 import { describeElapsed, PAYMENT_METHOD_LABELS, resolveExitTargetSchema } from '@shared/parking'
 import { describeCoverage } from '@shared/monthly'
 import { VEHICLE_TYPE_LABELS } from '@shared/tariff'
+import { MAX_PLATE_LENGTH } from '@shared/validation'
 import { Alert, AlertActions, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -236,7 +237,7 @@ export function ExitPage(): React.JSX.Element {
                       id="exit-code"
                       // Un código escaneado es largo: se muestra compacto en lugar de a tamaño de matrícula.
                       className={
-                        isEntryTicketCode(field.value)
+                        field.value.length > MAX_PLATE_LENGTH || isEntryTicketCode(field.value)
                           ? 'plate-input scanner-code-input'
                           : 'plate-input'
                       }
@@ -251,6 +252,13 @@ export function ExitPage(): React.JSX.Element {
                       ref={field.ref}
                       value={field.value}
                       onBlur={field.onBlur}
+                      // Un lector configurado con Tab como sufijo debe buscar, no saltar al botón.
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Tab' || event.shiftKey) return
+                        if (!isEntryTicketCode(field.value)) return
+                        event.preventDefault()
+                        void submit()
+                      }}
                       // Igual que en Registrar ingreso: solo letras y dígitos, salvo un tiquete escaneado.
                       onChange={(event) => {
                         setLookupError('')
@@ -261,6 +269,8 @@ export function ExitPage(): React.JSX.Element {
                 />
                 <p className="field-hint">
                   <Barcode aria-hidden="true" /> El lector completa el campo y continúa con Enter.
+                  Sin lector, escribe la matrícula o los 16 dígitos impresos bajo el código de
+                  barras.
                 </p>
                 <FieldError errors={[formState.errors.code]} />
               </Field>

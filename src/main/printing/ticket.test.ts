@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import type { EntryRegistration } from '@shared/contracts'
+import { encodeEntryTicketReference, formatEntryTicketReference } from '@shared/entry-ticket'
 import { calculateChargeForMinutes, DEFAULT_TARIFF_SETTINGS } from '@shared/tariff'
 import type { ReceiptSnapshot } from '@main/parking/service'
 import {
@@ -69,7 +70,9 @@ describe('tiquete de ingreso', () => {
     expect(html).toContain('data:image/png;base64,aGVsbG8=')
     expect(html).toContain('Escanee para registrar la salida')
     expect(html).toContain('<svg')
-    expect(html).toContain('Referencia 123e4567-e89b-12d3-a456-426614174000')
+    // El código numérico se imprime agrupado para teclearlo sin lector.
+    expect(html).toContain(formatEntryTicketReference(encodeEntryTicketReference(entry.sessionId)))
+    expect(html).not.toContain('PC1Q')
     expect(html).toContain('NIT 800.197.268-4')
     expect(html).toContain('Parqueadero &lt;Central&gt;')
     expect(html).not.toContain('<Central>')
@@ -179,5 +182,19 @@ describe('legibilidad en papel térmico', () => {
     const html = createExitReceiptHtml('80mm', profile, receipt)
     expect(html).toContain('<span class="total-label">Total</span>')
     expect(html).toMatch(/<span class="nowrap">\d{2}\/\d{2}\/\d{4}<\/span> <span class="nowrap">/)
+  })
+})
+
+describe('símbolos del tiquete de ingreso', () => {
+  it('dibuja los módulos con un número entero de puntos del cabezal', () => {
+    const sizes = [
+      ...createEntryTicketHtml('80mm', profile, entry).matchAll(/<svg width="([\d.]+)mm"/g),
+    ]
+    const narrow = [
+      ...createEntryTicketHtml('58mm', profile, entry).matchAll(/<svg width="([\d.]+)mm"/g),
+    ]
+    // QR de 21 módulos + 8 de silencio; Code 128 de 123 módulos + 20 de silencio.
+    expect(sizes.map((match) => Number(match[1]))).toEqual([29 * 1, 143 * 0.375])
+    expect(narrow.map((match) => Number(match[1]))).toEqual([29 * 0.75, 143 * 0.25])
   })
 })

@@ -10,10 +10,23 @@ Ningún documento usa negrita: en el cabezal térmico el trazo grueso se empasta
 
 El tiquete de ingreso es HTML monocromático y conserva matrícula, tipo de vehículo, tarifa y precio de entrada, fecha y hora local hasta el minuto, gracia, empleado del turno y nota. Incluye dos símbolos generados localmente con `bwip-js`:
 
-- Un QR `PC1Q` con el snapshot completo del ingreso.
-- Un Code 128 `PC1S` corto con la referencia de la sesión, como respaldo para lectores que solo soportan códigos lineales.
+- Un QR.
+- Un Code 128.
 
-Escanear cualquiera de los dos nunca acepta como autoridad un precio contenido en el papel: el proceso principal resuelve la sesión activa en SQLite y el QR se contrasta con el snapshot almacenado antes de abrir el cobro. Los duplicados conservan los datos originales y se marcan como reimpresión.
+Los dos llevan el mismo código de 16 dígitos: 15 que identifican la sesión y uno de verificación Luhn. Debajo se imprime ese código agrupado de cuatro en cuatro (`1234 5678 9012 3456`) para teclearlo si no hay lector. El código es solo numérico porque el lector escribe como un teclado estadounidense y, en una distribución latinoamericana o española, los signos y las mayúsculas llegan cambiados; la fila de números es igual en todas (D-038).
+
+Los símbolos se dibujan con módulos de un número entero de puntos del cabezal (8 puntos por milímetro), alineados a su rejilla y con zona de silencio propia:
+
+| Papel | Módulo del Code 128 | Módulo del QR      |
+| ----- | ------------------- | ------------------ |
+| 80 mm | 3 puntos (0,375 mm) | 8 puntos (1 mm)    |
+| 58 mm | 2 puntos (0,25 mm)  | 6 puntos (0,75 mm) |
+
+En 58 mm el Code 128 solo cabe con módulos de 2 puntos y es sensible al sangrado del papel térmico; el QR es la lectura confiable en ese ancho.
+
+Escanear cualquiera de los dos nunca acepta como autoridad un precio contenido en el papel: el proceso principal busca la sesión activa en SQLite y cobra con sus datos. Los duplicados conservan los datos originales y se marcan como reimpresión.
+
+Los tiquetes impresos hasta `0.1.0-alpha.5` (QR `PC1Q` con el snapshot y Code 128 `PC1S`) se siguen aceptando. Si su QR llega con `'` o `?` en lugar de `-` o `_` por la distribución del teclado, o con las letras invertidas por el bloqueo de mayúsculas, la aplicación lo repara antes de leerlo.
 
 ## Diagnóstico
 
@@ -27,6 +40,15 @@ Si no hay impresoras o la guardada desapareció, la app devuelve un mensaje cont
 
 ## Lectores de códigos
 
-La integración usa el modo USB HID o «teclado»: el lector escribe el contenido y termina con Enter o Tab. No depende de una marca ni de un SDK. El campo de Registrar salida acepta QR, Code 128 o matrícula; cuando ningún formulario ni diálogo tiene el foco, un tiquete válido también abre el flujo de salida desde cualquier sección.
+La integración usa el modo USB HID o «teclado»: el lector escribe el contenido y termina con Enter o Tab. No depende de una marca ni de un SDK. El campo de Registrar salida acepta el código escaneado, los 16 dígitos tecleados o la matrícula; cuando ningún formulario ni diálogo tiene el foco, un tiquete escaneado también abre el flujo de salida desde cualquier sección.
 
 Para instalar un lector, configúralo en modo teclado, habilita QR y Code 128 y deja Enter o Tab como sufijo. La aplicación muestra «Lector listo» para indicar que está preparada para recibir teclas; no afirma que el sistema operativo haya detectado físicamente el dispositivo.
+
+El lector del cliente es un YHD-9601D, de escritorio, 2D y omnidireccional: lee QR y Code 128.
+
+### Si el lector no abre la salida
+
+1. Abre un editor de texto y escanea el tiquete. Deben aparecer exactamente los 16 dígitos impresos bajo el código de barras, seguidos de un salto de línea.
+2. Si no aparece nada, el lector no está en modo teclado o no tiene habilitado ese tipo de código: restablécelo con el código de fábrica de su manual.
+3. Si aparecen los dígitos pero no el salto de línea, configura Enter o Tab como sufijo con el manual del lector.
+4. Si aparecen otros caracteres, revisa en el manual la opción de idioma del teclado. Los tiquetes nuevos solo usan números y no deberían verse afectados.

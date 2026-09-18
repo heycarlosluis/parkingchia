@@ -10,12 +10,7 @@ import { formatNit } from '@shared/nit'
 import { describeElapsed, PAYMENT_METHOD_LABELS } from '@shared/parking'
 import { describeBillingUnit, VEHICLE_TYPE_LABELS } from '@shared/tariff'
 import { describeCoverage } from '@shared/monthly'
-import {
-  encodeEntryTicketBarcode,
-  encodeEntryTicketQr,
-  ENTRY_TICKET_VERSION,
-  type EntryTicketPayload,
-} from '@shared/entry-ticket'
+import { encodeEntryTicketReference, formatEntryTicketReference } from '@shared/entry-ticket'
 import type { MonthlyReceiptSnapshot } from '@main/monthly/service'
 import type { ReceiptSnapshot } from '@main/parking/service'
 
@@ -50,23 +45,6 @@ function logoHtml(profile: ParkingProfile | null): string {
   return `<img class="logo" src="${escapeHtml(logo)}" alt="" />`
 }
 
-function entryTicketPayload(entry: EntryRegistration): EntryTicketPayload {
-  return {
-    version: ENTRY_TICKET_VERSION,
-    sessionId: entry.sessionId,
-    plate: entry.plate,
-    vehicleType: entry.vehicleType,
-    ratePlanId: entry.ratePlanId,
-    ratePlanName: entry.ratePlanName,
-    ratePlanAmountCop: entry.ratePlanAmountCop,
-    billingUnit: entry.billingUnit,
-    enteredAt: entry.enteredAt,
-    graceMinutes: entry.graceMinutes,
-    employeeName: entry.employeeName,
-    notes: entry.notes,
-  }
-}
-
 /**
  * Ancho que el cabezal térmico realmente imprime.
  *
@@ -76,6 +54,62 @@ function entryTicketPayload(entry: EntryRegistration): EntryTicketPayload {
  * desplaza el contenido hacia un lado y lo recorta en el borde.
  */
 export const PRINTABLE_WIDTH_MM: Record<PaperWidth, number> = { '80mm': 72, '58mm': 48 }
+
+/** Margen lateral del cuerpo de todos los documentos. */
+const BODY_PADDING_MM = 2
+
+/**
+ * Un punto del cabezal: la página de 72 mm se imprime en 576 puntos (203 ppp).
+ *
+ * Los símbolos se dibujan con módulos de un número entero de puntos y
+ * alineados a la rejilla del cabezal. Si un módulo midiera 1,7 puntos, unas
+ * barras saldrían de 1 punto y otras de 2, y el lector no reconocería las
+ * proporciones del Code 128.
+ */
+const DOT_MM = 0.125
+
+type SymbolSize = {
+  /** Módulo del Code 128: 3 puntos (0,375 mm) en 80 mm y 2 (0,25 mm) en 58 mm. */
+  barcodeModuleDots: number
+  barcodeHeightMm: number
+  /** Módulo del QR: 8 puntos (1 mm) en 80 mm y 6 (0,75 mm) en 58 mm. */
+  qrModuleDots: number
+}
+
+const SYMBOL_SIZES: Record<PaperWidth, SymbolSize> = {
+  '80mm': { barcodeModuleDots: 3, barcodeHeightMm: 12, qrModuleDots: 8 },
+  '58mm': { barcodeModuleDots: 2, barcodeHeightMm: 10, qrModuleDots: 6 },
+}
+
+/** Unidades del SVG de bwip-js por módulo con `scale: 1`. */
+const BWIP_UNITS_PER_MODULE = { code128: 1, qrcode: 2 } as const
+
+/**
+ * Da al SVG un tamaño exacto en puntos y lo centra sobre la rejilla del cabezal.
+ *
+ * Centrar con `margin: auto` puede dejar el símbolo a medio punto de la
+ * rejilla; el margen izquierdo se redondea a un punto entero.
+ */
+function fitSymbol(
+  svg: string,
+  paperWidth: PaperWidth,
+  unitsPerModule: number,
+  moduleDots: number,
+  heightMm?: number,
+): string {
+  const viewBox = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg)
+  if (!viewBox) throw new Error('bwip-js devolvió un SVG sin viewBox')
+  const modulesWide = Number(viewBox[1]) / unitsPerModule
+  const modulesHigh = Number(viewBox[2]) / unitsPerModule
+  const widthDots = Math.round(modulesWide * moduleDots)
+  const contentDots = (PRINTABLE_WIDTH_MM[paperWidth] - 2 * BODY_PADDING_MM) / DOT_MM
+  const marginDots = Math.max(0, Math.floor((contentDots - widthDots) / 2))
+  const height = heightMm ?? modulesHigh * moduleDots * DOT_MM
+  return svg.replace(
+    '<svg ',
+    `<svg width="${widthDots * DOT_MM}mm" height="${height}mm" preserveAspectRatio="none" shape-rendering="crispEdges" style="margin-left: ${marginDots * DOT_MM}mm" `,
+  )
+}
 
 /**
  * Estilos comunes; el cuerpo ocupa exactamente el ancho imprimible.
@@ -91,7 +125,7 @@ function ticketStyles(paperWidth: PaperWidth): string {
       @page { margin: 0; }
       * { box-sizing: border-box; font-weight: 400; }
       html { margin: 0; padding: 0; }
-      body { width: ${width}mm; margin: 0; padding: 2mm 2mm 6mm; color: #000; background: #fff; font: 13px/1.35 Arial, 'Helvetica Neue', Helvetica, sans-serif; font-variant-numeric: tabular-nums; }
+      body { width: ${width}mm; margin: 0; padding: ${BODY_PADDING_MM}mm ${BODY_PADDING_MM}mm 6mm; color: #000; background: #fff; font: 13px/1.35 Arial, 'Helvetica Neue', Helvetica, sans-serif; font-variant-numeric: tabular-nums; }
       p { margin: 0; }
       .header { text-align: center; }
       .logo { display: block; max-width: 34mm; max-height: 16mm; object-fit: contain; margin: 0 auto 2mm; }
@@ -116,9 +150,9 @@ function ticketStyles(paperWidth: PaperWidth): string {
       .note { margin-top: 2mm; overflow-wrap: anywhere; }
       .scan-block { break-inside: avoid; text-align: center; }
       .scan-title { margin-bottom: 1.5mm; font-size: 12px; }
-      .qr svg { display: block; width: 31mm; height: 31mm; margin: 0 auto; }
-      .barcode svg { display: block; width: 100%; max-height: 15mm; margin: 2mm auto 0; }
-      .ticket-reference { margin-top: 1mm; font-size: 9px; overflow-wrap: anywhere; }
+      .scan-block svg { display: block; }
+      .barcode { margin-top: 2mm; }
+      .ticket-reference { margin-top: 1.5mm; font-size: 13px; letter-spacing: 0.08em; }
       .footer { text-align: center; font-size: 12px; }
       .nowrap { white-space: nowrap; }
     `
@@ -225,17 +259,41 @@ export function createEntryTicketHtml(
   entry: EntryRegistration,
   options: TicketRenderOptions = {},
 ): string {
-  const payload = entryTicketPayload(entry)
-  const qrValue = encodeEntryTicketQr(payload)
-  const barcodeValue = encodeEntryTicketBarcode(entry.sessionId)
-  const qrSvg = bwipjs.toSVG({ bcid: 'qrcode', text: qrValue, scale: 2, padding: 0 })
-  const barcodeSvg = bwipjs.toSVG({
-    bcid: 'code128',
-    text: barcodeValue,
+  // QR y Code 128 llevan el mismo código numérico: cualquiera de los dos abre la salida.
+  const reference = encodeEntryTicketReference(entry.sessionId)
+  const sizes = SYMBOL_SIZES[paperWidth]
+  // Corrección Q (25 %): tolera manchas y roces del papel térmico. `eclevel` es
+  // una opción de BWIPP que los tipos de bwip-js no declaran.
+  const qrOptions = {
+    bcid: 'qrcode',
+    text: reference,
+    eclevel: 'Q',
     scale: 1,
-    height: 8,
-    padding: 0,
-  })
+    // Zona de silencio de 4 módulos; en el QR cada módulo son 2 unidades.
+    paddingwidth: 8,
+    paddingheight: 8,
+  }
+  const qrSvg = fitSymbol(
+    bwipjs.toSVG(qrOptions),
+    paperWidth,
+    BWIP_UNITS_PER_MODULE.qrcode,
+    sizes.qrModuleDots,
+  )
+  const barcodeSvg = fitSymbol(
+    bwipjs.toSVG({
+      bcid: 'code128',
+      text: reference,
+      scale: 1,
+      height: 8,
+      // Zona de silencio de 10 módulos a cada lado, dentro del propio símbolo.
+      paddingwidth: 10,
+      paddingheight: 0,
+    }),
+    paperWidth,
+    BWIP_UNITS_PER_MODULE.code128,
+    sizes.barcodeModuleDots,
+    sizes.barcodeHeightMm,
+  )
   const body = `
     ${plateBlock(entry.plate, entry.vehicleType)}
     ${RULE}
@@ -252,7 +310,7 @@ export function createEntryTicketHtml(
       <p class="scan-title">Escanee para registrar la salida</p>
       <div class="qr">${qrSvg}</div>
       <div class="barcode">${barcodeSvg}</div>
-      <p class="ticket-reference">Referencia ${escapeHtml(entry.sessionId)}</p>
+      <p class="ticket-reference">${escapeHtml(formatEntryTicketReference(reference))}</p>
     </section>
     ${RULE}
     <p class="footer">Conserve este tiquete.<br />Se exige para retirar el vehículo.</p>`

@@ -96,6 +96,25 @@ describe('Registrar salida', () => {
     expect(code).toHaveValue('ABC1N234')
   })
 
+  it('deja escribir los 16 dígitos del tiquete aunque superen el largo de una matrícula', async () => {
+    renderExits()
+
+    const code = await screen.findByLabelText('Tiquete o matrícula')
+    await userEvent.type(code, '1234 5678 9012 34567')
+
+    expect(code).toHaveValue('1234567890123456')
+  })
+
+  it('busca el tiquete cuando el lector termina con Tab', async () => {
+    renderExits()
+
+    await userEvent.type(await screen.findByLabelText('Tiquete o matrícula'), '1234567890123452')
+    await userEvent.tab()
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(window.parkingAPI.resolveExitTarget).toHaveBeenCalledWith({ code: '1234567890123452' })
+  })
+
   it('el campo conserva los caracteres necesarios para códigos QR', async () => {
     renderExits()
 
