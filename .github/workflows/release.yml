@@ -93,7 +93,8 @@ jobs:
   publish:
     needs: [windows, macos]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Subir más de 600 MB puede tardar y la API de GitHub devuelve errores 500 intermitentes.
+    timeout-minutes: 45
     permissions:
       contents: write
     steps:
@@ -114,13 +115,41 @@ jobs:
             prerelease_flag="--prerelease"
           fi
 
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "La versión $RELEASE_TAG ya está publicada; crea una versión nueva en lugar de reemplazar sus artefactos."
+          # Un borrador de un intento anterior se reutiliza; una versión publicada nunca se reemplaza.
+          if is_draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [[ "$is_draft" != "true" ]]; then
+              echo "La versión $RELEASE_TAG ya está publicada; crea una versión nueva en lugar de reemplazar sus artefactos."
+              exit 1
+            fi
+          else
+            # El borrador es invisible para el actualizador hasta que tenga todos los archivos.
+            gh release create "$RELEASE_TAG" \
+              --draft \
+              --verify-tag \
+              --generate-notes \
+              --title "Parking Chía ${RELEASE_TAG#v}" \
+              $prerelease_flag
+          fi
+
+          for file in artifacts/*; do
+            for attempt in 1 2 3 4 5; do
+              if gh release upload "$RELEASE_TAG" "$file" --clobber; then
+                break
+              fi
+              if [[ "$attempt" == 5 ]]; then
+                echo "No fue posible subir $(basename "$file") después de 5 intentos."
+                exit 1
+              fi
+              echo "Falló la subida de $(basename "$file") (intento $attempt); se reintenta."
+              sleep $((attempt * 15))
+            done
+          done
+
+          expected=$(ls artifacts | wc -l)
+          uploaded=$(gh release view "$RELEASE_TAG" --json assets --jq '.assets | length')
+          if [[ "$uploaded" != "$expected" ]]; then
+            echo "El release tiene $uploaded archivos y se esperaban $expected."
             exit 1
           fi
 
-          gh release create "$RELEASE_TAG" artifacts/* \
-            --verify-tag \
-            --generate-notes \
-            --title "Parking Chía ${RELEASE_TAG#v}" \
-            $prerelease_flag
+          gh release edit "$RELEASE_TAG" --draft=false $prerelease_flag
