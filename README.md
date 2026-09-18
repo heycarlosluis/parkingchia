@@ -1,6 +1,6 @@
 # Parking Chía
 
-Aplicación de escritorio offline-first para administrar la operación de un parqueadero. La versión `0.1.0-alpha.4` establece una base funcional y extensible: Electron, interfaz React, SQLite local, impresión térmica, respaldos, actualizaciones y distribución multiplataforma.
+Aplicación de escritorio offline-first para administrar la operación de un parqueadero. La versión `0.1.0-alpha.8` establece una base funcional y extensible: Electron, interfaz React, SQLite local, impresión térmica, respaldos, actualizaciones y distribución multiplataforma.
 
 ## Estado actual
 

@@ -7,11 +7,11 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 ## Línea base
 
 - Rama de referencia: `main`.
-- Versión del corte: `0.1.0-alpha.7`.
-- Versión publicada más reciente: `0.1.0-alpha.6`.
-- Tag publicado más reciente: `v0.1.0-alpha.6`.
+- Versión del corte: `0.1.0-alpha.8`.
+- Versión publicada más reciente: `0.1.0-alpha.8`.
+- Tag publicado más reciente: `v0.1.0-alpha.8`.
 - CI de la versión publicada: aprobado.
-- Release multiplataforma publicada: `0.1.0-alpha.3`, aprobada como pre-release.
+- Release multiplataforma publicada: `0.1.0-alpha.8`, aprobada como pre-release.
 - Artefactos publicados: NSIS Windows x64; DMG y ZIP macOS x64/arm64; metadatos YAML y blockmaps.
 
 ## Implementado y funcional
@@ -147,3 +147,5 @@ El 2026-09-18 se revisó el flujo del lector porque el YHD-9601D del cliente no 
 `0.1.0-alpha.5` se publicó el 2026-09-17 tras subir los artefactos a mano, porque la API de subida de GitHub devolvió errores 500 intermitentes y el job de publicación agotó sus 15 minutos. Para `0.1.0-alpha.6`, que distribuye la corrección del lector (D-038), el workflow crea el release como borrador, sube cada archivo con hasta cinco reintentos, comprueba que estén todos y solo entonces lo publica; volver a ejecutar el job reutiliza el borrador en lugar de fallar, y una versión ya publicada sigue sin poder reemplazarse.
 
 `0.1.0-alpha.6` se publicó el 2026-09-18 y en un equipo Windows del cliente el lector funcionó, pero el tiquete salió cortado a la derecha. `0.1.0-alpha.7` hace que la impresión se adapte al área que declara cada driver (D-039): se eliminó la regla `@page` que anulaba los márgenes del driver, se imprime con `printableArea`, el contenido se centra y se encoge dentro de esa área, y el alto se mide con margen para no partir el documento. Configuración › Impresión suma ancho de impresión, ajuste horizontal y una guía impresa con regla para calibrar un equipo cuyo driver declare medidas falsas. Una simulación de cuatro drivers (72 mm y 80 mm, con y sin 4 mm de margen) confirmó que tiquetes y recibos quedan dentro del área, en una hoja y con los códigos legibles. Pasaron `format:check`, `typecheck`, `lint`, 32 archivos con 290 pruebas y `build`. Falta confirmarlo en el equipo Windows y, si hiciera falta, calibrarlo con la guía.
+
+`0.1.0-alpha.8` agiliza el cobro en efectivo y hace recuperable la configuración óptima de impresión. El diálogo de salida enfoca el efectivo recibido al abrir, ofrece monto exacto y quince montos acumulables entre 5.000 y 100.000, y conserva «Cobrar» visible mientras el contenido se desplaza (D-040). Configuración › Impresión puede restablecer el perfil centrado de 72 mm para papel de 80 mm o de 48 mm para papel de 58 mm; cambiar de rollo aplica también el perfil correspondiente para no heredar una calibración incompatible (D-041). Se revisó el diálogo en la aplicación de escritorio y pasaron `format:check`, `typecheck`, `lint`, 32 archivos con 295 pruebas y `build`. La adaptación del driver continúa necesitando certificación en la impresora física del cliente.
