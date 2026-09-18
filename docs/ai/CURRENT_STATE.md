@@ -7,9 +7,9 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 ## Línea base
 
 - Rama de referencia: `main`.
-- Versión del corte: `0.1.0-alpha.6`.
-- Versión publicada más reciente: `0.1.0-alpha.5`.
-- Tag publicado más reciente: `v0.1.0-alpha.5`.
+- Versión del corte: `0.1.0-alpha.7`.
+- Versión publicada más reciente: `0.1.0-alpha.6`.
+- Tag publicado más reciente: `v0.1.0-alpha.6`.
 - CI de la versión publicada: aprobado.
 - Release multiplataforma publicada: `0.1.0-alpha.3`, aprobada como pre-release.
 - Artefactos publicados: NSIS Windows x64; DMG y ZIP macOS x64/arm64; metadatos YAML y blockmaps.
@@ -145,3 +145,5 @@ El recibo de salida dejó de imprimir la fila «Cobrado»: la permanencia y la t
 El 2026-09-18 se revisó el flujo del lector porque el YHD-9601D del cliente no abría la salida (D-038). Se encontraron cuatro causas. El QR llevaba el snapshot en base64url y, con el teclado en distribución latinoamericana, el lector convertía `-` y `_` en `'` y `?`. El Code 128 tenía módulos de 1,7 puntos, con barras irregulares de 1 o 2 puntos. Un prefijo en minúsculas por el bloqueo de mayúsculas se rechazaba. Un lector con Tab como sufijo no buscaba desde el campo de salida. Ahora ambos símbolos llevan un código de 16 dígitos con verificación Luhn, impreso también en texto para teclearlo, con módulos de 3 u 8 puntos en 80 mm y 2 o 6 en 58 mm, y el campo de salida busca también con Tab. Los tiquetes antiguos se siguen leyendo y su QR se repara si llega dañado por el teclado. Rasterizando a 8 puntos por milímetro en blanco y negro, ambos símbolos se decodifican en los dos anchos; en 80 mm también con un punto de sangrado y con desenfoque, y en 58 mm el Code 128 falla con sangrado mientras el QR se sigue leyendo. Falta confirmar la lectura con el lector y la impresora físicos.
 
 `0.1.0-alpha.5` se publicó el 2026-09-17 tras subir los artefactos a mano, porque la API de subida de GitHub devolvió errores 500 intermitentes y el job de publicación agotó sus 15 minutos. Para `0.1.0-alpha.6`, que distribuye la corrección del lector (D-038), el workflow crea el release como borrador, sube cada archivo con hasta cinco reintentos, comprueba que estén todos y solo entonces lo publica; volver a ejecutar el job reutiliza el borrador en lugar de fallar, y una versión ya publicada sigue sin poder reemplazarse.
+
+`0.1.0-alpha.6` se publicó el 2026-09-18 y en un equipo Windows del cliente el lector funcionó, pero el tiquete salió cortado a la derecha. `0.1.0-alpha.7` hace que la impresión se adapte al área que declara cada driver (D-039): se eliminó la regla `@page` que anulaba los márgenes del driver, se imprime con `printableArea`, el contenido se centra y se encoge dentro de esa área, y el alto se mide con margen para no partir el documento. Configuración › Impresión suma ancho de impresión, ajuste horizontal y una guía impresa con regla para calibrar un equipo cuyo driver declare medidas falsas. Una simulación de cuatro drivers (72 mm y 80 mm, con y sin 4 mm de margen) confirmó que tiquetes y recibos quedan dentro del área, en una hoja y con los códigos legibles. Pasaron `format:check`, `typecheck`, `lint`, 32 archivos con 290 pruebas y `build`. Falta confirmarlo en el equipo Windows y, si hiciera falta, calibrarlo con la guía.
