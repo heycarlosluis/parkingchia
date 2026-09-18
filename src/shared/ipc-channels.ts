@@ -49,6 +49,7 @@ export const IPC_CHANNELS = {
   SETTINGS_UPDATE: 'settings:update',
   PRINTERS_LIST: 'printing:list-printers',
   PRINT_TEST: 'printing:test-ticket',
+  PRINT_CALIBRATION: 'printing:calibration-guide',
   BACKUP_CREATE: 'database:create-backup',
   UPDATE_GET_STATE: 'updates:get-state',
   UPDATE_CHECK: 'updates:check',

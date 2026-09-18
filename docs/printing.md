@@ -2,9 +2,16 @@
 
 `TicketPrinter` define la abstracción y `ElectronTicketPrinter` implementa el adapter actual con APIs nativas de Electron. No existe dependencia de una marca de impresora y puede agregarse un adapter ESC/POS sin cambiar la interfaz React.
 
-La configuración persistida incluye impresora, papel de 58 u 80 mm, uso del diálogo del sistema y un logo opcional en PNG, JPEG o WebP de máximo 1 MB. El logo se guarda como dato local validado, no como una ruta del equipo, y aparece en todos los documentos.
+La configuración persistida incluye impresora, papel de 58 u 80 mm, ancho de impresión, ajuste horizontal, uso del diálogo del sistema y un logo opcional en PNG, JPEG o WebP de máximo 1 MB. El logo se guarda como dato local validado, no como una ruta del equipo, y aparece en todos los documentos.
 
-Los documentos se maquetan sobre el ancho que imprime el cabezal, no sobre el ancho del rollo: 72 mm para papel de 80 mm y 48 mm para papel de 58 mm, que es el tamaño que publican los drivers térmicos. La página se envía sin márgenes y con el alto medido del documento, de modo que el contenido queda centrado, un recibo corto no desperdicia papel y un tiquete largo no se parte en dos hojas.
+Cada driver térmico declara el papel a su manera: unos publican 72 mm sin márgenes (el de macOS del cliente), otros 80 mm con márgenes propios y otros ignoran el tamaño pedido y usan su papel predeterminado. Para que el resultado no dependa del equipo (D-039):
+
+- La página se pide con el ancho del cabezal (72 mm en papel de 80 mm, 48 mm en 58 mm) y el alto medido del documento.
+- La impresión respeta el área imprimible que declara el driver (`printableArea`) y ninguna plantilla fija márgenes con `@page`, que la anularían.
+- El contenido mide como máximo el ancho de impresión, se centra en lo que el driver declare y se encoge si ese espacio es menor; el texto largo se parte en lugar de salirse.
+- El alto se mide con el contenido 8 mm más angosto que el pedido, para que un área más estrecha nunca empuje la última línea a otra hoja. Cuesta unos milímetros de papel.
+
+Si un driver declara medidas que no coinciden con el cabezal, Configuración › Impresión permite fijar el **ancho de impresión** (de medio en medio milímetro) y un **ajuste horizontal** de hasta 6 mm por lado. El botón **Imprimir guía de ajuste** imprime una regla del ancho configurado con sus dos bordes: si falta el borde derecho, el último número completo es el ancho a elegir; si sobra espacio en un lado y falta en el otro, se corrige con el ajuste horizontal.
 
 Ningún documento usa negrita: en el cabezal térmico el trazo grueso se empasta y dificulta la lectura. La jerarquía se construye con tamaño, mayúsculas espaciadas y recuadros sobre una sans de sistema (Arial o Helvetica) con cifras tabulares. Todos comparten el mismo esquema: encabezado centrado con logo, nombre, contacto, tipo de documento y número; la matrícula grande con el tipo de vehículo; filas etiqueta y valor; el importe principal en un recuadro; y un pie breve. La duplicación se marca con un recuadro «REIMPRESIÓN» bajo el encabezado. Las fechas usan el formato local de la aplicación y, si no caben, se parten entre la fecha y la hora.
 

@@ -10,6 +10,14 @@ describe('esquema IPC de configuración', () => {
   it('acepta únicamente propiedades conocidas y valores válidos', () => {
     expect(updateSettingsSchema.safeParse({ paperWidth: '58mm' }).success).toBe(true)
     expect(updateSettingsSchema.safeParse({ paperWidth: 'A4' }).success).toBe(false)
+    expect(updateSettingsSchema.safeParse({ printWidthMm: 64.5, printOffsetMm: -2 }).success).toBe(
+      true,
+    )
+    expect(updateSettingsSchema.safeParse({ printWidthMm: null }).success).toBe(true)
+    // Medio milímetro es la resolución de la guía; fuera de rango o más fino se rechaza.
+    expect(updateSettingsSchema.safeParse({ printWidthMm: 64.3 }).success).toBe(false)
+    expect(updateSettingsSchema.safeParse({ printWidthMm: 30 }).success).toBe(false)
+    expect(updateSettingsSchema.safeParse({ printOffsetMm: 11 }).success).toBe(false)
     expect(updateSettingsSchema.safeParse({ arbitraryChannel: true }).success).toBe(false)
   })
 

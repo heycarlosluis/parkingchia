@@ -55,6 +55,33 @@ function logoHtml(profile: ParkingProfile | null): string {
  */
 export const PRINTABLE_WIDTH_MM: Record<PaperWidth, number> = { '80mm': 72, '58mm': 48 }
 
+/**
+ * Cómo se acomoda el documento en el papel de la impresora elegida.
+ *
+ * Cada driver térmico declara el papel a su manera: unos publican 72 mm sin
+ * márgenes, otros 80 mm con márgenes propios y otros ignoran el tamaño pedido.
+ * El contenido mide como máximo `widthMm`, se centra en lo que el driver
+ * declare imprimible y se encoge si ese espacio es menor; el ajuste manual
+ * cubre a los drivers que declaran medidas que no coinciden con el cabezal.
+ */
+export type PrintLayout = {
+  paperWidth: PaperWidth
+  /** Ancho del contenido; `null` usa el imprimible estándar del rollo. */
+  widthMm: number | null
+  /** Positivo mueve el contenido a la derecha. */
+  offsetMm: number
+}
+
+type LayoutInput = PaperWidth | PrintLayout
+
+function toLayout(input: LayoutInput): PrintLayout {
+  return typeof input === 'string' ? { paperWidth: input, widthMm: null, offsetMm: 0 } : input
+}
+
+export function contentWidthMm(layout: PrintLayout): number {
+  return layout.widthMm ?? PRINTABLE_WIDTH_MM[layout.paperWidth]
+}
+
 /** Margen lateral del cuerpo de todos los documentos. */
 const BODY_PADDING_MM = 2
 
@@ -85,14 +112,13 @@ const SYMBOL_SIZES: Record<PaperWidth, SymbolSize> = {
 const BWIP_UNITS_PER_MODULE = { code128: 1, qrcode: 2 } as const
 
 /**
- * Da al SVG un tamaño exacto en puntos y lo centra sobre la rejilla del cabezal.
+ * Da al SVG un tamaño exacto en puntos del cabezal y lo centra.
  *
- * Centrar con `margin: auto` puede dejar el símbolo a medio punto de la
- * rejilla; el margen izquierdo se redondea a un punto entero.
+ * Si el driver declarara un área más angosta que el símbolo, `max-width` lo
+ * comprime antes que dejarlo cortado.
  */
 function fitSymbol(
   svg: string,
-  paperWidth: PaperWidth,
   unitsPerModule: number,
   moduleDots: number,
   heightMm?: number,
@@ -102,30 +128,28 @@ function fitSymbol(
   const modulesWide = Number(viewBox[1]) / unitsPerModule
   const modulesHigh = Number(viewBox[2]) / unitsPerModule
   const widthDots = Math.round(modulesWide * moduleDots)
-  const contentDots = (PRINTABLE_WIDTH_MM[paperWidth] - 2 * BODY_PADDING_MM) / DOT_MM
-  const marginDots = Math.max(0, Math.floor((contentDots - widthDots) / 2))
   const height = heightMm ?? modulesHigh * moduleDots * DOT_MM
   return svg.replace(
     '<svg ',
-    `<svg width="${widthDots * DOT_MM}mm" height="${height}mm" preserveAspectRatio="none" shape-rendering="crispEdges" style="margin-left: ${marginDots * DOT_MM}mm" `,
+    `<svg width="${widthDots * DOT_MM}mm" height="${height}mm" preserveAspectRatio="none" shape-rendering="crispEdges" style="margin: 0 auto; max-width: 100%" `,
   )
 }
 
 /**
- * Estilos comunes; el cuerpo ocupa exactamente el ancho imprimible.
+ * Estilos comunes; el cuerpo mide el ancho del contenido y se centra.
  *
  * Ningún texto va en negrita: en el cabezal térmico el trazo grueso se empasta
  * y cuesta leerlo. La jerarquía sale del tamaño, las mayúsculas espaciadas y
  * los recuadros. Se usa una sans de sistema de trazo firme, disponible en
  * Windows y macOS, con cifras tabulares para alinear los importes.
  */
-function ticketStyles(paperWidth: PaperWidth): string {
-  const width = PRINTABLE_WIDTH_MM[paperWidth]
+function ticketStyles(layout: PrintLayout): string {
+  const width = contentWidthMm(layout)
   return `
-      @page { margin: 0; }
+      /* Sin @page: una regla de margen aquí anularía los márgenes que declara el driver. */
       * { box-sizing: border-box; font-weight: 400; }
       html { margin: 0; padding: 0; }
-      body { width: ${width}mm; margin: 0; padding: ${BODY_PADDING_MM}mm ${BODY_PADDING_MM}mm 6mm; color: #000; background: #fff; font: 13px/1.35 Arial, 'Helvetica Neue', Helvetica, sans-serif; font-variant-numeric: tabular-nums; }
+      body { position: relative; left: ${layout.offsetMm}mm; width: ${width}mm; max-width: 100%; margin: 0 auto; padding: ${BODY_PADDING_MM}mm ${BODY_PADDING_MM}mm 6mm; color: #000; background: #fff; font: 13px/1.35 Arial, 'Helvetica Neue', Helvetica, sans-serif; font-variant-numeric: tabular-nums; }
       p { margin: 0; }
       .header { text-align: center; }
       .logo { display: block; max-width: 34mm; max-height: 16mm; object-fit: contain; margin: 0 auto 2mm; }
@@ -198,7 +222,7 @@ type DocumentHeader = {
 }
 
 function documentShell(
-  paperWidth: PaperWidth,
+  layout: LayoutInput,
   profile: ParkingProfile | null,
   header: DocumentHeader,
   body: string,
@@ -216,7 +240,7 @@ function documentShell(
   <head>
     <meta charset="UTF-8" />
     <title>${escapeHtml(header.title)}</title>
-    <style>${ticketStyles(paperWidth)}</style>
+    <style>${ticketStyles(toLayout(layout))}</style>
   </head>
   <body>
     <header class="header">
@@ -234,10 +258,7 @@ function documentShell(
 </html>`
 }
 
-export function createTestTicketHtml(
-  paperWidth: PaperWidth,
-  profile: ParkingProfile | null,
-): string {
+export function createTestTicketHtml(layout: LayoutInput, profile: ParkingProfile | null): string {
   const ticketNumber = `PR-${Date.now().toString().slice(-8)}`
   const body = `
     ${plateBlock('ABC123', 'car')}
@@ -249,19 +270,19 @@ export function createTestTicketHtml(
     </dl>
     ${totalBlock('Total', 5000)}
     ${RULE}
-    <p class="footer">Impresión de diagnóstico · Papel ${paperWidth}</p>`
-  return documentShell(paperWidth, profile, { title: 'Ticket de prueba', meta: ticketNumber }, body)
+    <p class="footer">Impresión de diagnóstico · Papel ${toLayout(layout).paperWidth}</p>`
+  return documentShell(layout, profile, { title: 'Ticket de prueba', meta: ticketNumber }, body)
 }
 
 export function createEntryTicketHtml(
-  paperWidth: PaperWidth,
+  layout: LayoutInput,
   profile: ParkingProfile | null,
   entry: EntryRegistration,
   options: TicketRenderOptions = {},
 ): string {
   // QR y Code 128 llevan el mismo código numérico: cualquiera de los dos abre la salida.
   const reference = encodeEntryTicketReference(entry.sessionId)
-  const sizes = SYMBOL_SIZES[paperWidth]
+  const sizes = SYMBOL_SIZES[toLayout(layout).paperWidth]
   // Corrección Q (25 %): tolera manchas y roces del papel térmico. `eclevel` es
   // una opción de BWIPP que los tipos de bwip-js no declaran.
   const qrOptions = {
@@ -273,12 +294,7 @@ export function createEntryTicketHtml(
     paddingwidth: 8,
     paddingheight: 8,
   }
-  const qrSvg = fitSymbol(
-    bwipjs.toSVG(qrOptions),
-    paperWidth,
-    BWIP_UNITS_PER_MODULE.qrcode,
-    sizes.qrModuleDots,
-  )
+  const qrSvg = fitSymbol(bwipjs.toSVG(qrOptions), BWIP_UNITS_PER_MODULE.qrcode, sizes.qrModuleDots)
   const barcodeSvg = fitSymbol(
     bwipjs.toSVG({
       bcid: 'code128',
@@ -289,7 +305,6 @@ export function createEntryTicketHtml(
       paddingwidth: 10,
       paddingheight: 0,
     }),
-    paperWidth,
     BWIP_UNITS_PER_MODULE.code128,
     sizes.barcodeModuleDots,
     sizes.barcodeHeightMm,
@@ -314,11 +329,11 @@ export function createEntryTicketHtml(
     </section>
     ${RULE}
     <p class="footer">Conserve este tiquete.<br />Se exige para retirar el vehículo.</p>`
-  return documentShell(paperWidth, profile, { title: 'Tiquete de ingreso' }, body, options)
+  return documentShell(layout, profile, { title: 'Tiquete de ingreso' }, body, options)
 }
 
 export function createExitReceiptHtml(
-  paperWidth: PaperWidth,
+  layout: LayoutInput,
   profile: ParkingProfile | null,
   receipt: ReceiptSnapshot,
   options: TicketRenderOptions = {},
@@ -358,7 +373,7 @@ export function createExitReceiptHtml(
     ${RULE}
     <p class="footer">Gracias por su visita.</p>`
   return documentShell(
-    paperWidth,
+    layout,
     profile,
     { title: 'Recibo de salida', meta: `N.º ${receipt.receiptNumber}` },
     body,
@@ -367,7 +382,7 @@ export function createExitReceiptHtml(
 }
 
 export function createMonthlyReceiptHtml(
-  paperWidth: PaperWidth,
+  layout: LayoutInput,
   profile: ParkingProfile | null,
   receipt: MonthlyReceiptSnapshot,
 ): string {
@@ -405,7 +420,7 @@ export function createMonthlyReceiptHtml(
     ${RULE}
     <p class="footer">Conserve este comprobante mientras dure la mensualidad.</p>`
   return documentShell(
-    paperWidth,
+    layout,
     profile,
     { title: 'Recibo de mensualidad', meta: `N.º ${receipt.receiptNumber}` },
     body,
@@ -413,7 +428,7 @@ export function createMonthlyReceiptHtml(
 }
 
 export function createCashCloseReceiptHtml(
-  paperWidth: PaperWidth,
+  layout: LayoutInput,
   profile: ParkingProfile | null,
   summary: CashCloseSummary,
 ): string {
@@ -444,5 +459,74 @@ export function createCashCloseReceiptHtml(
     </dl>
     ${RULE}
     <p class="footer">Conserve este comprobante del turno.</p>`
-  return documentShell(paperWidth, profile, { title: 'Cierre de caja' }, body)
+  return documentShell(layout, profile, { title: 'Cierre de caja' }, body)
+}
+
+function describeOffset(offsetMm: number): string {
+  if (offsetMm === 0) return 'centrado'
+  const amount = `${String(Math.abs(offsetMm)).replace('.', ',')} mm`
+  return offsetMm > 0 ? `${amount} a la derecha` : `${amount} a la izquierda`
+}
+
+/**
+ * Guía para ajustar la impresión en un equipo nuevo.
+ *
+ * Imprime una regla del ancho configurado con sus dos bordes y marcas cada
+ * 5 mm. Lo que el operador ve cortado le indica qué valor elegir: el último
+ * número completo a la derecha es el ancho que el cabezal realmente imprime.
+ */
+export function createCalibrationGuideHtml(
+  layout: PrintLayout,
+  profile: ParkingProfile | null,
+): string {
+  const width = contentWidthMm(layout)
+  const marks: string[] = []
+  for (let mm = 0; mm <= width; mm += 5) {
+    const major = mm % 10 === 0
+    const label = major ? `<span class="mark-label">${mm}</span>` : ''
+    const kind = mm === 0 ? ' major first' : major ? ' major' : ''
+    marks.push(`<span class="mark${kind}" style="left: ${mm}mm">${label}</span>`)
+  }
+  const widthLabel = `${String(width).replace('.', ',')} mm`
+  const body = `
+    <dl>
+      ${row('Ancho de impresión', escapeHtml(layout.widthMm === null ? `${widthLabel} (automático)` : widthLabel))}
+      ${row('Ajuste horizontal', escapeHtml(describeOffset(layout.offsetMm)))}
+    </dl>
+    <div class="ruler" aria-label="Regla de ${escapeHtml(widthLabel)}">
+      <span class="edge left"></span>
+      ${marks.join('')}
+      <span class="edge right"></span>
+      <span class="center">centro</span>
+    </div>
+    <p class="edge-labels"><span>◀ borde izquierdo</span><span>borde derecho ▶</span></p>
+    ${RULE}
+    <ol class="steps">
+      <li>Si ves completas las dos líneas gruesas de los bordes, la impresión está bien ajustada.</li>
+      <li>Si falta la línea del borde derecho, elige como ancho de impresión el último número que veas completo.</li>
+      <li>Si sobra espacio en un lado y falta en el otro, mueve el ajuste horizontal hacia el lado que falta.</li>
+    </ol>
+    ${RULE}
+    <p class="footer">Configuración › Impresión › Ajuste del papel</p>`
+  return documentShell(layout, profile, { title: 'Guía de ajuste' }, body).replace(
+    '</style>',
+    `
+      /* La regla ocupa todo el ancho del contenido, incluido el margen interior. */
+      /* Si el driver achica el área, las marcas que no caben no se imprimen: el
+         último número visible es el ancho real. */
+      .ruler { position: relative; overflow: hidden; height: 12mm; margin: 3mm -${BODY_PADDING_MM}mm 0; border-bottom: 1px solid #000; }
+      .edge { position: absolute; top: 0; bottom: 0; width: 0.5mm; background: #000; }
+      .edge.left { left: 0; }
+      .edge.right { right: 0; }
+      .mark { position: absolute; bottom: 0; width: 0; height: 3mm; border-left: 1px solid #000; }
+      .mark.major { height: 5mm; }
+      .mark-label { position: absolute; bottom: 5.5mm; transform: translateX(-50%); font-size: 10px; }
+      .mark.first .mark-label { transform: translateX(0.8mm); }
+      .center { position: absolute; top: 0; left: 50%; transform: translateX(-50%); font-size: 10px; }
+      .center::after { content: ''; position: absolute; top: 4mm; left: 50%; height: 2mm; border-left: 1px solid #000; }
+      .edge-labels { display: flex; justify-content: space-between; margin: 1mm -${BODY_PADDING_MM}mm 0; font-size: 10px; }
+      .steps { margin: 0; padding-left: 5mm; font-size: 12px; }
+      .steps li { margin: 1mm 0; }
+    </style>`,
+  )
 }

@@ -6,6 +6,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   printerName: null,
   paperWidth: '80mm',
   showPrintDialog: true,
+  printWidthMm: null,
+  printOffsetMm: 0,
 }
 
 export class SettingsService {
@@ -21,6 +23,10 @@ export class SettingsService {
       printerName: this.parseNullableString(values.get('printing.printerName')),
       paperWidth: values.get('printing.paperWidth') === '58mm' ? '58mm' : '80mm',
       showPrintDialog: values.get('printing.showPrintDialog') !== 'false',
+      printWidthMm: this.parseNullableNumber(values.get('printing.printWidthMm')),
+      printOffsetMm:
+        this.parseNullableNumber(values.get('printing.printOffsetMm')) ??
+        DEFAULT_SETTINGS.printOffsetMm,
     }
   }
 
@@ -30,6 +36,8 @@ export class SettingsService {
       printerName: input.printerName === undefined ? current.printerName : input.printerName,
       paperWidth: input.paperWidth ?? current.paperWidth,
       showPrintDialog: input.showPrintDialog ?? current.showPrintDialog,
+      printWidthMm: input.printWidthMm === undefined ? current.printWidthMm : input.printWidthMm,
+      printOffsetMm: input.printOffsetMm ?? current.printOffsetMm,
     }
     const now = new Date().toISOString()
     const upsert = this.sqlite.prepare(`
@@ -42,8 +50,20 @@ export class SettingsService {
       upsert.run('printing.printerName', JSON.stringify(next.printerName), now, now)
       upsert.run('printing.paperWidth', next.paperWidth, now, now)
       upsert.run('printing.showPrintDialog', String(next.showPrintDialog), now, now)
+      upsert.run('printing.printWidthMm', JSON.stringify(next.printWidthMm), now, now)
+      upsert.run('printing.printOffsetMm', JSON.stringify(next.printOffsetMm), now, now)
     })()
     return next
+  }
+
+  private parseNullableNumber(value: string | undefined): number | null {
+    if (!value) return null
+    try {
+      const parsed: unknown = JSON.parse(value)
+      return typeof parsed === 'number' && Number.isFinite(parsed) ? parsed : null
+    } catch {
+      return null
+    }
   }
 
   private parseNullableString(value: string | undefined): string | null {

@@ -57,6 +57,7 @@ const api: ParkingApi = {
   updateSettings: (input) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_UPDATE, input),
   listPrinters: () => ipcRenderer.invoke(IPC_CHANNELS.PRINTERS_LIST),
   printTestTicket: () => ipcRenderer.invoke(IPC_CHANNELS.PRINT_TEST),
+  printCalibrationGuide: () => ipcRenderer.invoke(IPC_CHANNELS.PRINT_CALIBRATION),
   createBackup: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_CREATE),
   getUpdateState: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_GET_STATE),
   checkForUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CHECK),

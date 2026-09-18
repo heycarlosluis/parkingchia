@@ -1,4 +1,4 @@
-import { Printer, RefreshCw } from 'lucide-react'
+import { Printer, RefreshCw, Ruler } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import type { AppSettings, PrinterInfo } from '@shared/contracts'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -28,10 +28,39 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
+/** Ancho que imprime el cabezal en cada rollo; coincide con el del proceso principal. */
+const STANDARD_PRINT_WIDTH_MM: Record<AppSettings['paperWidth'], number> = {
+  '80mm': 72,
+  '58mm': 48,
+}
+const AUTOMATIC_WIDTH = '__auto'
+
+function formatMillimeters(value: number): string {
+  return `${String(value).replace('.', ',')} mm`
+}
+
+function widthOptions(paperWidth: AppSettings['paperWidth']): number[] {
+  const standard = STANDARD_PRINT_WIDTH_MM[paperWidth]
+  const nominal = paperWidth === '80mm' ? 80 : 58
+  const options: number[] = []
+  for (let width = standard - 16; width <= nominal; width += 1) options.push(width)
+  return options
+}
+
+const OFFSET_OPTIONS = Array.from({ length: 25 }, (_, index) => (index - 12) / 2)
+
+function describeOffset(offsetMm: number): string {
+  if (offsetMm === 0) return 'Centrado'
+  const amount = formatMillimeters(Math.abs(offsetMm))
+  return offsetMm > 0 ? `${amount} a la derecha` : `${amount} a la izquierda`
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   printerName: null,
   paperWidth: '80mm',
   showPrintDialog: true,
+  printWidthMm: null,
+  printOffsetMm: 0,
 }
 
 export function PrinterSettings(): React.JSX.Element {
@@ -69,6 +98,18 @@ export function PrinterSettings(): React.JSX.Element {
       setSettings(result.data)
       setMessage('Configuración de impresión guardada.')
     } else setError(result.error.message)
+  }
+
+  const printCalibration = async (): Promise<void> => {
+    setPrinting(true)
+    setMessage('')
+    setError('')
+    const result = await window.parkingAPI.printCalibrationGuide()
+    if (result.ok) {
+      if (result.data.printed) setMessage(result.data.message)
+      else setError(result.data.message)
+    } else setError(result.error.message)
+    setPrinting(false)
   }
 
   const printTest = async (): Promise<void> => {
@@ -147,6 +188,62 @@ export function PrinterSettings(): React.JSX.Element {
               </SelectContent>
             </Select>
           </Field>
+          <Field>
+            <FieldLabel htmlFor="print-width-select">Ancho de impresión</FieldLabel>
+            <Select
+              value={
+                settings.printWidthMm === null ? AUTOMATIC_WIDTH : String(settings.printWidthMm)
+              }
+              onValueChange={(value) =>
+                void saveSettings({
+                  printWidthMm: value === AUTOMATIC_WIDTH ? null : Number(value),
+                })
+              }
+            >
+              <SelectTrigger id="print-width-select" className="min-h-11">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value={AUTOMATIC_WIDTH}>
+                    Automático ({formatMillimeters(STANDARD_PRINT_WIDTH_MM[settings.paperWidth])})
+                  </SelectItem>
+                  {widthOptions(settings.paperWidth).map((width) => (
+                    <SelectItem key={width} value={String(width)}>
+                      {formatMillimeters(width)}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <FieldDescription>
+              Si el tiquete sale cortado a la derecha, imprime la guía de ajuste y elige el último
+              número que se vea completo.
+            </FieldDescription>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="print-offset-select">Ajuste horizontal</FieldLabel>
+            <Select
+              value={String(settings.printOffsetMm)}
+              onValueChange={(value) => void saveSettings({ printOffsetMm: Number(value) })}
+            >
+              <SelectTrigger id="print-offset-select" className="min-h-11">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {OFFSET_OPTIONS.map((offset) => (
+                    <SelectItem key={offset} value={String(offset)}>
+                      {describeOffset(offset)}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <FieldDescription>
+              Mueve todo el contenido si queda corrido hacia un lado del papel.
+            </FieldDescription>
+          </Field>
           <Field orientation="horizontal">
             <Checkbox
               id="printer-show-dialog"
@@ -169,6 +266,14 @@ export function PrinterSettings(): React.JSX.Element {
         <Button variant="outline" onClick={() => void loadPrinters()} disabled={loadingPrinters}>
           <RefreshCw data-icon="inline-start" />
           {loadingPrinters ? 'Actualizando…' : 'Actualizar impresoras'}
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => void printCalibration()}
+          disabled={printing || printers.length === 0}
+        >
+          <Ruler data-icon="inline-start" />
+          Imprimir guía de ajuste
         </Button>
         <Button onClick={() => void printTest()} disabled={printing || printers.length === 0}>
           <Printer data-icon="inline-start" />

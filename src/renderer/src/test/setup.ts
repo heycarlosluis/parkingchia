@@ -3,6 +3,7 @@ import { cleanup } from '@testing-library/react'
 import { afterEach, vi } from 'vitest'
 import type {
   AccessState,
+  AppSettings,
   ActiveSession,
   ApiResult,
   CashCloseSummary,
@@ -243,6 +244,14 @@ export const employee: Employee = {
   updatedAt: '2026-08-18T12:00:00.000Z',
 }
 
+const printSettings: AppSettings = {
+  printerName: null,
+  paperWidth: '80mm',
+  showPrintDialog: true,
+  printWidthMm: null,
+  printOffsetMm: 0,
+}
+
 const parkingApi: ParkingApi = {
   getAccessState: vi.fn(async () => ok(accessState)),
   completeOnboarding: vi.fn(async (input) =>
@@ -455,14 +464,11 @@ const parkingApi: ParkingApi = {
   createEmployee: vi.fn(async (input) => ok({ ...employee, ...input })),
   updateEmployee: vi.fn(async (input) => ok({ ...employee, ...input })),
   deleteEmployee: vi.fn(async () => ok(undefined)),
-  getSettings: vi.fn(async () =>
-    ok({ printerName: null, paperWidth: '80mm' as const, showPrintDialog: true }),
-  ),
-  updateSettings: vi.fn(async (input) =>
-    ok({ printerName: null, paperWidth: '80mm' as const, showPrintDialog: true, ...input }),
-  ),
+  getSettings: vi.fn(async () => ok(printSettings)),
+  updateSettings: vi.fn(async (input) => ok({ ...printSettings, ...input })),
   listPrinters: vi.fn(async () => ok([])),
   printTestTicket: vi.fn(async () => ok({ printed: false, message: 'No hay impresoras.' })),
+  printCalibrationGuide: vi.fn(async () => ok({ printed: false, message: 'No hay impresoras.' })),
   createBackup: vi.fn(async () => ok({ created: false, message: 'Cancelada.' })),
   getUpdateState: vi.fn(async () => ok(updateState)),
   checkForUpdates: vi.fn(async () => ok(updateState)),

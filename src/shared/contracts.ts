@@ -249,6 +249,14 @@ export type AppSettings = {
   printerName: string | null
   paperWidth: PaperWidth
   showPrintDialog: boolean
+  /**
+   * Ancho del contenido impreso en milímetros. `null` usa el ancho estándar del
+   * rollo (72 mm en 80 mm, 48 mm en 58 mm); un número corrige un driver que
+   * declara un área imprimible distinta de la real.
+   */
+  printWidthMm: number | null
+  /** Desplazamiento horizontal del contenido; positivo mueve a la derecha. */
+  printOffsetMm: number
 }
 
 export type PrinterInfo = {
@@ -477,6 +485,7 @@ export interface ParkingApi {
   updateSettings: (input: Partial<AppSettings>) => Promise<ApiResult<AppSettings>>
   listPrinters: () => Promise<ApiResult<PrinterInfo[]>>
   printTestTicket: () => Promise<ApiResult<PrintResult>>
+  printCalibrationGuide: () => Promise<ApiResult<PrintResult>>
   createBackup: () => Promise<ApiResult<BackupResult>>
   getUpdateState: () => Promise<ApiResult<UpdateState>>
   checkForUpdates: () => Promise<ApiResult<UpdateState>>

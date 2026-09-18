@@ -346,6 +346,9 @@ export function registerIpcHandlers(services: Services): void {
   ipcMain.handle(IPC_CHANNELS.PRINT_TEST, () =>
     withAccess(() => services.printing.printTestTicket()),
   )
+  ipcMain.handle(IPC_CHANNELS.PRINT_CALIBRATION, () =>
+    withAccess(() => services.printing.printCalibrationGuide()),
+  )
 
   ipcMain.handle(IPC_CHANNELS.BACKUP_CREATE, () =>
     withAccess<BackupResult>(async () => {

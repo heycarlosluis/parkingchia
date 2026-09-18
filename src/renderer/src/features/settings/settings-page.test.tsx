@@ -107,6 +107,22 @@ describe('Configuración', () => {
     expect(await screen.findByLabelText('Impresora')).toBeInTheDocument()
   })
 
+  it('ofrece el ajuste del papel y la guía para calibrarlo', async () => {
+    vi.mocked(window.parkingAPI.listPrinters).mockResolvedValue({
+      ok: true,
+      data: [{ name: 'POS-80', displayName: 'POS-80', isDefault: true, status: 0 }],
+    })
+    renderSettings('/configuracion?tab=impresion')
+
+    expect(await screen.findByLabelText('Ancho de impresión')).toHaveTextContent(
+      'Automático (72 mm)',
+    )
+    expect(screen.getByLabelText('Ajuste horizontal')).toHaveTextContent('Centrado')
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Imprimir guía de ajuste' }))
+    expect(vi.mocked(window.parkingAPI.printCalibrationGuide)).toHaveBeenCalled()
+  })
+
   it('agrupa el acceso local y el sistema en sus propias pestañas', async () => {
     renderSettings('/configuracion?tab=seguridad')
     expect(await screen.findByText('Acceso local')).toBeInTheDocument()

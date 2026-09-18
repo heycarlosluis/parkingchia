@@ -5,6 +5,7 @@ import { encodeEntryTicketReference, formatEntryTicketReference } from '@shared/
 import { calculateChargeForMinutes, DEFAULT_TARIFF_SETTINGS } from '@shared/tariff'
 import type { ReceiptSnapshot } from '@main/parking/service'
 import {
+  createCalibrationGuideHtml,
   createCashCloseReceiptHtml,
   createEntryTicketHtml,
   createExitReceiptHtml,
@@ -102,7 +103,7 @@ describe('recibo de salida', () => {
     expect(html).toContain('Recibido')
     expect(html).toContain('Cambio')
     // Se maqueta sobre el ancho que imprime el cabezal, no sobre el del rollo.
-    expect(html).toContain('body { width: 48mm;')
+    expect(html).toContain('width: 48mm; max-width: 100%; margin: 0 auto;')
   })
 
   it('deja constancia del empleado del turno y de la nota de la salida', () => {
@@ -196,5 +197,34 @@ describe('símbolos del tiquete de ingreso', () => {
     // QR de 21 módulos + 8 de silencio; Code 128 de 123 módulos + 20 de silencio.
     expect(sizes.map((match) => Number(match[1]))).toEqual([29 * 1, 143 * 0.375])
     expect(narrow.map((match) => Number(match[1]))).toEqual([29 * 0.75, 143 * 0.25])
+  })
+})
+
+describe('ajuste al papel de cada impresora', () => {
+  it('no fija márgenes de página para que se respeten los que declara el driver', () => {
+    // Una regla @page anularía el área imprimible del driver y cortaría el contenido.
+    expect(createEntryTicketHtml('80mm', profile, entry)).not.toMatch(/@page\s*\{/)
+  })
+
+  it('aplica el ancho y el desplazamiento calibrados sin salirse del área disponible', () => {
+    const html = createExitReceiptHtml(
+      { paperWidth: '80mm', widthMm: 64.5, offsetMm: -1.5 },
+      profile,
+      receipt,
+    )
+    expect(html).toContain('left: -1.5mm; width: 64.5mm; max-width: 100%; margin: 0 auto;')
+  })
+
+  it('imprime una guía con regla, bordes e instrucciones', () => {
+    const html = createCalibrationGuideHtml(
+      { paperWidth: '80mm', widthMm: null, offsetMm: 2 },
+      profile,
+    )
+    expect(html).toContain('72 mm (automático)')
+    expect(html).toContain('2 mm a la derecha')
+    expect(html).toContain('class="edge left"')
+    expect(html).toContain('class="edge right"')
+    expect(html).toContain('<span class="mark-label">70</span>')
+    expect(html).toContain('el último número que veas completo')
   })
 })

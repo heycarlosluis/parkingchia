@@ -321,6 +321,15 @@ Estados posibles: `propuesta`, `aceptada`, `reemplazada` o `descartada`.
 - Motivo: el lector funciona como un teclado estadounidense. En la distribución latinoamericana del cliente, el `-` y el `_` del base64url llegaban como `'` y `?`, y el bloqueo de mayúsculas invertía las letras, así que el QR con el snapshot fallaba. El Code 128 de 43 caracteres ocupaba el ancho completo con módulos de 1,7 puntos: sus barras salían de 1 o 2 puntos según la posición y no respetaban las proporciones del símbolo; en 58 mm ni siquiera se decodificaba en una simulación a 8 puntos por milímetro. Un código numérico corto es idéntico en cualquier distribución, cabe con módulos de 2 o 3 puntos y un dígito de verificación detecta errores al teclearlo.
 - Consecuencia: el papel ya no permite comprobar sin la base qué datos tenía el ingreso; SQLite sigue siendo la única autoridad del cobro. Un código de 16 dígitos no puede confundirse con una matrícula, por lo que no lleva prefijo. Cambiar el tamaño de los módulos exige verificar de nuevo la lectura rasterizando a 8 puntos por milímetro, y el Code 128 en 58 mm debe considerarse un respaldo del QR.
 
+## D-039 — La impresión se adapta al área que declara cada driver y admite calibración
+
+- Fecha: 2026-09-18
+- Estado: aceptada
+- Complementa: la maquetación sobre el ancho imprimible del 2026-09-17
+- Decisión: los documentos ya no fijan márgenes con `@page` y se imprimen con `marginType: 'printableArea'`. El cuerpo mide como máximo el ancho de impresión (por defecto 72 mm en papel de 80 mm y 48 mm en 58 mm), se centra y se encoge con `max-width: 100%` dentro del área que declare el driver. La página conserva el ancho del cabezal y el alto se mide con el contenido 8 mm más angosto. `app_settings` guarda `printing.printWidthMm` (nulo significa automático) y `printing.printOffsetMm`, validados de medio en medio milímetro, y Configuración ofrece una guía impresa con regla para elegirlos.
+- Motivo: la corrección anterior asumía que todo driver imprime una página de 72 mm tal cual, como el de macOS del cliente. En un equipo Windows el tiquete volvió a salir cortado a la derecha: los drivers térmicos de Windows pueden ignorar el tamaño pedido, usar su papel de 80 mm o declarar márgenes propios. Una simulación con el motor de impresión de Chromium comprobó que, con la regla `@page { margin: 0 }`, el contenido ignoraba los márgenes del driver; sin ella, tiquetes y recibos quedan dentro del área en los cuatro casos probados (72 mm sin márgenes, 80 mm sin márgenes, 80 mm y 72 mm con 4 mm por lado), en una sola hoja y con QR y Code 128 legibles.
+- Consecuencia: ninguna plantilla debe volver a declarar `@page`. Un driver que informe un área mayor que la que imprime el cabezal no puede detectarse desde la aplicación; para ese caso existe la calibración por equipo. Si el contenido se encoge, el Code 128 puede perder su módulo entero de puntos; el QR sigue siendo legible.
+
 ## Plantilla para una nueva decisión
 
 ```markdown
