@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
+  addReceivedCash,
   calculateChange,
   closeSessionSchema,
   describeElapsed,
   exitStatusOf,
+  QUICK_CASH_AMOUNTS_COP,
   resolveExitTargetSchema,
 } from './parking'
+import { MAX_AMOUNT_COP } from './tariff'
 
 describe('esquema de lectura del tiquete', () => {
   it('acepta una matrícula o un código y rechaza entradas vacías o excesivas', () => {
@@ -83,5 +86,20 @@ describe('exitStatusOf', () => {
     expect(
       exitStatusOf({ status: 'cancelled', monthlyCustomerName: 'Ana', receiptNumber: 7 }),
     ).toBe('cancelled')
+  })
+})
+
+describe('montos rápidos del efectivo', () => {
+  it('van de 5.000 en 5.000 hasta 50.000 y de 10.000 en 10.000 hasta 100.000', () => {
+    expect(QUICK_CASH_AMOUNTS_COP).toEqual([
+      5_000, 10_000, 15_000, 20_000, 25_000, 30_000, 35_000, 40_000, 45_000, 50_000, 60_000, 70_000,
+      80_000, 90_000, 100_000,
+    ])
+  })
+
+  it('suman sobre lo registrado sin pasar del máximo permitido', () => {
+    expect(addReceivedCash(null, 5_000)).toBe(5_000)
+    expect(addReceivedCash(20_000, 20_000)).toBe(40_000)
+    expect(addReceivedCash(MAX_AMOUNT_COP - 1_000, 5_000)).toBe(MAX_AMOUNT_COP)
   })
 })

@@ -1,7 +1,19 @@
-import { Printer, RefreshCw, Ruler } from 'lucide-react'
+import { Printer, RefreshCw, RotateCcw, Ruler } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import type { AppSettings, PrinterInfo } from '@shared/contracts'
+import { MIN_PRINT_WIDTH_MM, PRINTABLE_WIDTH_MM } from '@shared/ipc'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -28,11 +40,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-/** Ancho que imprime el cabezal en cada rollo; coincide con el del proceso principal. */
-const STANDARD_PRINT_WIDTH_MM: Record<AppSettings['paperWidth'], number> = {
-  '80mm': 72,
-  '58mm': 48,
-}
 const AUTOMATIC_WIDTH = '__auto'
 
 function formatMillimeters(value: number): string {
@@ -40,10 +47,12 @@ function formatMillimeters(value: number): string {
 }
 
 function widthOptions(paperWidth: AppSettings['paperWidth']): number[] {
-  const standard = STANDARD_PRINT_WIDTH_MM[paperWidth]
+  const standard = PRINTABLE_WIDTH_MM[paperWidth]
   const nominal = paperWidth === '80mm' ? 80 : 58
   const options: number[] = []
-  for (let width = standard - 16; width <= nominal; width += 1) options.push(width)
+  // Nunca por debajo del mínimo que acepta la validación.
+  const from = Math.max(MIN_PRINT_WIDTH_MM, standard - 16)
+  for (let width = from; width <= nominal; width += 1) options.push(width)
   return options
 }
 
@@ -90,15 +99,32 @@ export function PrinterSettings(): React.JSX.Element {
     )
   }, [])
 
-  const saveSettings = async (patch: Partial<AppSettings>): Promise<void> => {
+  const saveSettings = async (
+    patch: Partial<AppSettings>,
+    successMessage = 'Configuración de impresión guardada.',
+  ): Promise<void> => {
     setError('')
     setMessage('')
     const result = await window.parkingAPI.updateSettings(patch)
     if (result.ok) {
       setSettings(result.data)
-      setMessage('Configuración de impresión guardada.')
+      setMessage(successMessage)
     } else setError(result.error.message)
   }
+
+  const standardWidth = formatMillimeters(PRINTABLE_WIDTH_MM[settings.paperWidth])
+  const layoutIsFactory = settings.printWidthMm === null && settings.printOffsetMm === 0
+
+  /**
+   * Vuelve al ajuste que funciona con la mayoría de drivers: el ancho que
+   * imprime el cabezal para el rollo elegido, centrado y dentro del área que
+   * declare la impresora. La impresora y el papel elegidos se conservan.
+   */
+  const restoreFactoryLayout = (): Promise<void> =>
+    saveSettings(
+      { printWidthMm: null, printOffsetMm: 0 },
+      `Ajuste de fábrica restablecido: ${standardWidth} centrado para papel de ${settings.paperWidth.replace('mm', ' mm')}.`,
+    )
 
   const printCalibration = async (): Promise<void> => {
     setPrinting(true)
@@ -175,7 +201,12 @@ export function PrinterSettings(): React.JSX.Element {
             <FieldLabel htmlFor="paper-select">Ancho del papel</FieldLabel>
             <Select
               value={settings.paperWidth}
-              onValueChange={(value: '58mm' | '80mm') => void saveSettings({ paperWidth: value })}
+              onValueChange={(value: '58mm' | '80mm') =>
+                void saveSettings(
+                  { paperWidth: value },
+                  `Papel de ${value.replace('mm', ' mm')} guardado con su ajuste de fábrica.`,
+                )
+              }
             >
               <SelectTrigger id="paper-select" className="min-h-11">
                 <SelectValue />
@@ -187,6 +218,9 @@ export function PrinterSettings(): React.JSX.Element {
                 </SelectGroup>
               </SelectContent>
             </Select>
+            <FieldDescription>
+              Al cambiarlo, el ajuste del papel vuelve al de fábrica.
+            </FieldDescription>
           </Field>
           <Field>
             <FieldLabel htmlFor="print-width-select">Ancho de impresión</FieldLabel>
@@ -205,9 +239,7 @@ export function PrinterSettings(): React.JSX.Element {
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectItem value={AUTOMATIC_WIDTH}>
-                    Automático ({formatMillimeters(STANDARD_PRINT_WIDTH_MM[settings.paperWidth])})
-                  </SelectItem>
+                  <SelectItem value={AUTOMATIC_WIDTH}>Automático ({standardWidth})</SelectItem>
                   {widthOptions(settings.paperWidth).map((width) => (
                     <SelectItem key={width} value={String(width)}>
                       {formatMillimeters(width)}
@@ -267,6 +299,31 @@ export function PrinterSettings(): React.JSX.Element {
           <RefreshCw data-icon="inline-start" />
           {loadingPrinters ? 'Actualizando…' : 'Actualizar impresoras'}
         </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="outline" disabled={layoutIsFactory}>
+              <RotateCcw data-icon="inline-start" />
+              Restablecer de fábrica
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Restablecer el ajuste de fábrica?</AlertDialogTitle>
+              <AlertDialogDescription>
+                El ancho de impresión vuelve a automático ({standardWidth}) y el contenido queda
+                centrado, que es el ajuste recomendado para papel de{' '}
+                {settings.paperWidth.replace('mm', ' mm')}. La impresora y el ancho del papel no
+                cambian.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={() => void restoreFactoryLayout()}>
+                Restablecer
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         <Button
           variant="outline"
           onClick={() => void printCalibration()}

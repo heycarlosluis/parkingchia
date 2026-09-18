@@ -1,12 +1,14 @@
 import { LoaderCircle, LogOut } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ActiveSession, ExitRegistration, SessionQuote } from '@shared/contracts'
 import { formatCurrency, formatDateTime } from '@shared/format'
 import {
+  addReceivedCash,
   calculateChange,
   describeElapsed,
   PAYMENT_METHOD_LABELS,
   PAYMENT_METHODS,
+  QUICK_CASH_AMOUNTS_COP,
   type PaymentMethod,
 } from '@shared/parking'
 import { describeCoverage } from '@shared/monthly'
@@ -33,6 +35,9 @@ import {
 } from '@/components/ui/select'
 import { useParkingStore } from '@/store/parking-store'
 
+/** Los botones muestran solo la cifra; el nombre accesible incluye la moneda. */
+const QUICK_AMOUNT_FORMAT = new Intl.NumberFormat('es-CO')
+
 type ExitDialogProps = {
   /** El diálogo se monta por sesión: el llamador lo renderiza con `key={session.id}`. */
   session: ActiveSession
@@ -55,6 +60,7 @@ export function ExitDialog({
   const [submitting, setSubmitting] = useState(false)
 
   const [reloadToken, setReloadToken] = useState(0)
+  const receivedRef = useRef<HTMLInputElement>(null)
 
   const sessionId = session.id
 
@@ -105,18 +111,29 @@ export function ExitDialog({
 
   const charge = quote?.charge ?? null
   const coverage = quote?.session.monthlyCoverage ?? null
+  const asksForCash = !quoting && charge !== null && charge.totalCop > 0 && method === 'cash'
+
+  // El campo aparece cuando llega la cotización: el foco espera a que exista
+  // para que el operador escriba el efectivo sin tocar el ratón.
+  useEffect(() => {
+    if (asksForCash) receivedRef.current?.focus()
+  }, [asksForCash])
+
+  /** Registra el efectivo y devuelve el foco al campo para seguir con el teclado. */
+  const applyCash = (value: number | null): void => {
+    setReceived(value ?? Number.NaN)
+    receivedRef.current?.focus()
+  }
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="rate-plan-dialog">
+      <DialogContent className="rate-plan-dialog exit-dialog">
         <DialogHeader>
           <DialogTitle>Registrar salida</DialogTitle>
           <DialogDescription>
             {VEHICLE_TYPE_LABELS[session.vehicleType]} · {session.ratePlanName ?? 'Sin tarifa'}
           </DialogDescription>
         </DialogHeader>
-
-        <p className="plate-display">{session.plate}</p>
 
         {error ? (
           <Alert variant="destructive">
@@ -133,103 +150,152 @@ export function ExitDialog({
         ) : null}
 
         {quoting ? (
-          <p className="field-hint">Calculando el cobro…</p>
-        ) : !charge ? null : (
           <>
-            <dl className="charge-breakdown">
-              <div>
-                <dt>Ingreso</dt>
-                <dd className="tabular">{formatDateTime(session.enteredAt)}</dd>
-              </div>
-              <div>
-                <dt>Permanencia</dt>
-                <dd className="tabular">{describeElapsed(charge.totalMinutes)}</dd>
-              </div>
-              <div>
-                <dt>Tiempo cobrado</dt>
-                <dd>{describeBilledTime(charge)}</dd>
-              </div>
-              {charge.taxPercent > 0 ? (
-                <>
-                  <div>
-                    <dt>Subtotal sin IVA</dt>
-                    <dd className="tabular">{formatCurrency(charge.subtotalCop)}</dd>
-                  </div>
-                  <div>
-                    <dt>IVA ({charge.taxPercent} %)</dt>
-                    <dd className="tabular">{formatCurrency(charge.taxCop)}</dd>
-                  </div>
-                </>
-              ) : null}
-              <div className="charge-total">
-                <dt>Total a cobrar</dt>
-                <dd className="tabular">{formatCurrency(charge.totalCop)}</dd>
-              </div>
-            </dl>
-
-            {charge.totalCop > 0 ? (
-              <>
-                <Field>
-                  <FieldLabel htmlFor="exit-method">Medio de pago</FieldLabel>
-                  <Select
-                    value={method}
-                    onValueChange={(value) => setMethod(value as PaymentMethod)}
-                  >
-                    <SelectTrigger id="exit-method" className="min-h-11">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {PAYMENT_METHODS.map((value) => (
-                          <SelectItem key={value} value={value}>
-                            {PAYMENT_METHOD_LABELS[value]}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
-
-                {method === 'cash' ? (
-                  <Field data-invalid={missingCash}>
-                    <FieldLabel htmlFor="exit-received">Efectivo recibido</FieldLabel>
-                    <Input
-                      id="exit-received"
-                      className="min-h-11"
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      step={100}
-                      value={Number.isFinite(received) ? received : ''}
-                      onChange={(event) => setReceived(event.target.valueAsNumber)}
-                      aria-invalid={missingCash}
-                    />
-                    <FieldDescription>
-                      {receivedValue === null
-                        ? 'El efectivo recibido es obligatorio para cobrar en efectivo.'
-                        : missingCash
-                          ? 'El efectivo recibido es menor que el total a cobrar.'
-                          : `Cambio a entregar: ${formatCurrency(change ?? 0)}`}
-                    </FieldDescription>
-                  </Field>
-                ) : null}
-              </>
-            ) : coverage ? (
-              <p className="field-hint">
-                Cubierto por la mensualidad de {coverage.customerName}, vigente del{' '}
-                {describeCoverage(coverage.startsAt, coverage.endsAt)}. La salida no genera cobro ni
-                recibo.
-              </p>
-            ) : (
-              <p className="field-hint">
-                La salida ocurre dentro del tiempo de gracia, así que no se cobra ni se emite
-                recibo.
-              </p>
-            )}
+            <p className="plate-display">{session.plate}</p>
+            <p className="field-hint">Calculando el cobro…</p>
           </>
+        ) : !charge ? (
+          <p className="plate-display">{session.plate}</p>
+        ) : (
+          // Resumen a la izquierda y pago a la derecha: en una sola columna los
+          // montos rápidos quedaban debajo del borde y había que desplazarse.
+          <div className="exit-dialog-body">
+            <div className="exit-dialog-summary">
+              <p className="plate-display">{session.plate}</p>
+              <dl className="charge-breakdown">
+                <div>
+                  <dt>Ingreso</dt>
+                  <dd className="tabular">{formatDateTime(session.enteredAt)}</dd>
+                </div>
+                <div>
+                  <dt>Permanencia</dt>
+                  <dd className="tabular">{describeElapsed(charge.totalMinutes)}</dd>
+                </div>
+                <div>
+                  <dt>Tiempo cobrado</dt>
+                  <dd>{describeBilledTime(charge)}</dd>
+                </div>
+                {charge.taxPercent > 0 ? (
+                  <>
+                    <div>
+                      <dt>Subtotal sin IVA</dt>
+                      <dd className="tabular">{formatCurrency(charge.subtotalCop)}</dd>
+                    </div>
+                    <div>
+                      <dt>IVA ({charge.taxPercent} %)</dt>
+                      <dd className="tabular">{formatCurrency(charge.taxCop)}</dd>
+                    </div>
+                  </>
+                ) : null}
+                <div className="charge-total">
+                  <dt>Total a cobrar</dt>
+                  <dd className="tabular">{formatCurrency(charge.totalCop)}</dd>
+                </div>
+              </dl>
+            </div>
+
+            <div className="exit-dialog-payment">
+              {charge.totalCop > 0 ? (
+                <>
+                  <Field>
+                    <FieldLabel htmlFor="exit-method">Medio de pago</FieldLabel>
+                    <Select
+                      value={method}
+                      onValueChange={(value) => setMethod(value as PaymentMethod)}
+                    >
+                      <SelectTrigger id="exit-method" className="min-h-11">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {PAYMENT_METHODS.map((value) => (
+                            <SelectItem key={value} value={value}>
+                              {PAYMENT_METHOD_LABELS[value]}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+
+                  {method === 'cash' ? (
+                    <Field data-invalid={missingCash}>
+                      <FieldLabel htmlFor="exit-received">Efectivo recibido</FieldLabel>
+                      <Input
+                        ref={receivedRef}
+                        id="exit-received"
+                        className="min-h-11"
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        step={100}
+                        value={Number.isFinite(received) ? received : ''}
+                        onChange={(event) => setReceived(event.target.valueAsNumber)}
+                        aria-invalid={missingCash}
+                      />
+                      <FieldDescription>
+                        {receivedValue === null
+                          ? 'El efectivo recibido es obligatorio para cobrar en efectivo.'
+                          : missingCash
+                            ? 'El efectivo recibido es menor que el total a cobrar.'
+                            : `Cambio a entregar: ${formatCurrency(change ?? 0)}`}
+                      </FieldDescription>
+                    </Field>
+                  ) : null}
+                  {method === 'cash' ? (
+                    // Fuera del campo: mientras está vacío se marca inválido y todo su
+                    // contenido se pinta en rojo, incluidos estos botones.
+                    <div className="quick-cash" role="group" aria-label="Montos rápidos">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="quick-cash-exact"
+                        onClick={() => applyCash(total)}
+                      >
+                        Monto exacto · <span className="tabular">{formatCurrency(total)}</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="quick-cash-clear"
+                        onClick={() => applyCash(null)}
+                        disabled={receivedValue === null}
+                      >
+                        Borrar
+                      </Button>
+                      {QUICK_CASH_AMOUNTS_COP.map((amount) => (
+                        <Button
+                          key={amount}
+                          type="button"
+                          variant="outline"
+                          className="tabular"
+                          aria-label={`Sumar ${formatCurrency(amount)}`}
+                          onClick={() => applyCash(addReceivedCash(receivedValue, amount))}
+                        >
+                          +{QUICK_AMOUNT_FORMAT.format(amount)}
+                        </Button>
+                      ))}
+                    </div>
+                  ) : null}
+                </>
+              ) : coverage ? (
+                <p className="field-hint">
+                  Cubierto por la mensualidad de {coverage.customerName}, vigente del{' '}
+                  {describeCoverage(coverage.startsAt, coverage.endsAt)}. La salida no genera cobro
+                  ni recibo.
+                </p>
+              ) : (
+                <p className="field-hint">
+                  La salida ocurre dentro del tiempo de gracia, así que no se cobra ni se emite
+                  recibo.
+                </p>
+              )}
+            </div>
+          </div>
         )}
 
-        <DialogFooter>
+        {/* Fijo al fondo: con los montos rápidos el diálogo puede desplazarse y «Cobrar» debe verse siempre. */}
+        <DialogFooter className="exit-dialog-footer">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>

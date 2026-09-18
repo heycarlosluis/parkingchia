@@ -330,6 +330,24 @@ Estados posibles: `propuesta`, `aceptada`, `reemplazada` o `descartada`.
 - Motivo: la corrección anterior asumía que todo driver imprime una página de 72 mm tal cual, como el de macOS del cliente. En un equipo Windows el tiquete volvió a salir cortado a la derecha: los drivers térmicos de Windows pueden ignorar el tamaño pedido, usar su papel de 80 mm o declarar márgenes propios. Una simulación con el motor de impresión de Chromium comprobó que, con la regla `@page { margin: 0 }`, el contenido ignoraba los márgenes del driver; sin ella, tiquetes y recibos quedan dentro del área en los cuatro casos probados (72 mm sin márgenes, 80 mm sin márgenes, 80 mm y 72 mm con 4 mm por lado), en una sola hoja y con QR y Code 128 legibles.
 - Consecuencia: ninguna plantilla debe volver a declarar `@page`. Un driver que informe un área mayor que la que imprime el cabezal no puede detectarse desde la aplicación; para ese caso existe la calibración por equipo. Si el contenido se encoge, el Code 128 puede perder su módulo entero de puntos; el QR sigue siendo legible.
 
+## D-040 — Los montos rápidos del cobro en efectivo son acumulables
+
+- Fecha: 2026-09-18
+- Estado: aceptada
+- Complementa: D-022 y D-031
+- Decisión: al abrir una salida con cobro en efectivo, el foco pasa al campo «Efectivo recibido». El diálogo ofrece «Monto exacto», valores de 5.000 en 5.000 hasta 50.000 y valores de 10.000 en 10.000 hasta 100.000. Cada pulsación suma al valor ya registrado; «Borrar» reinicia el campo. Los botones devuelven el foco al campo y exponen nombres accesibles que indican que la operación es sumar.
+- Motivo: el operador cuenta billetes durante una atención presencial y repetir un monto es más rápido y menos propenso a errores que digitar el total. «Monto exacto» cubre el caso frecuente en el que no hay cambio.
+- Consecuencia: los atajos solo modifican el efectivo recibido en el renderer; el proceso principal conserva la validación autoritativa, los importes siguen siendo enteros COP y el total cobrado no cambia. Añadir o retirar montos debe conservar el orden ascendente, la suma acumulable y la navegación por teclado.
+
+## D-041 — Cada ancho de papel tiene un perfil de impresión seguro restaurable
+
+- Fecha: 2026-09-18
+- Estado: aceptada
+- Complementa: D-039
+- Decisión: el perfil de fábrica usa ancho automático de 72 mm para rollo de 80 mm y 48 mm para rollo de 58 mm, con desplazamiento horizontal cero. Cambiar el ancho del papel descarta el ancho y desplazamiento calibrados para el rollo anterior, salvo que la misma operación suministre explícitamente una nueva calibración. «Restablecer de fábrica» recupera el perfil del papel actual sin cambiar la impresora elegida, el ancho del rollo ni la preferencia del diálogo del sistema.
+- Motivo: una calibración válida para 80 mm puede recortarse en 58 mm, mientras que borrar la impresora o cambiar el papel seleccionado obligaría al operador a configurar datos que siguen siendo válidos. El perfil automático se centra y respeta el área imprimible del driver, que es la opción más segura antes de una calibración física.
+- Consecuencia: los anchos estándar viven en un contrato compartido entre la interfaz, los ajustes y la impresión. La aplicación reduce las diferencias entre equipos, pero un driver que declare medidas falsas todavía requiere la guía de ajuste y una prueba con hardware real.
+
 ## Plantilla para una nueva decisión
 
 ```markdown

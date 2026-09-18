@@ -51,4 +51,22 @@ describe('configuración de impresión', () => {
       database.close()
     }
   })
+
+  it('vuelve al ajuste de fábrica al cambiar el ancho del papel', () => {
+    const { database, settings } = createSettings()
+    try {
+      settings.update({ printWidthMm: 64, printOffsetMm: 2 })
+      // 64 mm calibrados para 80 mm se saldrían de un rollo de 58 mm.
+      expect(settings.update({ paperWidth: '58mm' })).toMatchObject({
+        paperWidth: '58mm',
+        printWidthMm: null,
+        printOffsetMm: 0,
+      })
+      // Repetir el mismo papel no borra una calibración hecha después.
+      settings.update({ printWidthMm: 46 })
+      expect(settings.update({ paperWidth: '58mm' })).toMatchObject({ printWidthMm: 46 })
+    } finally {
+      database.close()
+    }
+  })
 })

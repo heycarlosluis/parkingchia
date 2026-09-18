@@ -145,6 +145,20 @@ export type CloseSessionInput = z.infer<typeof closeSessionSchema>
 export type CancelSessionInput = z.infer<typeof cancelSessionSchema>
 export type ListExitsInput = z.infer<typeof listExitsSchema>
 
+/**
+ * Montos rápidos del efectivo recibido: de 5.000 en 5.000 hasta 50.000 y de
+ * 10.000 en 10.000 hasta 100.000. Cada toque suma, como contar billetes.
+ */
+export const QUICK_CASH_AMOUNTS_COP: readonly number[] = [
+  ...Array.from({ length: 10 }, (_, index) => (index + 1) * 5_000),
+  ...Array.from({ length: 5 }, (_, index) => 60_000 + index * 10_000),
+]
+
+/** Suma un monto rápido al efectivo ya registrado sin pasar del máximo permitido. */
+export function addReceivedCash(currentCop: number | null, amountCop: number): number {
+  return Math.min(MAX_AMOUNT_COP, (currentCop ?? 0) + amountCop)
+}
+
 /** Vuelto a entregar, o `null` cuando el pago no es en efectivo o no se registró el recibido. */
 export function calculateChange(totalCop: number, receivedCop: number | null): number | null {
   if (receivedCop === null) return null

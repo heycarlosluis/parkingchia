@@ -32,12 +32,19 @@ export class SettingsService {
 
   update(input: UpdateSettingsInput): AppSettings {
     const current = this.get()
+    // Un ajuste calibrado para un rollo no sirve para el otro: 64 mm de ancho
+    // se saldrían de un papel de 58 mm. Cambiar el papel vuelve al automático
+    // salvo que la misma solicitud traiga valores nuevos.
+    const paperChanged = input.paperWidth !== undefined && input.paperWidth !== current.paperWidth
+    const base: AppSettings = paperChanged
+      ? { ...current, printWidthMm: null, printOffsetMm: 0 }
+      : current
     const next: AppSettings = {
       printerName: input.printerName === undefined ? current.printerName : input.printerName,
       paperWidth: input.paperWidth ?? current.paperWidth,
       showPrintDialog: input.showPrintDialog ?? current.showPrintDialog,
-      printWidthMm: input.printWidthMm === undefined ? current.printWidthMm : input.printWidthMm,
-      printOffsetMm: input.printOffsetMm ?? current.printOffsetMm,
+      printWidthMm: input.printWidthMm === undefined ? base.printWidthMm : input.printWidthMm,
+      printOffsetMm: input.printOffsetMm ?? base.printOffsetMm,
     }
     const now = new Date().toISOString()
     const upsert = this.sqlite.prepare(`

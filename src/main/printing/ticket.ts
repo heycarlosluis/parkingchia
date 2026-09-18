@@ -6,6 +6,7 @@ import type {
   ParkingProfile,
 } from '@shared/contracts'
 import { formatCurrency, formatDateTime } from '@shared/format'
+import { PRINTABLE_WIDTH_MM } from '@shared/ipc'
 import { formatNit } from '@shared/nit'
 import { describeElapsed, PAYMENT_METHOD_LABELS } from '@shared/parking'
 import { describeBillingUnit, VEHICLE_TYPE_LABELS } from '@shared/tariff'
@@ -45,15 +46,8 @@ function logoHtml(profile: ParkingProfile | null): string {
   return `<img class="logo" src="${escapeHtml(logo)}" alt="" />`
 }
 
-/**
- * Ancho que el cabezal térmico realmente imprime.
- *
- * Un rollo de 80 mm deja unos 4 mm sin imprimir a cada lado (576 puntos a
- * 203 ppp, 72 mm) y uno de 58 mm deja 5 mm (384 puntos, 48 mm). Los drivers
- * publican el papel con ese ancho: maquetar sobre los 80 mm del rollo
- * desplaza el contenido hacia un lado y lo recorta en el borde.
- */
-export const PRINTABLE_WIDTH_MM: Record<PaperWidth, number> = { '80mm': 72, '58mm': 48 }
+// El ancho estándar de cada rollo vive en `@shared/ipc`: lo usan también Configuración y el servicio.
+export { PRINTABLE_WIDTH_MM }
 
 /**
  * Cómo se acomoda el documento en el papel de la impresora elegida.

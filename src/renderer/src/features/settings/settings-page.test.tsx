@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -121,6 +121,35 @@ describe('Configuración', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Imprimir guía de ajuste' }))
     expect(vi.mocked(window.parkingAPI.printCalibrationGuide)).toHaveBeenCalled()
+  })
+
+  it('restablece de fábrica el ajuste del papel tras confirmar', async () => {
+    vi.mocked(window.parkingAPI.getSettings).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        printerName: null,
+        paperWidth: '58mm',
+        showPrintDialog: true,
+        printWidthMm: 44,
+        printOffsetMm: 1.5,
+      },
+    })
+    vi.mocked(window.parkingAPI.updateSettings).mockClear()
+    renderSettings('/configuracion?tab=impresion')
+
+    const reset = await screen.findByRole('button', { name: 'Restablecer de fábrica' })
+    await waitFor(() => {
+      expect(reset).toBeEnabled()
+    })
+    await userEvent.click(reset)
+    const confirm = await screen.findByRole('alertdialog')
+    expect(within(confirm).getByText(/automático \(48 mm\)/)).toBeInTheDocument()
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Restablecer' }))
+
+    expect(vi.mocked(window.parkingAPI.updateSettings)).toHaveBeenCalledWith({
+      printWidthMm: null,
+      printOffsetMm: 0,
+    })
   })
 
   it('agrupa el acceso local y el sistema en sus propias pestañas', async () => {

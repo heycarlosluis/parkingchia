@@ -42,6 +42,18 @@ export {
 
 export const paperWidthSchema = z.enum(['58mm', '80mm'])
 
+/**
+ * Ancho que el cabezal térmico realmente imprime en cada rollo.
+ *
+ * Un rollo de 80 mm deja unos 4 mm sin imprimir a cada lado (576 puntos a
+ * 203 ppp, 72 mm) y uno de 58 mm deja 5 mm (384 puntos, 48 mm). Es el ancho
+ * automático de la impresión y el valor al que vuelve «Restablecer de fábrica».
+ */
+export const PRINTABLE_WIDTH_MM = { '80mm': 72, '58mm': 48 } as const satisfies Record<
+  z.infer<typeof paperWidthSchema>,
+  number
+>
+
 export const MIN_PRINT_WIDTH_MM = 40
 export const MAX_PRINT_WIDTH_MM = 80
 export const MAX_PRINT_OFFSET_MM = 10

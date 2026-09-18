@@ -41,7 +41,7 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 - El recibo de salida deja constancia del empleado del turno y de la nota de la salida, y todo duplicado sale marcado como «REIMPRESIÓN» con su fecha y hora.
 - Salida dentro del tiempo de gracia que cierra la sesión sin cobro ni recibo.
 - Migración `0001` que recrea `rate_plans` preservando datos y referencias, con claves foráneas desactivadas alrededor de `migrate()` y verificación posterior con `PRAGMA foreign_key_check`.
-- Configuración persistente de logo, impresora, ancho de papel y diálogo del sistema.
+- Configuración persistente de logo, impresora, ancho de papel, ancho de impresión, ajuste horizontal y diálogo del sistema. Cada ancho de papel tiene un perfil automático seguro (72 mm para rollo de 80 mm y 48 mm para 58 mm); cambiar de rollo descarta la calibración incompatible y «Restablecer de fábrica» recupera ese perfil centrado sin cambiar la impresora ni el papel (D-041).
 - Listado de impresoras y ticket HTML de prueba mediante APIs nativas de Electron.
 - Respaldo manual con diálogo nativo y respaldos automáticos previos a migrar.
 - Máquina de estados de actualizaciones y proveedor GitHub Releases: consulta al iniciar, aviso persistente en la navegación, canal derivado del SemVer instalado, descarga y reinicio explícitos, cierre coordinado de ventanas, IPC y SQLite antes de iniciar NSIS, salida forzada de respaldo, y publicación protegida contra tags incongruentes o reemplazo de una release existente (D-033 y D-035).
@@ -49,7 +49,7 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 - La exención por mensualidad se integra al cobro por horas: una sesión activa cubierta por una mensualidad vigente sale con total en cero conservando la permanencia visible, y el historial marca el cliente mensual que la cubrió. El diálogo de salida solo exige efectivo cuando hay algo que cobrar, de modo que las salidas sin cobro (mensualidad o tolerancia) se confirman con normalidad (D-032).
 - Módulo de Caja completo: apertura con fondo inicial y empleado asignado, asociación automática de cada pago de parqueo y de mensualidad a la caja abierta, arqueo en vivo (recaudado, anulado y esperado), anulación de un cobro con motivo, cierre con efectivo contado y diferencia, recibo de cierre reimprimible e historial de cierres anteriores.
 - La operación exige caja abierta: no se registran ingresos, cobros de salida ni pagos de mensualidad sin una caja abierta. Las salidas sin cobro (gracia o mensualidad) sí se permiten.
-- Todo pago en efectivo exige registrar el efectivo recibido (que cubra el total) y calcula el cambio; los demás medios no requieren ese campo.
+- Todo pago en efectivo exige registrar el efectivo recibido (que cubra el total) y calcula el cambio; los demás medios no requieren ese campo. En la salida, el cursor queda listo en ese campo al abrir el cobro y hay un botón de monto exacto y montos acumulables de 5.000 en 5.000 hasta 50.000 y de 10.000 en 10.000 hasta 100.000 (D-040).
 - Empleados administrados desde Configuración: crear, listar, editar, desactivar y eliminar; cada turno de caja queda asociado al empleado que lo operó.
 - Avisos con tono propio (neutro, advertencia, error y éxito): icono, título, descripción y acciones ocupan siempre el mismo lugar, y el texto de cada tono cumple el contraste AA sobre su superficie (D-028).
 - Empaquetado Windows/macOS, CI, publicación de tags y pre-releases.
@@ -72,7 +72,7 @@ npm ci
 npm run format:check
 npm run typecheck
 npm run lint
-npm run test:run       25 archivos, 213 pruebas
+npm run test:run       32 archivos, 295 pruebas
 npm run db:generate
 npm run db:migrate
 npm run db:seed

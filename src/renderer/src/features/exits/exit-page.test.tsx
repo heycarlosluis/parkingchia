@@ -124,6 +124,35 @@ describe('Registrar salida', () => {
     expect(code).toHaveValue('PC1Q.a-b_c')
   })
 
+  it('abre el cobro con el cursor en el efectivo y los montos rápidos suman', async () => {
+    renderExits()
+
+    await userEvent.type(await screen.findByLabelText('Tiquete o matrícula'), 'ABC123')
+    await userEvent.click(screen.getByRole('button', { name: /Registrar salida/ }))
+
+    const dialog = await screen.findByRole('dialog')
+    const received = await within(dialog).findByLabelText('Efectivo recibido')
+    await waitFor(() => {
+      expect(received).toHaveFocus()
+    })
+
+    // Tocar el mismo billete varias veces lo suma, como contar el efectivo.
+    await userEvent.click(within(dialog).getByRole('button', { name: /^Sumar \$\s20\.000$/ }))
+    await userEvent.click(within(dialog).getByRole('button', { name: /^Sumar \$\s20\.000$/ }))
+    await userEvent.click(within(dialog).getByRole('button', { name: /^Sumar \$\s5\.000$/ }))
+    expect(received).toHaveValue(45_000)
+    // El foco vuelve al campo para seguir con el teclado.
+    expect(received).toHaveFocus()
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Borrar' }))
+    expect(received).toHaveValue(null)
+
+    await userEvent.click(within(dialog).getByRole('button', { name: /Monto exacto/ }))
+    expect(within(dialog).getByText(/^Cambio a entregar: \$\s0$/)).toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole('button', { name: /Cobrar/ }))
+    expect(await screen.findByText('Salida registrada')).toBeInTheDocument()
+  })
+
   it('cobra y deja el foco listo para la siguiente salida', async () => {
     renderExits()
 
