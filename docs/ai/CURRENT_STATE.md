@@ -1,17 +1,17 @@
 # Estado actual del proyecto
 
-Última actualización: **2026-10-04**.
+Última actualización: **2026-10-05**.
 
 Este archivo describe el último corte conocido, no sustituye la verificación de `git status`, `package.json`, GitHub Actions ni el comportamiento ejecutable.
 
 ## Línea base
 
 - Rama de referencia: `main`.
-- Versión del corte: `0.1.0-alpha.8`.
-- Versión publicada más reciente: `0.1.0-alpha.8`.
-- Tag publicado más reciente: `v0.1.0-alpha.8`.
+- Versión del corte: `0.1.0-alpha.9`.
+- Versión publicada más reciente: `0.1.0-alpha.9`.
+- Tag publicado más reciente: `v0.1.0-alpha.9`.
 - CI de la versión publicada: aprobado.
-- Release multiplataforma publicada: `0.1.0-alpha.8`, aprobada como pre-release.
+- Release multiplataforma publicada: `0.1.0-alpha.9`, como pre-release.
 - Artefactos publicados: NSIS Windows x64; DMG y ZIP macOS x64/arm64; metadatos YAML y blockmaps.
 
 ## Implementado y funcional
@@ -151,6 +151,8 @@ El 2026-09-18 se revisó el flujo del lector porque el YHD-9601D del cliente no 
 
 `0.1.0-alpha.8` agiliza el cobro en efectivo y hace recuperable la configuración óptima de impresión. El diálogo de salida enfoca el efectivo recibido al abrir, ofrece monto exacto y quince montos acumulables entre 5.000 y 100.000, y conserva «Cobrar» visible mientras el contenido se desplaza (D-040). Configuración › Impresión puede restablecer el perfil centrado de 72 mm para papel de 80 mm o de 48 mm para papel de 58 mm; cambiar de rollo aplica también el perfil correspondiente para no heredar una calibración incompatible (D-041). Se revisó el diálogo en la aplicación de escritorio y pasaron `format:check`, `typecheck`, `lint`, 32 archivos con 295 pruebas y `build`. La adaptación del driver continúa necesitando certificación en la impresora física del cliente.
 
-El 2026-10-04 se añadió el cobro simplificado (D-042), todavía sin versión ni tag. Es un ajuste en `app_settings` sin migración de esquema: con él activo, salidas y mensualidades en efectivo se cobran por su total sin efectivo recibido ni cambio, y la caja solo acumula, sin fondo inicial ni conteo al cerrar. El recibo de cierre de un turno sin conteo imprime «Total del turno» en lugar del efectivo contado y la diferencia. Pasaron `format:check`, `typecheck`, `lint`, 32 archivos con 311 pruebas y `build`. Con el modo activo la aplicación no detecta faltantes ni sobrantes de efectivo.
+El 2026-10-04 se añadió el cobro simplificado (D-042). Es un ajuste en `app_settings` sin migración de esquema: con él activo, salidas y mensualidades en efectivo se cobran por su total sin efectivo recibido ni cambio, y la caja solo acumula, sin fondo inicial ni conteo al cerrar. El recibo de cierre de un turno sin conteo imprime «Total del turno» en lugar del efectivo contado y la diferencia. Pasaron `format:check`, `typecheck`, `lint`, 32 archivos con 311 pruebas y `build`. Con el modo activo la aplicación no detecta faltantes ni sobrantes de efectivo.
 
 El mismo 2026-10-04 se revisaron la impresión y el lector renderizando cada documento con el motor de impresión de Chromium a 72 y 48 mm, sin márgenes y con 4 mm por lado. Tiquetes y recibos salen a escala real, en una hoja y dentro del área en los cuatro casos. Se corrigieron cinco fallos: la guía de ajuste se encogía entre un 8 y un 10 % cuando el driver declaraba márgenes, porque las marcas fuera del área obligaban a Chromium a reducir la página, y sus bordes gruesos no se imprimían por ser fondos; ahora es un SVG a escala real con una marca por milímetro. El QR se deformaba si el área lo encogía. El duplicado del recibo de mensualidad no se marcaba como reimpresión. Cerrar el diálogo de impresión se informaba como falla de la impresora. Y el lector registraba un ingreso falso si se escaneaba un tiquete con el foco en Registrar ingreso, además de no respetar las confirmaciones abiertas (D-043). El tiquete de ingreso y los recibos de salida y de mensualidad cierran con el aviso de que el parqueadero no responde por los objetos dejados en el vehículo. Pasaron `format:check`, `typecheck`, `lint`, 32 archivos con 321 pruebas y `build`. Sigue pendiente confirmar en papel con la impresora y el lector físicos; en 58 mm la página deja unos 25 mm en blanco al final por la holgura de medición de D-039.
+
+`0.1.0-alpha.9` se preparó el 2026-10-05 y distribuye el cobro simplificado (D-042), la revisión de la impresión y del lector (D-043) y el aviso de responsabilidad en los documentos del cliente. No incluye migración de esquema: una instalación de `0.1.0-alpha.8` conserva sus datos y arranca con el cobro simplificado desactivado.
