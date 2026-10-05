@@ -28,10 +28,14 @@ describe('esquema de cierre de salida', () => {
     notes: null,
   }
 
-  it('exige el efectivo recibido cuando se cobra en efectivo', () => {
+  it('rechaza un efectivo recibido que no cubre el total', () => {
     expect(closeSessionSchema.safeParse(base).success).toBe(true)
-    expect(closeSessionSchema.safeParse({ ...base, receivedCop: null }).success).toBe(false)
     expect(closeSessionSchema.safeParse({ ...base, receivedCop: 5000 }).success).toBe(false)
+  })
+
+  it('deja al proceso principal decidir si el efectivo es obligatorio', () => {
+    // Con el cobro simplificado la salida en efectivo llega sin efectivo recibido.
+    expect(closeSessionSchema.safeParse({ ...base, receivedCop: null }).success).toBe(true)
   })
 
   it('no exige efectivo para otros medios ni para salidas sin cobro', () => {

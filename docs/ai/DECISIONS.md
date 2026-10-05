@@ -348,6 +348,24 @@ Estados posibles: `propuesta`, `aceptada`, `reemplazada` o `descartada`.
 - Motivo: una calibración válida para 80 mm puede recortarse en 58 mm, mientras que borrar la impresora o cambiar el papel seleccionado obligaría al operador a configurar datos que siguen siendo válidos. El perfil automático se centra y respeta el área imprimible del driver, que es la opción más segura antes de una calibración física.
 - Consecuencia: los anchos estándar viven en un contrato compartido entre la interfaz, los ajustes y la impresión. La aplicación reduce las diferencias entre equipos, pero un driver que declare medidas falsas todavía requiere la guía de ajuste y una prueba con hardware real.
 
+## D-042 — Cobro simplificado: la caja solo acumula y nada pide efectivo
+
+- Fecha: 2026-10-04
+- Estado: aceptada
+- Complementa: D-019, D-021 y D-022, que siguen vigentes con el modo desactivado
+- Decisión: `app_settings` suma `operation.simpleChargeMode`, desactivado por defecto y conmutable desde Configuración › General. Con el modo activo, un cobro en efectivo (salida o mensualidad) no registra efectivo recibido ni cambio; la caja se abre sin fondo inicial y se cierra sin conteo, de modo que `closing_amount_cop` queda en `NULL` y el cierre no tiene diferencia. El total del turno es lo recaudado y lo único que lo reduce son las anulaciones, que conservan su motivo y su auditoría. El proceso principal lee el ajuste en cada operación y es quien decide qué exigir; el renderer solo oculta los campos. Cada cambio de modo se escribe en `audit_logs`.
+- Motivo: el propietario quiere operar centrado en entradas y salidas, con una caja que solo sume. Contar billetes en cada salida y cuadrar el efectivo al cierre es un control que este parqueadero no usa, y obligarlo a llenarlo frenaba la atención.
+- Consecuencia: no hay migración; la columna ya admitía `NULL` y ahora ese valor significa «cerrado sin conteo». `CashCloseSummary.closingAmountCop` y `differenceCop` pasan a ser anulables y `describeCashDifference` centraliza su texto. Los esquemas de entrada ya no exigen el efectivo recibido: solo validan que cubra el total cuando llega, y la obligación vive en `ParkingService`, `MonthlyService` y `CashService`. Siguen intactos la caja abierta como requisito, el total confirmado (D-014), el medio de pago, los recibos y la confirmación explícita del cobro. El modo se evalúa al operar, no al abrir la caja: una caja abierta con fondo antes de activarlo lo conserva en su total. Con el modo activo la aplicación no detecta faltantes ni sobrantes de efectivo; quien necesite ese control debe desactivarlo.
+
+## D-043 — El lector abre la salida también con el foco en un campo
+
+- Fecha: 2026-10-04
+- Estado: aceptada
+- Reemplaza: la parte de D-034 que desactivaba la escucha global cuando el foco estaba en un campo
+- Decisión: la escucha global del lector corre en fase de captura y sigue reuniendo la ráfaga aunque el foco esté en un campo. Fuera de un campo basta con que la ráfaga tenga forma de tiquete; dentro de uno se exige que `decodeEntryTicketCode` la reconozca (16 dígitos con Luhn válido o un código antiguo íntegro). Al reconocerla se cancela el Enter o Tab del lector y se navega a Registrar salida. El campo de esa pantalla lleva `data-scanner-field` y procesa su propia lectura. Un `dialog` o `alertdialog` abierto desactiva la escucha.
+- Motivo: Registrar ingreso deja el foco en la matrícula, que es justo donde está el operador cuando llega un cliente a salir. Escanear allí escribía los primeros ocho dígitos del código y el Enter del lector registraba un ingreso con esa «matrícula». La confirmación de anulación usa `alertdialog`, que la escucha anterior no reconocía, así que un escaneo la abandonaba a medias.
+- Consecuencia: los dígitos que el lector alcanza a escribir en el campo se descartan al cambiar de pantalla. Un código tecleado a mano en otro campo no se intercepta salvo que sea un tiquete válido escrito sin pausas mayores de 120 ms, que en la práctica solo produce un lector. Cualquier campo nuevo que deba recibir el lector por sí mismo necesita `data-scanner-field`.
+
 ## Plantilla para una nueva decisión
 
 ```markdown

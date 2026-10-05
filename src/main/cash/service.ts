@@ -7,6 +7,7 @@ import {
   type VoidPaymentInput,
 } from '@shared/cash'
 import { OperationError } from '@main/ipc/errors'
+import { readSimpleChargeMode } from '@main/settings/service'
 
 type SessionRow = {
   id: string
@@ -143,9 +144,20 @@ export class CashService {
       throw new OperationError('NO_CASH_SESSION', 'No hay una caja abierta para cerrar.')
     }
 
+    // Con el cobro simplificado la caja solo acumula: se cierra sin conteo y,
+    // por lo tanto, sin diferencia. Fuera de ese modo el conteo es obligatorio.
+    const closingAmountCop = this.isSimpleChargeMode() ? null : input.closingAmountCop
+    if (!this.isSimpleChargeMode() && closingAmountCop === null) {
+      throw new OperationError(
+        'CLOSING_AMOUNT_REQUIRED',
+        'Cuenta el efectivo y regístralo para cerrar la caja.',
+      )
+    }
+
     const now = new Date().toISOString()
     const totals = this.totalsFor(session.id)
     const expectedAmountCop = session.openingAmountCop + totals.collected
+    const differenceCop = closingAmountCop === null ? null : closingAmountCop - expectedAmountCop
 
     this.sqlite.transaction(() => {
       this.sqlite
@@ -155,14 +167,14 @@ export class CashService {
                status = 'closed', notes = COALESCE(?, notes), updated_at = ?
            WHERE id = ?`,
         )
-        .run(now, input.closingAmountCop, expectedAmountCop, input.notes, now, session.id)
+        .run(now, closingAmountCop, expectedAmountCop, input.notes, now, session.id)
       this.writeAudit('cash.session_closed', 'cash_register_session', session.id, now, {
         openingAmountCop: session.openingAmountCop,
         collectedCop: totals.collected,
         voidedCop: totals.voided,
         expectedAmountCop,
-        closingAmountCop: input.closingAmountCop,
-        differenceCop: input.closingAmountCop - expectedAmountCop,
+        closingAmountCop,
+        differenceCop,
       })
     })()
 
@@ -175,8 +187,8 @@ export class CashService {
       collectedCop: totals.collected,
       voidedCop: totals.voided,
       expectedAmountCop,
-      closingAmountCop: input.closingAmountCop,
-      differenceCop: input.closingAmountCop - expectedAmountCop,
+      closingAmountCop,
+      differenceCop,
       movementCount: totals.count,
     }
   }
@@ -229,6 +241,11 @@ export class CashService {
     })()
 
     return this.getState()
+  }
+
+  /** Si está activo el cobro simplificado, que no pide efectivo recibido ni conteo de cierre. */
+  isSimpleChargeMode(): boolean {
+    return readSimpleChargeMode(this.sqlite)
   }
 
   /** Identificador de la caja abierta, o `null` cuando el turno no ha iniciado. */
@@ -327,7 +344,7 @@ export class CashService {
   }
 
   private toCloseSummary(row: ClosedSessionRow): CashCloseSummary {
-    const closingAmountCop = row.closing_amount_cop ?? 0
+    const closingAmountCop = row.closing_amount_cop
     const expectedAmountCop = row.expected_amount_cop ?? 0
     return {
       sessionId: row.session_id,
@@ -339,7 +356,7 @@ export class CashService {
       voidedCop: row.voided_cop,
       expectedAmountCop,
       closingAmountCop,
-      differenceCop: closingAmountCop - expectedAmountCop,
+      differenceCop: closingAmountCop === null ? null : closingAmountCop - expectedAmountCop,
       movementCount: row.movement_count,
     }
   }

@@ -10,9 +10,13 @@ import {
   Wallet,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import type { CashCloseSummary, CashMovement } from '@shared/contracts'
+import type { CashMovement } from '@shared/contracts'
 import { formatCurrency } from '@shared/format'
-import { CASH_MOVEMENT_SOURCE_LABELS, CASH_PAYMENT_STATUS_LABELS } from '@shared/cash'
+import {
+  CASH_MOVEMENT_SOURCE_LABELS,
+  CASH_PAYMENT_STATUS_LABELS,
+  describeCashDifference,
+} from '@shared/cash'
 import { PAYMENT_METHOD_LABELS } from '@shared/parking'
 import {
   AlertDialog,
@@ -35,6 +39,7 @@ import { PageHeading } from '@/components/page-heading'
 import { CloseCashDialog } from '@/features/cash/close-cash-dialog'
 import { OpenCashDialog } from '@/features/cash/open-cash-dialog'
 import { useCashStore } from '@/store/cash-store'
+import { useChargeModeStore } from '@/store/charge-mode-store'
 
 function localTime(isoUtc: string): string {
   return new Date(isoUtc).toLocaleString('es-CO', {
@@ -50,13 +55,6 @@ function localDateTime(isoUtc: string): string {
     hour: '2-digit',
     minute: '2-digit',
   })
-}
-
-function describeDifference(summary: CashCloseSummary): string {
-  if (summary.differenceCop === 0) return 'Cuadra'
-  return summary.differenceCop > 0
-    ? `Sobra ${formatCurrency(summary.differenceCop)}`
-    : `Falta ${formatCurrency(-summary.differenceCop)}`
 }
 
 export function CashPage(): React.JSX.Element {
@@ -77,6 +75,8 @@ export function CashPage(): React.JSX.Element {
   const voidPayment = useCashStore((store) => store.voidPayment)
   const clearFeedback = useCashStore((store) => store.clearFeedback)
   const dismissClose = useCashStore((store) => store.dismissClose)
+  const simpleChargeMode = useChargeModeStore((store) => store.simpleChargeMode)
+  const initializeChargeMode = useChargeModeStore((store) => store.initialize)
 
   const [opening, setOpening] = useState(false)
   const [closing, setClosing] = useState(false)
@@ -86,7 +86,8 @@ export function CashPage(): React.JSX.Element {
 
   useEffect(() => {
     void initialize()
-  }, [initialize])
+    void initializeChargeMode()
+  }, [initialize, initializeChargeMode])
 
   const confirmVoid = async (): Promise<void> => {
     if (!voiding) return
@@ -109,7 +110,11 @@ export function CashPage(): React.JSX.Element {
     <div className="page-stack">
       <PageHeading
         title="Caja"
-        description="Apertura, movimientos del turno y cierre explícito con su arqueo."
+        description={
+          simpleChargeMode
+            ? 'Cobro simplificado: la caja acumula cada cobro del turno y solo descuenta las anulaciones.'
+            : 'Apertura, movimientos del turno y cierre explícito con su arqueo.'
+        }
         action={
           session ? (
             <Badge variant="secondary">
@@ -137,16 +142,19 @@ export function CashPage(): React.JSX.Element {
           <AlertTitle>
             Caja cerrada
             {closeSummary.employeeName ? ` · ${closeSummary.employeeName}` : ''} ·{' '}
-            {formatCurrency(closeSummary.expectedAmountCop)} esperado ·{' '}
-            {formatCurrency(closeSummary.closingAmountCop)} contado
+            {closeSummary.closingAmountCop === null
+              ? `${formatCurrency(closeSummary.expectedAmountCop)} en el turno`
+              : `${formatCurrency(closeSummary.expectedAmountCop)} esperado · ${formatCurrency(closeSummary.closingAmountCop)} contado`}
           </AlertTitle>
           <AlertDescription>
             <span>
-              {closeSummary.differenceCop === 0
-                ? 'El arqueo cuadra.'
-                : closeSummary.differenceCop > 0
-                  ? `Sobrante de ${formatCurrency(closeSummary.differenceCop)}.`
-                  : `Faltante de ${formatCurrency(-closeSummary.differenceCop)}.`}
+              {closeSummary.differenceCop === null
+                ? 'Turno cerrado sin conteo de efectivo.'
+                : closeSummary.differenceCop === 0
+                  ? 'El arqueo cuadra.'
+                  : closeSummary.differenceCop > 0
+                    ? `Sobrante de ${formatCurrency(closeSummary.differenceCop)}.`
+                    : `Faltante de ${formatCurrency(-closeSummary.differenceCop)}.`}
               {closeSummary.movementCount > 0
                 ? ` · ${closeSummary.movementCount} ${
                     closeSummary.movementCount === 1 ? 'movimiento' : 'movimientos'
@@ -211,14 +219,17 @@ export function CashPage(): React.JSX.Element {
               Resumen de la caja abierta
             </h2>
             <div className="summary-grid">
-              <Card>
-                <CardHeader>
-                  <CardDescription>Fondo inicial</CardDescription>
-                  <CardTitle className="metric-value tabular">
-                    {formatCurrency(session.openingAmountCop)}
-                  </CardTitle>
-                </CardHeader>
-              </Card>
+              {/* Una caja abierta con fondo antes de activar el modo lo sigue mostrando. */}
+              {simpleChargeMode && session.openingAmountCop === 0 ? null : (
+                <Card>
+                  <CardHeader>
+                    <CardDescription>Fondo inicial</CardDescription>
+                    <CardTitle className="metric-value tabular">
+                      {formatCurrency(session.openingAmountCop)}
+                    </CardTitle>
+                  </CardHeader>
+                </Card>
+              )}
               <Card className="active-card">
                 <CardHeader>
                   <CardDescription>Recaudado</CardDescription>
@@ -237,7 +248,9 @@ export function CashPage(): React.JSX.Element {
               </Card>
               <Card>
                 <CardHeader>
-                  <CardDescription>Esperado al cierre</CardDescription>
+                  <CardDescription>
+                    {simpleChargeMode ? 'Total del turno' : 'Esperado al cierre'}
+                  </CardDescription>
                   <CardTitle className="metric-value tabular">
                     {formatCurrency(expectedCop)}
                   </CardTitle>
@@ -405,19 +418,23 @@ export function CashPage(): React.JSX.Element {
                         {formatCurrency(summary.expectedAmountCop)}
                       </td>
                       <td className="numeric tabular">
-                        {formatCurrency(summary.closingAmountCop)}
+                        {summary.closingAmountCop === null
+                          ? '—'
+                          : formatCurrency(summary.closingAmountCop)}
                       </td>
                       <td>
                         <Badge
                           variant={
-                            summary.differenceCop === 0
-                              ? 'secondary'
-                              : summary.differenceCop > 0
-                                ? 'default'
-                                : 'destructive'
+                            summary.differenceCop === null
+                              ? 'outline'
+                              : summary.differenceCop === 0
+                                ? 'secondary'
+                                : summary.differenceCop > 0
+                                  ? 'default'
+                                  : 'destructive'
                           }
                         >
-                          {describeDifference(summary)}
+                          {describeCashDifference(summary.differenceCop)}
                         </Badge>
                       </td>
                       <td className="actions">
@@ -442,6 +459,7 @@ export function CashPage(): React.JSX.Element {
 
       <OpenCashDialog
         open={opening}
+        simpleChargeMode={simpleChargeMode}
         error={error}
         onOpenChange={setOpening}
         onSubmit={openSession}
@@ -450,6 +468,7 @@ export function CashPage(): React.JSX.Element {
       <CloseCashDialog
         open={closing}
         expectedCop={expectedCop}
+        simpleChargeMode={simpleChargeMode}
         error={error}
         onOpenChange={setClosing}
         onSubmit={closeSession}

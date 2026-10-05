@@ -6,6 +6,7 @@ import type {
   ParkingProfile,
 } from '@shared/contracts'
 import { formatCurrency, formatDateTime } from '@shared/format'
+import { describeCashDifference } from '@shared/cash'
 import { PRINTABLE_WIDTH_MM } from '@shared/ipc'
 import { formatNit } from '@shared/nit'
 import { describeElapsed, PAYMENT_METHOD_LABELS } from '@shared/parking'
@@ -123,9 +124,12 @@ function fitSymbol(
   const modulesHigh = Number(viewBox[2]) / unitsPerModule
   const widthDots = Math.round(modulesWide * moduleDots)
   const height = heightMm ?? modulesHigh * moduleDots * DOT_MM
+  // Un Code 128 tolera comprimirse a lo ancho con el alto fijo; un QR no: si
+  // se encoge debe seguir siendo cuadrado o el lector deja de reconocerlo.
+  const shrink = heightMm === undefined ? 'max-width: 100%; height: auto' : 'max-width: 100%'
   return svg.replace(
     '<svg ',
-    `<svg width="${widthDots * DOT_MM}mm" height="${height}mm" preserveAspectRatio="none" shape-rendering="crispEdges" style="margin: 0 auto; max-width: 100%" `,
+    `<svg width="${widthDots * DOT_MM}mm" height="${height}mm" preserveAspectRatio="none" shape-rendering="crispEdges" style="margin: 0 auto; ${shrink}" `,
   )
 }
 
@@ -172,6 +176,7 @@ function ticketStyles(layout: PrintLayout): string {
       .barcode { margin-top: 2mm; }
       .ticket-reference { margin-top: 1.5mm; font-size: 13px; letter-spacing: 0.08em; }
       .footer { text-align: center; font-size: 12px; }
+      .legal { margin-top: 2mm; text-align: center; font-size: 11px; line-height: 1.3; }
       .nowrap { white-space: nowrap; }
     `
 }
@@ -208,6 +213,10 @@ function notesBlock(notes: string | null): string {
 }
 
 const RULE = '<div class="rule"></div>'
+
+/** Aviso de responsabilidad que cierra los documentos que se entregan al cliente. */
+const LIABILITY_NOTE =
+  '<p class="legal">El parqueadero no se hace responsable de los objetos dejados en el vehículo.</p>'
 
 type DocumentHeader = {
   title: string
@@ -322,7 +331,8 @@ export function createEntryTicketHtml(
       <p class="ticket-reference">${escapeHtml(formatEntryTicketReference(reference))}</p>
     </section>
     ${RULE}
-    <p class="footer">Conserve este tiquete.<br />Se exige para retirar el vehículo.</p>`
+    <p class="footer">Conserve este tiquete.<br />Se exige para retirar el vehículo.</p>
+    ${LIABILITY_NOTE}`
   return documentShell(layout, profile, { title: 'Tiquete de ingreso' }, body, options)
 }
 
@@ -365,7 +375,8 @@ export function createExitReceiptHtml(
     </dl>
     ${notesBlock(receipt.notes)}
     ${RULE}
-    <p class="footer">Gracias por su visita.</p>`
+    <p class="footer">Gracias por su visita.</p>
+    ${LIABILITY_NOTE}`
   return documentShell(
     layout,
     profile,
@@ -379,6 +390,7 @@ export function createMonthlyReceiptHtml(
   layout: LayoutInput,
   profile: ParkingProfile | null,
   receipt: MonthlyReceiptSnapshot,
+  options: TicketRenderOptions = {},
 ): string {
   const cashRows =
     receipt.receivedCop === null
@@ -412,12 +424,14 @@ export function createMonthlyReceiptHtml(
       }
     </dl>
     ${RULE}
-    <p class="footer">Conserve este comprobante mientras dure la mensualidad.</p>`
+    <p class="footer">Conserve este comprobante mientras dure la mensualidad.</p>
+    ${LIABILITY_NOTE}`
   return documentShell(
     layout,
     profile,
     { title: 'Recibo de mensualidad', meta: `N.º ${receipt.receiptNumber}` },
     body,
+    options,
   )
 }
 
@@ -426,12 +440,26 @@ export function createCashCloseReceiptHtml(
   profile: ParkingProfile | null,
   summary: CashCloseSummary,
 ): string {
-  const difference =
-    summary.differenceCop === 0
-      ? 'Cuadra'
-      : summary.differenceCop > 0
-        ? `Sobra ${formatCurrency(summary.differenceCop)}`
-        : `Falta ${formatCurrency(-summary.differenceCop)}`
+  // Un turno cerrado sin conteo (cobro simplificado) no tiene efectivo contado
+  // ni diferencia: el importe principal pasa a ser lo acumulado en el turno.
+  const totals =
+    summary.closingAmountCop === null
+      ? `<dl>
+      ${summary.openingAmountCop === 0 ? '' : row('Fondo inicial', escapeHtml(formatCurrency(summary.openingAmountCop)))}
+      ${row('Recaudado', escapeHtml(formatCurrency(summary.collectedCop)))}
+      ${row('Anulado', escapeHtml(formatCurrency(summary.voidedCop)))}
+    </dl>
+    ${totalBlock('Total del turno', summary.expectedAmountCop)}`
+      : `<dl>
+      ${row('Fondo inicial', escapeHtml(formatCurrency(summary.openingAmountCop)))}
+      ${row('Recaudado', escapeHtml(formatCurrency(summary.collectedCop)))}
+      ${row('Anulado', escapeHtml(formatCurrency(summary.voidedCop)))}
+      ${row('Esperado', escapeHtml(formatCurrency(summary.expectedAmountCop)))}
+    </dl>
+    ${totalBlock('Efectivo contado', summary.closingAmountCop)}
+    <dl>
+      ${row('Diferencia', escapeHtml(describeCashDifference(summary.differenceCop)))}
+    </dl>`
 
   const body = `
     <dl>
@@ -441,16 +469,7 @@ export function createCashCloseReceiptHtml(
       ${row('Movimientos', String(summary.movementCount))}
     </dl>
     ${RULE}
-    <dl>
-      ${row('Fondo inicial', escapeHtml(formatCurrency(summary.openingAmountCop)))}
-      ${row('Recaudado', escapeHtml(formatCurrency(summary.collectedCop)))}
-      ${row('Anulado', escapeHtml(formatCurrency(summary.voidedCop)))}
-      ${row('Esperado', escapeHtml(formatCurrency(summary.expectedAmountCop)))}
-    </dl>
-    ${totalBlock('Efectivo contado', summary.closingAmountCop)}
-    <dl>
-      ${row('Diferencia', escapeHtml(difference))}
-    </dl>
+    ${totals}
     ${RULE}
     <p class="footer">Conserve este comprobante del turno.</p>`
   return documentShell(layout, profile, { title: 'Cierre de caja' }, body)
@@ -462,42 +481,58 @@ function describeOffset(offsetMm: number): string {
   return offsetMm > 0 ? `${amount} a la derecha` : `${amount} a la izquierda`
 }
 
+const RULER_HEIGHT_MM = 14
+const RULER_EDGE_MM = 0.5
+
 /**
  * Guía para ajustar la impresión en un equipo nuevo.
  *
- * Imprime una regla del ancho configurado con sus dos bordes y marcas cada
- * 5 mm. Lo que el operador ve cortado le indica qué valor elegir: el último
- * número completo a la derecha es el ancho que el cabezal realmente imprime.
+ * Imprime una regla del ancho configurado con sus dos bordes y una marca por
+ * milímetro. Lo que el operador ve cortado le indica qué valor elegir: la
+ * última marca a la derecha es el ancho que el cabezal realmente imprime.
  */
 export function createCalibrationGuideHtml(
   layout: PrintLayout,
   profile: ParkingProfile | null,
 ): string {
   const width = contentWidthMm(layout)
+  // La regla es un único SVG con posiciones en milímetros. Con marcas HTML
+  // posicionadas, las que quedaban fuera del área del driver hacían que
+  // Chromium encogiera toda la página para que cupieran, y la regla dejaba de
+  // medir milímetros reales. El SVG recorta lo que no cabe sin cambiar la escala.
   const marks: string[] = []
-  for (let mm = 0; mm <= width; mm += 5) {
-    const major = mm % 10 === 0
-    const label = major ? `<span class="mark-label">${mm}</span>` : ''
-    const kind = mm === 0 ? ' major first' : major ? ' major' : ''
-    marks.push(`<span class="mark${kind}" style="left: ${mm}mm">${label}</span>`)
+  for (let mm = 0; mm <= width; mm += 1) {
+    const top = mm % 10 === 0 ? 9 : mm % 5 === 0 ? 11 : 12.5
+    marks.push(`<line x1="${mm}mm" x2="${mm}mm" y1="${top}mm" y2="${RULER_HEIGHT_MM}mm" />`)
+    if (mm % 10 !== 0) continue
+    marks.push(
+      mm === 0
+        ? `<text x="1.2mm" y="8mm">0</text>`
+        : `<text x="${mm}mm" y="8mm" text-anchor="middle">${mm}</text>`,
+    )
   }
   const widthLabel = `${String(width).replace('.', ',')} mm`
+  // Los bordes son trazos y no fondos: la impresión omite los fondos.
+  const edge = (xMm: number): string =>
+    `<line x1="${xMm}mm" x2="${xMm}mm" y1="0" y2="${RULER_HEIGHT_MM}mm" stroke-width="${RULER_EDGE_MM}mm" />`
   const body = `
     <dl>
       ${row('Ancho de impresión', escapeHtml(layout.widthMm === null ? `${widthLabel} (automático)` : widthLabel))}
       ${row('Ajuste horizontal', escapeHtml(describeOffset(layout.offsetMm)))}
     </dl>
-    <div class="ruler" aria-label="Regla de ${escapeHtml(widthLabel)}">
-      <span class="edge left"></span>
-      ${marks.join('')}
-      <span class="edge right"></span>
-      <span class="center">centro</span>
-    </div>
+    <svg class="ruler" width="100%" height="${RULER_HEIGHT_MM}mm" role="img" aria-label="Regla de ${escapeHtml(widthLabel)}" stroke="#000" stroke-width="0.25mm" font-size="10px" fill="#000">
+      ${edge(RULER_EDGE_MM / 2)}
+      ${edge(width - RULER_EDGE_MM / 2)}
+      <g>${marks.join('')}</g>
+      <line x1="0" x2="${width}mm" y1="${RULER_HEIGHT_MM - 0.125}mm" y2="${RULER_HEIGHT_MM - 0.125}mm" />
+      <text x="${width / 2}mm" y="2.8mm" text-anchor="middle">centro</text>
+      <line x1="${width / 2}mm" x2="${width / 2}mm" y1="3.4mm" y2="5mm" />
+    </svg>
     <p class="edge-labels"><span>◀ borde izquierdo</span><span>borde derecho ▶</span></p>
     ${RULE}
     <ol class="steps">
       <li>Si ves completas las dos líneas gruesas de los bordes, la impresión está bien ajustada.</li>
-      <li>Si falta la línea del borde derecho, elige como ancho de impresión el último número que veas completo.</li>
+      <li>Si falta la línea del borde derecho, elige como ancho de impresión el último milímetro que veas: cada marca es 1 mm y los números van de 10 en 10.</li>
       <li>Si sobra espacio en un lado y falta en el otro, mueve el ajuste horizontal hacia el lado que falta.</li>
     </ol>
     ${RULE}
@@ -506,18 +541,8 @@ export function createCalibrationGuideHtml(
     '</style>',
     `
       /* La regla ocupa todo el ancho del contenido, incluido el margen interior. */
-      /* Si el driver achica el área, las marcas que no caben no se imprimen: el
-         último número visible es el ancho real. */
-      .ruler { position: relative; overflow: hidden; height: 12mm; margin: 3mm -${BODY_PADDING_MM}mm 0; border-bottom: 1px solid #000; }
-      .edge { position: absolute; top: 0; bottom: 0; width: 0.5mm; background: #000; }
-      .edge.left { left: 0; }
-      .edge.right { right: 0; }
-      .mark { position: absolute; bottom: 0; width: 0; height: 3mm; border-left: 1px solid #000; }
-      .mark.major { height: 5mm; }
-      .mark-label { position: absolute; bottom: 5.5mm; transform: translateX(-50%); font-size: 10px; }
-      .mark.first .mark-label { transform: translateX(0.8mm); }
-      .center { position: absolute; top: 0; left: 50%; transform: translateX(-50%); font-size: 10px; }
-      .center::after { content: ''; position: absolute; top: 4mm; left: 50%; height: 2mm; border-left: 1px solid #000; }
+      .ruler { display: block; width: calc(100% + ${BODY_PADDING_MM * 2}mm); margin: 3mm -${BODY_PADDING_MM}mm 0; }
+      .ruler text { stroke: none; }
       .edge-labels { display: flex; justify-content: space-between; margin: 1mm -${BODY_PADDING_MM}mm 0; font-size: 10px; }
       .steps { margin: 0; padding-left: 5mm; font-size: 12px; }
       .steps li { margin: 1mm 0; }

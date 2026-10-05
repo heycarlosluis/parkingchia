@@ -1,6 +1,6 @@
 # Estado actual del proyecto
 
-Última actualización: **2026-09-18**.
+Última actualización: **2026-10-04**.
 
 Este archivo describe el último corte conocido, no sustituye la verificación de `git status`, `package.json`, GitHub Actions ni el comportamiento ejecutable.
 
@@ -49,7 +49,8 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 - La exención por mensualidad se integra al cobro por horas: una sesión activa cubierta por una mensualidad vigente sale con total en cero conservando la permanencia visible, y el historial marca el cliente mensual que la cubrió. El diálogo de salida solo exige efectivo cuando hay algo que cobrar, de modo que las salidas sin cobro (mensualidad o tolerancia) se confirman con normalidad (D-032).
 - Módulo de Caja completo: apertura con fondo inicial y empleado asignado, asociación automática de cada pago de parqueo y de mensualidad a la caja abierta, arqueo en vivo (recaudado, anulado y esperado), anulación de un cobro con motivo, cierre con efectivo contado y diferencia, recibo de cierre reimprimible e historial de cierres anteriores.
 - La operación exige caja abierta: no se registran ingresos, cobros de salida ni pagos de mensualidad sin una caja abierta. Las salidas sin cobro (gracia o mensualidad) sí se permiten.
-- Todo pago en efectivo exige registrar el efectivo recibido (que cubra el total) y calcula el cambio; los demás medios no requieren ese campo. En la salida, el cursor queda listo en ese campo al abrir el cobro y hay un botón de monto exacto y montos acumulables de 5.000 en 5.000 hasta 50.000 y de 10.000 en 10.000 hasta 100.000 (D-040).
+- Salvo con el cobro simplificado activo, todo pago en efectivo exige registrar el efectivo recibido (que cubra el total) y calcula el cambio; los demás medios no requieren ese campo. En la salida, el cursor queda listo en ese campo al abrir el cobro y hay un botón de monto exacto y montos acumulables de 5.000 en 5.000 hasta 50.000 y de 10.000 en 10.000 hasta 100.000 (D-040).
+- Cobro simplificado opcional (D-042), desactivado por defecto y conmutable en Configuración › General: los cobros en efectivo no piden efectivo recibido ni calculan cambio, el diálogo de salida deja el foco en «Cobrar», la caja se abre sin fondo inicial y se cierra sin conteo ni diferencia, y solo las anulaciones reducen el total del turno.
 - Empleados administrados desde Configuración: crear, listar, editar, desactivar y eliminar; cada turno de caja queda asociado al empleado que lo operó.
 - Avisos con tono propio (neutro, advertencia, error y éxito): icono, título, descripción y acciones ocupan siempre el mismo lugar, y el texto de cada tono cumple el contraste AA sobre su superficie (D-028).
 - Empaquetado Windows/macOS, CI, publicación de tags y pre-releases.
@@ -72,7 +73,7 @@ npm ci
 npm run format:check
 npm run typecheck
 npm run lint
-npm run test:run       32 archivos, 295 pruebas
+npm run test:run       32 archivos, 321 pruebas
 npm run db:generate
 npm run db:migrate
 npm run db:seed
@@ -149,3 +150,7 @@ El 2026-09-18 se revisó el flujo del lector porque el YHD-9601D del cliente no 
 `0.1.0-alpha.6` se publicó el 2026-09-18 y en un equipo Windows del cliente el lector funcionó, pero el tiquete salió cortado a la derecha. `0.1.0-alpha.7` hace que la impresión se adapte al área que declara cada driver (D-039): se eliminó la regla `@page` que anulaba los márgenes del driver, se imprime con `printableArea`, el contenido se centra y se encoge dentro de esa área, y el alto se mide con margen para no partir el documento. Configuración › Impresión suma ancho de impresión, ajuste horizontal y una guía impresa con regla para calibrar un equipo cuyo driver declare medidas falsas. Una simulación de cuatro drivers (72 mm y 80 mm, con y sin 4 mm de margen) confirmó que tiquetes y recibos quedan dentro del área, en una hoja y con los códigos legibles. Pasaron `format:check`, `typecheck`, `lint`, 32 archivos con 290 pruebas y `build`. Falta confirmarlo en el equipo Windows y, si hiciera falta, calibrarlo con la guía.
 
 `0.1.0-alpha.8` agiliza el cobro en efectivo y hace recuperable la configuración óptima de impresión. El diálogo de salida enfoca el efectivo recibido al abrir, ofrece monto exacto y quince montos acumulables entre 5.000 y 100.000, y conserva «Cobrar» visible mientras el contenido se desplaza (D-040). Configuración › Impresión puede restablecer el perfil centrado de 72 mm para papel de 80 mm o de 48 mm para papel de 58 mm; cambiar de rollo aplica también el perfil correspondiente para no heredar una calibración incompatible (D-041). Se revisó el diálogo en la aplicación de escritorio y pasaron `format:check`, `typecheck`, `lint`, 32 archivos con 295 pruebas y `build`. La adaptación del driver continúa necesitando certificación en la impresora física del cliente.
+
+El 2026-10-04 se añadió el cobro simplificado (D-042), todavía sin versión ni tag. Es un ajuste en `app_settings` sin migración de esquema: con él activo, salidas y mensualidades en efectivo se cobran por su total sin efectivo recibido ni cambio, y la caja solo acumula, sin fondo inicial ni conteo al cerrar. El recibo de cierre de un turno sin conteo imprime «Total del turno» en lugar del efectivo contado y la diferencia. Pasaron `format:check`, `typecheck`, `lint`, 32 archivos con 311 pruebas y `build`. Con el modo activo la aplicación no detecta faltantes ni sobrantes de efectivo.
+
+El mismo 2026-10-04 se revisaron la impresión y el lector renderizando cada documento con el motor de impresión de Chromium a 72 y 48 mm, sin márgenes y con 4 mm por lado. Tiquetes y recibos salen a escala real, en una hoja y dentro del área en los cuatro casos. Se corrigieron cinco fallos: la guía de ajuste se encogía entre un 8 y un 10 % cuando el driver declaraba márgenes, porque las marcas fuera del área obligaban a Chromium a reducir la página, y sus bordes gruesos no se imprimían por ser fondos; ahora es un SVG a escala real con una marca por milímetro. El QR se deformaba si el área lo encogía. El duplicado del recibo de mensualidad no se marcaba como reimpresión. Cerrar el diálogo de impresión se informaba como falla de la impresora. Y el lector registraba un ingreso falso si se escaneaba un tiquete con el foco en Registrar ingreso, además de no respetar las confirmaciones abiertas (D-043). El tiquete de ingreso y los recibos de salida y de mensualidad cierran con el aviso de que el parqueadero no responde por los objetos dejados en el vehículo. Pasaron `format:check`, `typecheck`, `lint`, 32 archivos con 321 pruebas y `build`. Sigue pendiente confirmar en papel con la impresora y el lector físicos; en 58 mm la página deja unos 25 mm en blanco al final por la holgura de medición de D-039.

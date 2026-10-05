@@ -257,6 +257,12 @@ export type AppSettings = {
   printWidthMm: number | null
   /** Desplazamiento horizontal del contenido; positivo mueve a la derecha. */
   printOffsetMm: number
+  /**
+   * Cobro simplificado: la salida se cobra sin registrar el efectivo recibido
+   * ni calcular el cambio, y la caja solo acumula lo cobrado, sin fondo inicial
+   * ni conteo al cerrar. Lo único que descuenta son las anulaciones.
+   */
+  simpleChargeMode: boolean
 }
 
 export type PrinterInfo = {
@@ -384,9 +390,10 @@ export type CashCloseSummary = {
   collectedCop: number
   voidedCop: number
   expectedAmountCop: number
-  closingAmountCop: number
-  /** `closingAmountCop - expectedAmountCop`: positivo sobra, negativo falta. */
-  differenceCop: number
+  /** Efectivo contado al cerrar; `null` cuando el turno se cerró sin conteo. */
+  closingAmountCop: number | null
+  /** `closingAmountCop - expectedAmountCop`: positivo sobra, negativo falta; `null` sin conteo. */
+  differenceCop: number | null
   movementCount: number
 }
 

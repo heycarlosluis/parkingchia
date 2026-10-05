@@ -411,10 +411,12 @@ export class ParkingService {
       throw new OperationError('NO_CASH_SESSION', 'Abre la caja antes de cobrar una salida.')
     }
 
-    const receivedCop = input.method === 'cash' ? input.receivedCop : null
+    // Con el cobro simplificado no se registra efectivo recibido ni cambio.
+    const asksForCash = input.method === 'cash' && !this.cash.isSimpleChargeMode()
+    const receivedCop = asksForCash ? input.receivedCop : null
     if (
       charge.totalCop > 0 &&
-      input.method === 'cash' &&
+      asksForCash &&
       (receivedCop === null || receivedCop < charge.totalCop)
     ) {
       throw new OperationError(

@@ -285,6 +285,7 @@ export function registerIpcHandlers(services: Services): void {
         services.monthly.findReceiptSnapshot(
           parseOrReject(subscriptionReceiptSchema, rawInput).subscriptionId,
         ),
+        { reprint: true },
       ),
     ),
   )

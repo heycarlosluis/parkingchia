@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import type { AppSettings } from '@shared/contracts'
 import type { UpdateSettingsInput } from '@shared/ipc'
@@ -8,6 +9,22 @@ const DEFAULT_SETTINGS: AppSettings = {
   showPrintDialog: true,
   printWidthMm: null,
   printOffsetMm: 0,
+  simpleChargeMode: false,
+}
+
+const SIMPLE_CHARGE_MODE_KEY = 'operation.simpleChargeMode'
+
+/**
+ * Lee el modo de cobro directamente de `app_settings`.
+ *
+ * Caja, Parqueo y Mensualidades lo consultan en cada operación, de modo que el
+ * proceso principal decide qué exigir aunque el renderer tenga un valor viejo.
+ */
+export function readSimpleChargeMode(sqlite: Database.Database): boolean {
+  const row = sqlite
+    .prepare('SELECT value FROM app_settings WHERE key = ?')
+    .get(SIMPLE_CHARGE_MODE_KEY) as { value: string } | undefined
+  return row?.value === 'true'
 }
 
 export class SettingsService {
@@ -27,6 +44,7 @@ export class SettingsService {
       printOffsetMm:
         this.parseNullableNumber(values.get('printing.printOffsetMm')) ??
         DEFAULT_SETTINGS.printOffsetMm,
+      simpleChargeMode: readSimpleChargeMode(this.sqlite),
     }
   }
 
@@ -45,6 +63,7 @@ export class SettingsService {
       showPrintDialog: input.showPrintDialog ?? current.showPrintDialog,
       printWidthMm: input.printWidthMm === undefined ? base.printWidthMm : input.printWidthMm,
       printOffsetMm: input.printOffsetMm ?? base.printOffsetMm,
+      simpleChargeMode: input.simpleChargeMode ?? current.simpleChargeMode,
     }
     const now = new Date().toISOString()
     const upsert = this.sqlite.prepare(`
@@ -59,6 +78,16 @@ export class SettingsService {
       upsert.run('printing.showPrintDialog', String(next.showPrintDialog), now, now)
       upsert.run('printing.printWidthMm', JSON.stringify(next.printWidthMm), now, now)
       upsert.run('printing.printOffsetMm', JSON.stringify(next.printOffsetMm), now, now)
+      upsert.run(SIMPLE_CHARGE_MODE_KEY, String(next.simpleChargeMode), now, now)
+      // Cambia qué controles aplica la caja, así que queda en la auditoría.
+      if (next.simpleChargeMode !== current.simpleChargeMode) {
+        this.sqlite
+          .prepare(
+            `INSERT INTO audit_logs (id, action, entity_type, actor, details_json, created_at)
+             VALUES (?, 'settings.simple_charge_mode_changed', 'app_settings', 'local-operator', ?, ?)`,
+          )
+          .run(randomUUID(), JSON.stringify({ enabled: next.simpleChargeMode }), now)
+      }
     })()
     return next
   }

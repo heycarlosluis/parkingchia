@@ -33,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useChargeModeStore } from '@/store/charge-mode-store'
 import { useParkingStore } from '@/store/parking-store'
 
 /** Los botones muestran solo la cifra; el nombre accesible incluye la moneda. */
@@ -52,6 +53,8 @@ export function ExitDialog({
 }: ExitDialogProps): React.JSX.Element {
   const closeSession = useParkingStore((store) => store.closeSession)
   const error = useParkingStore((store) => store.error)
+  const simpleChargeMode = useChargeModeStore((store) => store.simpleChargeMode)
+  const initializeChargeMode = useChargeModeStore((store) => store.initialize)
   const [quote, setQuote] = useState<SessionQuote | null>(null)
   const [method, setMethod] = useState<PaymentMethod>('cash')
   const [received, setReceived] = useState<number>(Number.NaN)
@@ -61,8 +64,13 @@ export function ExitDialog({
 
   const [reloadToken, setReloadToken] = useState(0)
   const receivedRef = useRef<HTMLInputElement>(null)
+  const confirmRef = useRef<HTMLButtonElement>(null)
 
   const sessionId = session.id
+
+  useEffect(() => {
+    void initializeChargeMode()
+  }, [initializeChargeMode])
 
   useEffect(() => {
     let cancelled = false
@@ -86,13 +94,15 @@ export function ExitDialog({
 
   const total = quote?.charge.totalCop ?? 0
   const receivedValue = Number.isFinite(received) ? received : null
-  const change = method === 'cash' ? calculateChange(total, receivedValue) : null
+  // Con el cobro simplificado no se registra efectivo recibido ni cambio.
+  const cashIsCounted = method === 'cash' && !simpleChargeMode
+  const change = cashIsCounted ? calculateChange(total, receivedValue) : null
   // Sin nada que cobrar no se pide efectivo, así que tampoco puede faltar: es la
   // misma condición que aplica `closeSession` en el proceso principal. Sin el
   // `total > 0`, una salida cubierta por mensualidad o dentro de la tolerancia
   // dejaba el botón deshabilitado para siempre, sin campo donde corregirlo.
   const missingCash =
-    total > 0 && method === 'cash' && (receivedValue === null || receivedValue < total)
+    total > 0 && cashIsCounted && (receivedValue === null || receivedValue < total)
 
   const confirm = async (): Promise<void> => {
     if (!quote) return
@@ -101,7 +111,7 @@ export function ExitDialog({
       sessionId,
       expectedTotalCop: quote.charge.totalCop,
       method,
-      receivedCop: method === 'cash' ? receivedValue : null,
+      receivedCop: cashIsCounted ? receivedValue : null,
       notes: null,
     })
     setSubmitting(false)
@@ -111,13 +121,20 @@ export function ExitDialog({
 
   const charge = quote?.charge ?? null
   const coverage = quote?.session.monthlyCoverage ?? null
-  const asksForCash = !quoting && charge !== null && charge.totalCop > 0 && method === 'cash'
+  const hasCharge = !quoting && charge !== null && charge.totalCop > 0
+  const asksForCash = hasCharge && cashIsCounted
 
   // El campo aparece cuando llega la cotización: el foco espera a que exista
   // para que el operador escriba el efectivo sin tocar el ratón.
   useEffect(() => {
     if (asksForCash) receivedRef.current?.focus()
   }, [asksForCash])
+
+  // Sin efectivo que escribir, el foco va al cobro: Enter confirma la salida.
+  const confirmsDirectly = hasCharge && simpleChargeMode
+  useEffect(() => {
+    if (confirmsDirectly) confirmRef.current?.focus()
+  }, [confirmsDirectly])
 
   /** Registra el efectivo y devuelve el foco al campo para seguir con el teclado. */
   const applyCash = (value: number | null): void => {
@@ -218,7 +235,12 @@ export function ExitDialog({
                     </Select>
                   </Field>
 
-                  {method === 'cash' ? (
+                  {simpleChargeMode ? (
+                    <p className="field-hint">
+                      Cobro simplificado: se registra el total, sin efectivo recibido ni cambio.
+                    </p>
+                  ) : null}
+                  {cashIsCounted ? (
                     <Field data-invalid={missingCash}>
                       <FieldLabel htmlFor="exit-received">Efectivo recibido</FieldLabel>
                       <Input
@@ -242,7 +264,7 @@ export function ExitDialog({
                       </FieldDescription>
                     </Field>
                   ) : null}
-                  {method === 'cash' ? (
+                  {cashIsCounted ? (
                     // Fuera del campo: mientras está vacío se marca inválido y todo su
                     // contenido se pinta en rojo, incluidos estos botones.
                     <div className="quick-cash" role="group" aria-label="Montos rápidos">
@@ -305,6 +327,7 @@ export function ExitDialog({
             </Button>
           ) : null}
           <Button
+            ref={confirmRef}
             type="button"
             onClick={() => void confirm()}
             disabled={submitting || quoting || !charge || missingCash}

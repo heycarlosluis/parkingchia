@@ -250,6 +250,7 @@ const printSettings: AppSettings = {
   showPrintDialog: true,
   printWidthMm: null,
   printOffsetMm: 0,
+  simpleChargeMode: false,
 }
 
 const parkingApi: ParkingApi = {

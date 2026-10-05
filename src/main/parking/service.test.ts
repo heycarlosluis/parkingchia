@@ -15,6 +15,7 @@ import {
 import { CashService } from '@main/cash/service'
 import { EmployeeService } from '@main/employee/service'
 import { MonthlyService } from '@main/monthly/service'
+import { SettingsService } from '@main/settings/service'
 import { TariffService } from '@main/tariffs/service'
 import { normalizeReceiptSnapshot, ParkingService, type ReceiptSnapshot } from './service'
 
@@ -730,5 +731,45 @@ describe('caja obligatoria', () => {
         notes: null,
       }),
     ).toThrow(expect.objectContaining({ code: 'NO_CASH_SESSION' }))
+  })
+})
+
+describe('cobro simplificado', () => {
+  it('cobra la salida en efectivo sin efectivo recibido ni cambio', () => {
+    new SettingsService(manager.getNativeConnection()).update({ simpleChargeMode: true })
+    const registration = parking.registerEntry(entry())
+    ageSession(registration.sessionId, 90)
+
+    const exit = parking.closeSession({
+      sessionId: registration.sessionId,
+      expectedTotalCop: 10_000,
+      method: 'cash',
+      // Aunque llegue un valor, el modo no registra efectivo recibido.
+      receivedCop: 50_000,
+      notes: null,
+    })
+
+    expect(exit).toMatchObject({ receivedCop: null, changeCop: null })
+    expect(exit.receiptNumber).not.toBeNull()
+    expect(parking.findReceiptSnapshot(registration.sessionId)).toMatchObject({
+      receivedCop: null,
+      changeCop: null,
+    })
+    expect(cash.getState().collectedCop).toBe(10_000)
+  })
+
+  it('sigue exigiendo caja abierta y el total confirmado', () => {
+    new SettingsService(manager.getNativeConnection()).update({ simpleChargeMode: true })
+    const registration = parking.registerEntry(entry())
+    ageSession(registration.sessionId, 90)
+    expect(() =>
+      parking.closeSession({
+        sessionId: registration.sessionId,
+        expectedTotalCop: 5000,
+        method: 'cash',
+        receivedCop: null,
+        notes: null,
+      }),
+    ).toThrow(expect.objectContaining({ code: 'CHARGE_CHANGED' }))
   })
 })

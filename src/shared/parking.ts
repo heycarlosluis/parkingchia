@@ -71,13 +71,15 @@ export const closeSessionSchema = z
     notes: optionalNotes,
   })
   .strict()
+  // Que el efectivo sea obligatorio depende del modo de cobro, que solo conoce
+  // el proceso principal: aquí se valida únicamente el valor que sí llegó.
   .refine(
     (value) =>
       value.method !== 'cash' ||
-      value.expectedTotalCop === 0 ||
-      (value.receivedCop !== null && value.receivedCop >= value.expectedTotalCop),
+      value.receivedCop === null ||
+      value.receivedCop >= value.expectedTotalCop,
     {
-      message: 'Registra el efectivo recibido y que cubra el total a cobrar.',
+      message: 'El efectivo recibido debe cubrir el total a cobrar.',
       path: ['receivedCop'],
     },
   )

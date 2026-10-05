@@ -70,3 +70,39 @@ describe('configuración de impresión', () => {
     }
   })
 })
+
+describe('cobro simplificado', () => {
+  it('viene desactivado y se conserva al cambiar otros ajustes', () => {
+    const { database, settings } = createSettings()
+    try {
+      expect(settings.get().simpleChargeMode).toBe(false)
+      expect(settings.update({ simpleChargeMode: true }).simpleChargeMode).toBe(true)
+      settings.update({ paperWidth: '58mm' })
+      expect(settings.get().simpleChargeMode).toBe(true)
+    } finally {
+      database.close()
+    }
+  })
+
+  it('audita cada cambio de modo y no los guardados que lo dejan igual', () => {
+    const { database, settings } = createSettings()
+    try {
+      settings.update({ simpleChargeMode: true })
+      settings.update({ simpleChargeMode: true })
+      settings.update({ showPrintDialog: false })
+      settings.update({ simpleChargeMode: false })
+      const rows = database
+        .getNativeConnection()
+        .prepare(
+          "SELECT details_json FROM audit_logs WHERE action = 'settings.simple_charge_mode_changed' ORDER BY rowid",
+        )
+        .all() as Array<{ details_json: string }>
+      expect(rows.map((row) => JSON.parse(row.details_json))).toEqual([
+        { enabled: true },
+        { enabled: false },
+      ])
+    } finally {
+      database.close()
+    }
+  })
+})

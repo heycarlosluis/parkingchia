@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { closeCashSessionSchema, openCashSessionSchema, voidPaymentSchema } from './cash'
+import {
+  closeCashSessionSchema,
+  describeCashDifference,
+  openCashSessionSchema,
+  voidPaymentSchema,
+} from './cash'
 
 describe('esquemas de caja', () => {
   it('acepta un fondo inicial, un empleado y una nota opcional', () => {
@@ -60,5 +65,17 @@ describe('esquemas de caja', () => {
     expect(
       voidPaymentSchema.safeParse({ paymentId: '', reason: 'Cobro mal registrado' }).success,
     ).toBe(false)
+  })
+})
+
+describe('cierre sin conteo', () => {
+  it('acepta un cierre sin efectivo contado y lo describe como tal', () => {
+    expect(closeCashSessionSchema.safeParse({ closingAmountCop: null, notes: null }).success).toBe(
+      true,
+    )
+    expect(describeCashDifference(null)).toBe('Sin conteo')
+    expect(describeCashDifference(0)).toBe('Cuadra')
+    expect(describeCashDifference(-2000)).toMatch(/^Falta /)
+    expect(describeCashDifference(2000)).toMatch(/^Sobra /)
   })
 })

@@ -70,6 +70,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   showPrintDialog: true,
   printWidthMm: null,
   printOffsetMm: 0,
+  simpleChargeMode: false,
 }
 
 export function PrinterSettings(): React.JSX.Element {
@@ -250,7 +251,7 @@ export function PrinterSettings(): React.JSX.Element {
             </Select>
             <FieldDescription>
               Si el tiquete sale cortado a la derecha, imprime la guía de ajuste y elige el último
-              número que se vea completo.
+              milímetro que se vea en la regla.
             </FieldDescription>
           </Field>
           <Field>

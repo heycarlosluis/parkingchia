@@ -31,7 +31,10 @@ export interface TicketPrinter {
   printCalibrationGuide(): Promise<PrintResult>
   printEntryTicket(entry: EntryRegistration, options?: TicketRenderOptions): Promise<PrintResult>
   printExitReceipt(receipt: ReceiptSnapshot, options?: TicketRenderOptions): Promise<PrintResult>
-  printMonthlyReceipt(receipt: MonthlyReceiptSnapshot): Promise<PrintResult>
+  printMonthlyReceipt(
+    receipt: MonthlyReceiptSnapshot,
+    options?: TicketRenderOptions,
+  ): Promise<PrintResult>
   printCashCloseReceipt(summary: CashCloseSummary): Promise<PrintResult>
 }
 
@@ -92,10 +95,15 @@ export class ElectronTicketPrinter implements TicketPrinter {
     )
   }
 
-  async printMonthlyReceipt(receipt: MonthlyReceiptSnapshot): Promise<PrintResult> {
+  async printMonthlyReceipt(
+    receipt: MonthlyReceiptSnapshot,
+    options: TicketRenderOptions = {},
+  ): Promise<PrintResult> {
     return this.render(
-      (layout, profile) => createMonthlyReceiptHtml(layout, profile, receipt),
-      'El recibo de la mensualidad se envió a la impresora.',
+      (layout, profile) => createMonthlyReceiptHtml(layout, profile, receipt, options),
+      options.reprint
+        ? 'El recibo de la mensualidad se reimprimió como duplicado.'
+        : 'El recibo de la mensualidad se envió a la impresora.',
     )
   }
 
@@ -155,11 +163,19 @@ export class ElectronTicketPrinter implements TicketPrinter {
         if (settings.printerName) options.deviceName = settings.printerName
         printWindow.webContents.print(options, (success, failureReason) => {
           if (success) resolve()
-          else reject(new Error(failureReason || 'El sistema canceló la impresión'))
+          else if (isPrintCancellation(failureReason)) reject(new PrintCancelledError())
+          else reject(new Error(failureReason || 'El sistema no completó la impresión'))
         })
       })
       return { printed: true, message: successMessage }
-    } catch {
+    } catch (error) {
+      // Cerrar el diálogo del sistema no es una falla de la impresora.
+      if (error instanceof PrintCancelledError) {
+        return {
+          printed: false,
+          message: 'Impresión cancelada. Puedes reimprimir el documento cuando quieras.',
+        }
+      }
       return {
         printed: false,
         message: 'No fue posible imprimir. Revisa la impresora y vuelve a intentarlo.',
@@ -168,6 +184,13 @@ export class ElectronTicketPrinter implements TicketPrinter {
       if (!printWindow.isDestroyed()) printWindow.destroy()
     }
   }
+}
+
+class PrintCancelledError extends Error {}
+
+/** Electron informa «cancelled» cuando el operador cierra el diálogo del sistema. */
+export function isPrintCancellation(failureReason: string | undefined): boolean {
+  return /cancel/i.test(failureReason ?? '')
 }
 
 const MICRONS_PER_MM = 1000

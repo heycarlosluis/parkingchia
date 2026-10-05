@@ -44,6 +44,8 @@ const EMPTY_FORM: OpenCashForm = { employeeId: '', openingAmountCop: 0, notes: '
 
 type OpenCashDialogProps = {
   open: boolean
+  /** Con el cobro simplificado la caja solo acumula, así que no se pide fondo inicial. */
+  simpleChargeMode: boolean
   error: string | null
   onOpenChange: (open: boolean) => void
   onSubmit: (input: OpenCashSessionInput) => Promise<boolean>
@@ -51,6 +53,7 @@ type OpenCashDialogProps = {
 
 export function OpenCashDialog({
   open,
+  simpleChargeMode,
   error,
   onOpenChange,
   onSubmit,
@@ -76,7 +79,7 @@ export function OpenCashDialog({
   const submit = handleSubmit(async (values) => {
     const saved = await onSubmit({
       employeeId: values.employeeId,
-      openingAmountCop: values.openingAmountCop,
+      openingAmountCop: simpleChargeMode ? 0 : values.openingAmountCop,
       notes: values.notes === '' ? null : values.notes,
     })
     if (saved) onOpenChange(false)
@@ -88,7 +91,9 @@ export function OpenCashDialog({
         <DialogHeader>
           <DialogTitle>Abrir caja</DialogTitle>
           <DialogDescription>
-            Elige quién opera el turno y registra el dinero con el que inicia.
+            {simpleChargeMode
+              ? 'Elige quién opera el turno. La caja empieza en cero y suma cada cobro.'
+              : 'Elige quién opera el turno y registra el dinero con el que inicia.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -141,23 +146,25 @@ export function OpenCashDialog({
                 <FieldError errors={[formState.errors.employeeId]} />
               </Field>
 
-              <Field data-invalid={Boolean(formState.errors.openingAmountCop)}>
-                <FieldLabel htmlFor="cash-opening-amount">Fondo inicial</FieldLabel>
-                <Input
-                  id="cash-opening-amount"
-                  className="min-h-11"
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  step={1000}
-                  aria-invalid={Boolean(formState.errors.openingAmountCop)}
-                  {...register('openingAmountCop', { valueAsNumber: true })}
-                />
-                <FieldDescription>
-                  Pesos colombianos enteros, sin puntos ni centavos.
-                </FieldDescription>
-                <FieldError errors={[formState.errors.openingAmountCop]} />
-              </Field>
+              {simpleChargeMode ? null : (
+                <Field data-invalid={Boolean(formState.errors.openingAmountCop)}>
+                  <FieldLabel htmlFor="cash-opening-amount">Fondo inicial</FieldLabel>
+                  <Input
+                    id="cash-opening-amount"
+                    className="min-h-11"
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    step={1000}
+                    aria-invalid={Boolean(formState.errors.openingAmountCop)}
+                    {...register('openingAmountCop', { valueAsNumber: true })}
+                  />
+                  <FieldDescription>
+                    Pesos colombianos enteros, sin puntos ni centavos.
+                  </FieldDescription>
+                  <FieldError errors={[formState.errors.openingAmountCop]} />
+                </Field>
+              )}
 
               <Field data-invalid={Boolean(formState.errors.notes)}>
                 <FieldLabel htmlFor="cash-opening-notes">Nota (opcional)</FieldLabel>

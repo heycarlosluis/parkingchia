@@ -506,8 +506,10 @@ export class MonthlyService {
       )
     }
 
-    const receivedCop = input.method === 'cash' ? input.receivedCop : null
-    if (input.method === 'cash' && (receivedCop === null || receivedCop < input.amountCop)) {
+    // Con el cobro simplificado no se registra efectivo recibido ni cambio.
+    const asksForCash = input.method === 'cash' && !this.cash.isSimpleChargeMode()
+    const receivedCop = asksForCash ? input.receivedCop : null
+    if (asksForCash && (receivedCop === null || receivedCop < input.amountCop)) {
       throw new OperationError(
         'INSUFFICIENT_CASH',
         'Registra el efectivo recibido y que cubra el pago.',

@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils'
 import { useSystemStore } from '@/store/system-store'
 import { useAccessStore } from '@/store/access-store'
 import { useCashStore } from '@/store/cash-store'
+import { useChargeModeStore } from '@/store/charge-mode-store'
 import { useEntryTicketScanner } from '@/hooks/use-entry-ticket-scanner'
 
 const navigation = [
@@ -45,12 +46,14 @@ export function AppShell(): React.JSX.Element {
   const cashSession = useCashStore((state) => state.session)
   const cashLoading = useCashStore((state) => state.loading)
   const initializeCash = useCashStore((state) => state.initialize)
+  const initializeChargeMode = useChargeModeStore((state) => state.initialize)
 
   useEffect(() => {
     void initialize()
     void initializeCash()
+    void initializeChargeMode()
     return window.parkingAPI.onUpdateState(setUpdateState)
-  }, [initialize, initializeCash, setUpdateState])
+  }, [initialize, initializeCash, initializeChargeMode, setUpdateState])
 
   const updateNotice =
     updateStatus === 'installing'

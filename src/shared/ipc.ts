@@ -82,6 +82,7 @@ export const updateSettingsSchema = z
       -MAX_PRINT_OFFSET_MM,
       MAX_PRINT_OFFSET_MM,
     ).optional(),
+    simpleChargeMode: z.boolean().optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, 'Incluye al menos un ajuste')

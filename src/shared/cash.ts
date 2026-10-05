@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { formatCurrency } from './format'
 import { MAX_AMOUNT_COP } from './tariff'
 
 /**
@@ -33,6 +34,15 @@ export const CASH_MOVEMENT_SOURCE_LABELS: Record<CashMovementSource, string> = {
   monthly: 'Mensualidad',
 }
 
+/** Resultado del arqueo en palabras; `null` es un turno que se cerró sin contar el efectivo. */
+export function describeCashDifference(differenceCop: number | null): string {
+  if (differenceCop === null) return 'Sin conteo'
+  if (differenceCop === 0) return 'Cuadra'
+  return differenceCop > 0
+    ? `Sobra ${formatCurrency(differenceCop)}`
+    : `Falta ${formatCurrency(-differenceCop)}`
+}
+
 const copAmount = (label: string) =>
   z
     .number()
@@ -61,8 +71,11 @@ export const openCashSessionSchema = z
 
 export const closeCashSessionSchema = z
   .object({
-    /** Efectivo que el operador contó al cerrar, en pesos colombianos enteros. */
-    closingAmountCop: copAmount('El efectivo contado'),
+    /**
+     * Efectivo que el operador contó al cerrar, en pesos colombianos enteros.
+     * `null` cierra sin conteo, que solo se acepta con el cobro simplificado.
+     */
+    closingAmountCop: copAmount('El efectivo contado').nullable(),
     notes: optionalNotes,
   })
   .strict()

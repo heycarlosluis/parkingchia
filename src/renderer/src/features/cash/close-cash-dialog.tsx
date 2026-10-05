@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { z } from 'zod'
 import type { CashCloseSummary } from '@shared/contracts'
-import type { CloseCashSessionInput } from '@shared/cash'
+import { describeCashDifference, type CloseCashSessionInput } from '@shared/cash'
 import { formatCurrency } from '@shared/format'
 import { MAX_AMOUNT_COP } from '@shared/tariff'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -37,6 +37,8 @@ type CloseCashDialogProps = {
   open: boolean
   /** Lo que debería haber en la caja según los cobros del turno. */
   expectedCop: number
+  /** Con el cobro simplificado el turno se cierra sin contar el efectivo. */
+  simpleChargeMode: boolean
   error: string | null
   onOpenChange: (open: boolean) => void
   onSubmit: (input: CloseCashSessionInput) => Promise<CashCloseSummary | null>
@@ -45,6 +47,7 @@ type CloseCashDialogProps = {
 export function CloseCashDialog({
   open,
   expectedCop,
+  simpleChargeMode,
   error,
   onOpenChange,
   onSubmit,
@@ -65,7 +68,7 @@ export function CloseCashDialog({
 
   const submit = handleSubmit(async (values) => {
     const summary = await onSubmit({
-      closingAmountCop: values.closingAmountCop,
+      closingAmountCop: simpleChargeMode ? null : values.closingAmountCop,
       notes: values.notes === '' ? null : values.notes,
     })
     if (summary) onOpenChange(false)
@@ -77,8 +80,9 @@ export function CloseCashDialog({
         <DialogHeader>
           <DialogTitle>Cerrar caja</DialogTitle>
           <DialogDescription>
-            Cuenta el efectivo y confirma el cierre. La diferencia se compara contra lo esperado
-            según los cobros del turno.
+            {simpleChargeMode
+              ? 'Confirma el cierre del turno. Se guarda el total acumulado, sin conteo de efectivo.'
+              : 'Cuenta el efectivo y confirma el cierre. La diferencia se compara contra lo esperado según los cobros del turno.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -91,20 +95,22 @@ export function CloseCashDialog({
           ) : null}
 
           <FieldGroup>
-            <Field data-invalid={Boolean(formState.errors.closingAmountCop)}>
-              <FieldLabel htmlFor="cash-closing-amount">Efectivo contado</FieldLabel>
-              <Input
-                id="cash-closing-amount"
-                className="min-h-11"
-                type="number"
-                inputMode="numeric"
-                min={0}
-                step={1000}
-                aria-invalid={Boolean(formState.errors.closingAmountCop)}
-                {...register('closingAmountCop', { valueAsNumber: true })}
-              />
-              <FieldError errors={[formState.errors.closingAmountCop]} />
-            </Field>
+            {simpleChargeMode ? null : (
+              <Field data-invalid={Boolean(formState.errors.closingAmountCop)}>
+                <FieldLabel htmlFor="cash-closing-amount">Efectivo contado</FieldLabel>
+                <Input
+                  id="cash-closing-amount"
+                  className="min-h-11"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  step={1000}
+                  aria-invalid={Boolean(formState.errors.closingAmountCop)}
+                  {...register('closingAmountCop', { valueAsNumber: true })}
+                />
+                <FieldError errors={[formState.errors.closingAmountCop]} />
+              </Field>
+            )}
 
             <Field>
               <FieldLabel htmlFor="cash-closing-notes">Nota (opcional)</FieldLabel>
@@ -119,20 +125,23 @@ export function CloseCashDialog({
           </FieldGroup>
 
           <dl className="charge-breakdown">
-            <div>
-              <dt>Esperado</dt>
-              <dd className="tabular">{formatCurrency(expectedCop)}</dd>
-            </div>
-            <div className="charge-total">
-              <dt>Diferencia</dt>
-              <dd className="tabular">
-                {difference === 0
-                  ? 'Cuadra'
-                  : difference > 0
-                    ? `Sobra ${formatCurrency(difference)}`
-                    : `Falta ${formatCurrency(-difference)}`}
-              </dd>
-            </div>
+            {simpleChargeMode ? (
+              <div className="charge-total">
+                <dt>Total del turno</dt>
+                <dd className="tabular">{formatCurrency(expectedCop)}</dd>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <dt>Esperado</dt>
+                  <dd className="tabular">{formatCurrency(expectedCop)}</dd>
+                </div>
+                <div className="charge-total">
+                  <dt>Diferencia</dt>
+                  <dd className="tabular">{describeCashDifference(difference)}</dd>
+                </div>
+              </>
+            )}
           </dl>
 
           <FieldDescription>

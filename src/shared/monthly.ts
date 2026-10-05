@@ -348,12 +348,13 @@ export const registerSubscriptionPaymentSchema = z
     reference: optionalText(60, 'La referencia'),
   })
   .strict()
+  // Que el efectivo sea obligatorio depende del modo de cobro, que solo conoce
+  // el proceso principal: aquí se valida únicamente el valor que sí llegó.
   .refine(
     (value) =>
-      value.method !== 'cash' ||
-      (value.receivedCop !== null && value.receivedCop >= value.amountCop),
+      value.method !== 'cash' || value.receivedCop === null || value.receivedCop >= value.amountCop,
     {
-      message: 'Registra el efectivo recibido y que cubra el pago.',
+      message: 'El efectivo recibido debe cubrir el pago.',
       path: ['receivedCop'],
     },
   )

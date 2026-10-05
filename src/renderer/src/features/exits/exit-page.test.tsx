@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { activeSession } from '@/test/setup'
 import { useCashStore } from '@/store/cash-store'
+import { useChargeModeStore } from '@/store/charge-mode-store'
 import { useParkingStore } from '@/store/parking-store'
 import { ExitPage } from './exit-page'
 
@@ -242,5 +243,49 @@ describe('Registrar salida', () => {
 
     expect(await screen.findByText('No hay una caja abierta')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Abrir caja/ })).toHaveAttribute('href', '/caja')
+  })
+
+  it('con el cobro simplificado cobra el total sin pedir efectivo recibido', async () => {
+    const settings = {
+      printerName: null,
+      paperWidth: '80mm' as const,
+      showPrintDialog: true,
+      printWidthMm: null,
+      printOffsetMm: 0,
+    }
+    vi.mocked(window.parkingAPI.getSettings).mockResolvedValue({
+      ok: true,
+      data: { ...settings, simpleChargeMode: true },
+    })
+    useChargeModeStore.setState({ simpleChargeMode: true })
+    vi.mocked(window.parkingAPI.closeSession).mockClear()
+    try {
+      renderExits()
+
+      await userEvent.type(await screen.findByLabelText('Tiquete o matrícula'), 'abc123')
+      await userEvent.click(screen.getByRole('button', { name: /Registrar salida/ }))
+
+      const dialog = await screen.findByRole('dialog')
+      const charge = await within(dialog).findByRole('button', { name: /^Cobrar/ })
+      expect(within(dialog).queryByLabelText('Efectivo recibido')).not.toBeInTheDocument()
+      expect(
+        within(dialog).queryByRole('group', { name: 'Montos rápidos' }),
+      ).not.toBeInTheDocument()
+      // Sin campo que llenar, el cobro queda habilitado y con el foco: Enter confirma.
+      await waitFor(() => expect(charge).toHaveFocus())
+      await userEvent.keyboard('{Enter}')
+
+      await waitFor(() => {
+        expect(window.parkingAPI.closeSession).toHaveBeenCalledWith(
+          expect.objectContaining({ method: 'cash', receivedCop: null }),
+        )
+      })
+    } finally {
+      vi.mocked(window.parkingAPI.getSettings).mockResolvedValue({
+        ok: true,
+        data: { ...settings, simpleChargeMode: false },
+      })
+      useChargeModeStore.setState({ simpleChargeMode: false })
+    }
   })
 })

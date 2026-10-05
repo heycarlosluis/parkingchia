@@ -2,6 +2,7 @@ import { Building2, HardDrive, Printer, ShieldCheck, Tags, UserRound } from 'luc
 import { useSearchParams } from 'react-router-dom'
 import { PageHeading } from '@/components/page-heading'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ChargeModeSettings } from '@/features/settings/charge-mode-settings'
 import { EmployeesSettings } from '@/features/settings/employees-settings'
 import { ParkingProfileSettings } from '@/features/settings/parking-profile-settings'
 import { PrinterSettings } from '@/features/settings/printer-settings'
@@ -51,6 +52,7 @@ export function SettingsPage(): React.JSX.Element {
 
         <TabsContent value="general">
           <ParkingProfileSettings />
+          <ChargeModeSettings />
         </TabsContent>
         <TabsContent value="tarifas">
           <TariffsSettings />

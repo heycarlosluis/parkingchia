@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_TARIFF_SETTINGS } from '@shared/tariff'
 import { useAccessStore } from '@/store/access-store'
+import { useChargeModeStore } from '@/store/charge-mode-store'
 import { useEmployeeStore } from '@/store/employee-store'
 import { useTariffStore } from '@/store/tariff-store'
 import { SettingsPage } from './settings-page'
@@ -132,6 +133,7 @@ describe('Configuración', () => {
         showPrintDialog: true,
         printWidthMm: 44,
         printOffsetMm: 1.5,
+        simpleChargeMode: false,
       },
     })
     vi.mocked(window.parkingAPI.updateSettings).mockClear()
@@ -167,5 +169,21 @@ describe('Configuración', () => {
 
     expect(screen.getByRole('tab', { name: 'Empleados' })).toHaveAttribute('aria-selected', 'true')
     expect(await screen.findByText('Laura Torres')).toBeInTheDocument()
+  })
+
+  it('activa el cobro simplificado desde la pestaña General', async () => {
+    vi.mocked(window.parkingAPI.updateSettings).mockClear()
+    renderSettings()
+
+    const toggle = await screen.findByRole('checkbox', { name: 'Cobro simplificado' })
+    expect(toggle).not.toBeChecked()
+    await userEvent.click(toggle)
+
+    expect(vi.mocked(window.parkingAPI.updateSettings)).toHaveBeenCalledWith({
+      simpleChargeMode: true,
+    })
+    expect(await screen.findByText('Cobro simplificado activado.')).toBeInTheDocument()
+    expect(toggle).toBeChecked()
+    useChargeModeStore.setState({ simpleChargeMode: false })
   })
 })

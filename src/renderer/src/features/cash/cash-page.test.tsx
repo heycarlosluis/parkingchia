@@ -1,9 +1,10 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CashCloseSummary, CashState } from '@shared/contracts'
 import { useCashStore } from '@/store/cash-store'
+import { useChargeModeStore } from '@/store/charge-mode-store'
 import { CashPage } from './cash-page'
 
 const ok = <T,>(data: T) => ({ ok: true as const, data })
@@ -208,5 +209,83 @@ describe('Caja', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Entendido' }))
     expect(screen.queryByText(/Caja cerrada/)).not.toBeInTheDocument()
+  })
+
+  describe('con el cobro simplificado', () => {
+    const simpleSettings = {
+      printerName: null,
+      paperWidth: '80mm' as const,
+      showPrintDialog: true,
+      printWidthMm: null,
+      printOffsetMm: 0,
+      simpleChargeMode: true,
+    }
+    const simpleState: CashState = {
+      ...openState,
+      session: { ...openState.session!, openingAmountCop: 0 },
+      expectedCop: 10_000,
+    }
+
+    beforeEach(() => {
+      vi.mocked(window.parkingAPI.getSettings).mockResolvedValue(ok(simpleSettings))
+      useChargeModeStore.setState({ simpleChargeMode: true })
+    })
+
+    afterEach(() => {
+      vi.mocked(window.parkingAPI.getSettings).mockResolvedValue(
+        ok({ ...simpleSettings, simpleChargeMode: false }),
+      )
+      useChargeModeStore.setState({ simpleChargeMode: false })
+    })
+
+    it('abre la caja sin pedir fondo inicial', async () => {
+      renderPage()
+
+      await userEvent.click(await screen.findByRole('button', { name: /Abrir caja/ }))
+      const dialog = await screen.findByRole('dialog')
+      expect(within(dialog).queryByLabelText('Fondo inicial')).not.toBeInTheDocument()
+
+      await userEvent.click(within(dialog).getByLabelText('Empleado'))
+      await userEvent.click(await screen.findByRole('option', { name: 'Laura Torres' }))
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Abrir caja' }))
+
+      await waitFor(() => {
+        expect(window.parkingAPI.openCashSession).toHaveBeenCalledWith(
+          expect.objectContaining({ openingAmountCop: 0 }),
+        )
+      })
+    })
+
+    it('muestra el total del turno y cierra sin contar el efectivo', async () => {
+      vi.mocked(window.parkingAPI.getCashState).mockResolvedValue(ok(simpleState))
+      renderPage()
+
+      expect(await screen.findByText('Total del turno')).toBeInTheDocument()
+      expect(screen.queryByText('Fondo inicial')).not.toBeInTheDocument()
+      expect(screen.queryByText('Esperado al cierre')).not.toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('button', { name: /Cerrar caja/ }))
+      const dialog = await screen.findByRole('dialog')
+      expect(within(dialog).queryByLabelText('Efectivo contado')).not.toBeInTheDocument()
+      expect(within(dialog).queryByText('Diferencia')).not.toBeInTheDocument()
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Cerrar caja' }))
+
+      await waitFor(() => {
+        expect(window.parkingAPI.closeCashSession).toHaveBeenCalledWith({
+          closingAmountCop: null,
+          notes: null,
+        })
+      })
+    })
+
+    it('lista un cierre sin conteo sin inventar una diferencia', async () => {
+      vi.mocked(window.parkingAPI.listCashSessions).mockResolvedValue(
+        ok([{ ...closedSummary, closingAmountCop: null, differenceCop: null }]),
+      )
+      renderPage()
+
+      expect(await screen.findByText('Sin conteo')).toBeInTheDocument()
+      expect(screen.queryByText('Cuadra')).not.toBeInTheDocument()
+    })
   })
 })

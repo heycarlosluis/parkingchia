@@ -8,6 +8,7 @@ import { DatabaseManager } from '@main/database/connection'
 import { CashService } from '@main/cash/service'
 import { EmployeeService } from '@main/employee/service'
 import { MonthlyService } from '@main/monthly/service'
+import { SettingsService } from '@main/settings/service'
 
 let directory = ''
 let manager: DatabaseManager
@@ -309,5 +310,63 @@ describe('historial de cierres', () => {
     expect(() => cash.getCloseSummary('no-existe')).toThrow(
       expect.objectContaining({ code: 'CASH_SESSION_NOT_FOUND' }),
     )
+  })
+})
+
+describe('cobro simplificado', () => {
+  it('exige el efectivo contado mientras el modo está desactivado', () => {
+    openSession()
+    expect(() => cash.closeSession({ closingAmountCop: null, notes: null })).toThrow(
+      expect.objectContaining({ code: 'CLOSING_AMOUNT_REQUIRED' }),
+    )
+    expect(cash.getState().session).not.toBeNull()
+  })
+
+  it('cierra sin conteo ni diferencia y solo descuenta las anulaciones', () => {
+    new SettingsService(manager.getNativeConnection()).update({ simpleChargeMode: true })
+    openSession(0)
+    const sessionId = cash.getOpenSessionId()!
+    seedParkingPayment(sessionId, 10_000, 'ABC123')
+    const voided = seedParkingPayment(sessionId, 5_000, 'XYZ999')
+    cash.voidPayment({ paymentId: voided, reason: 'Cobro duplicado' })
+
+    // Un valor contado que llegue de todos modos no se guarda: el modo no cuenta efectivo.
+    const summary = cash.closeSession({ closingAmountCop: 3_000, notes: null })
+    expect(summary).toMatchObject({
+      collectedCop: 10_000,
+      voidedCop: 5_000,
+      expectedAmountCop: 10_000,
+      closingAmountCop: null,
+      differenceCop: null,
+    })
+    expect(cash.listClosedSessions()[0]).toMatchObject({
+      expectedAmountCop: 10_000,
+      closingAmountCop: null,
+      differenceCop: null,
+    })
+  })
+
+  it('registra un pago de mensualidad en efectivo sin efectivo recibido', () => {
+    new SettingsService(manager.getNativeConnection()).update({ simpleChargeMode: true })
+    openSession(0)
+    const subscription = monthly.createSubscription({
+      customerId,
+      plate: 'MEN002',
+      vehicleType: 'car',
+      ratePlanId: planId,
+      startDate: '2026-08-19',
+      endDate: '2026-09-18',
+      amountCop: 150_000,
+      notes: null,
+    })
+    const payment = monthly.registerPayment({
+      subscriptionId: subscription.id,
+      amountCop: 150_000,
+      method: 'cash',
+      receivedCop: null,
+      reference: null,
+    })
+    expect(payment).toMatchObject({ receivedCop: null, changeCop: null, balanceCop: 0 })
+    expect(cash.getState().collectedCop).toBe(150_000)
   })
 })

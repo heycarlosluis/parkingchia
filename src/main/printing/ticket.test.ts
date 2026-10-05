@@ -3,12 +3,15 @@ import { describe, expect, it } from 'vitest'
 import type { EntryRegistration } from '@shared/contracts'
 import { encodeEntryTicketReference, formatEntryTicketReference } from '@shared/entry-ticket'
 import { calculateChargeForMinutes, DEFAULT_TARIFF_SETTINGS } from '@shared/tariff'
+import type { MonthlyReceiptSnapshot } from '@main/monthly/service'
 import type { ReceiptSnapshot } from '@main/parking/service'
+import { isPrintCancellation } from './service'
 import {
   createCalibrationGuideHtml,
   createCashCloseReceiptHtml,
   createEntryTicketHtml,
   createExitReceiptHtml,
+  createMonthlyReceiptHtml,
   createTestTicketHtml,
 } from './ticket'
 
@@ -222,9 +225,125 @@ describe('ajuste al papel de cada impresora', () => {
     )
     expect(html).toContain('72 mm (automático)')
     expect(html).toContain('2 mm a la derecha')
-    expect(html).toContain('class="edge left"')
-    expect(html).toContain('class="edge right"')
-    expect(html).toContain('<span class="mark-label">70</span>')
-    expect(html).toContain('el último número que veas completo')
+    expect(html).toContain('<text x="70mm" y="8mm" text-anchor="middle">70</text>')
+    expect(html).toContain('el último milímetro que veas')
+  })
+
+  it('dibuja la regla como un SVG que se recorta sin encoger la página', () => {
+    const html = createCalibrationGuideHtml(
+      { paperWidth: '80mm', widthMm: null, offsetMm: 0 },
+      profile,
+    )
+    // Marcas HTML fuera del área hacían que Chromium redujera la escala de la guía.
+    expect(html).not.toContain('class="mark')
+    expect(html).toContain('<svg class="ruler" width="100%"')
+    // Una marca por milímetro, de 0 a 72.
+    expect(html.match(/<line x1="\d+mm" x2="\d+mm" y1="(?:9|11|12\.5)mm"/g)).toHaveLength(73)
+    // Los dos bordes gruesos son trazos: la impresión omite los fondos.
+    expect(html.match(/stroke-width="0\.5mm"/g)).toHaveLength(2)
+    expect(html).toContain('<line x1="71.75mm" x2="71.75mm" y1="0"')
+    expect(html).not.toMatch(/background:\s*#000/)
+  })
+
+  it('mantiene cuadrado el QR si el área lo encoge y deja el alto fijo al Code 128', () => {
+    const html = createEntryTicketHtml('80mm', profile, entry)
+    expect(html.match(/max-width: 100%; height: auto/g)).toHaveLength(1)
+  })
+
+  it('distingue la cancelación del diálogo de una falla de impresión', () => {
+    expect(isPrintCancellation('cancelled')).toBe(true)
+    expect(isPrintCancellation('Print job canceled')).toBe(true)
+    expect(isPrintCancellation('failed')).toBe(false)
+    expect(isPrintCancellation(undefined)).toBe(false)
+  })
+})
+
+describe('documentos que recibe el cliente', () => {
+  const monthlyReceipt: MonthlyReceiptSnapshot = {
+    version: 1,
+    receiptNumber: 12,
+    issuedAt: '2026-08-18T15:00:00.000Z',
+    customerName: 'Carlos Peña',
+    documentNumber: null,
+    plate: 'MEN001',
+    vehicleType: 'car',
+    planName: 'Mensualidad automóvil',
+    startsAt: '2026-08-18T05:00:00.000Z',
+    endsAt: '2026-09-18T05:00:00.000Z',
+    amountCop: 150_000,
+    paidCop: 150_000,
+    balanceCop: 0,
+    method: 'cash',
+    receivedCop: null,
+    changeCop: null,
+    reference: null,
+  }
+  const note = 'El parqueadero no se hace responsable de los objetos dejados en el vehículo.'
+
+  it('cierra tiquete y recibos con el aviso de responsabilidad en letra pequeña', () => {
+    const documents = [
+      createEntryTicketHtml('80mm', profile, entry),
+      createExitReceiptHtml('58mm', profile, receipt),
+      createMonthlyReceiptHtml('80mm', profile, monthlyReceipt),
+    ]
+    for (const html of documents) {
+      // Es lo último del documento, después del pie.
+      expect(html).toMatch(
+        new RegExp(`<p class="footer">[\\s\\S]*</p>\\s*<p class="legal">${note}</p>\\s*</body>`),
+      )
+    }
+    expect(documents[0]).toContain('.legal { margin-top: 2mm; text-align: center; font-size: 11px;')
+  })
+
+  it('no lo añade a los documentos internos', () => {
+    expect(createTestTicketHtml('80mm', profile)).not.toContain(note)
+    expect(
+      createCalibrationGuideHtml({ paperWidth: '80mm', widthMm: null, offsetMm: 0 }, profile),
+    ).not.toContain(note)
+  })
+
+  it('marca como reimpresión el duplicado de un recibo de mensualidad', () => {
+    expect(createMonthlyReceiptHtml('80mm', profile, monthlyReceipt)).not.toContain('REIMPRESIÓN')
+    expect(createMonthlyReceiptHtml('80mm', profile, monthlyReceipt, { reprint: true })).toContain(
+      '** REIMPRESIÓN **',
+    )
+  })
+})
+
+describe('cierre de caja', () => {
+  const summary = {
+    sessionId: 'cash-1',
+    employeeName: 'Ana Ruiz',
+    openedAt: '2026-08-18T12:00:00.000Z',
+    closedAt: '2026-08-18T23:00:00.000Z',
+    openingAmountCop: 0,
+    collectedCop: 50_000,
+    voidedCop: 5_000,
+    expectedAmountCop: 50_000,
+    movementCount: 4,
+  }
+
+  it('imprime el conteo y la diferencia de un cierre con arqueo', () => {
+    const html = createCashCloseReceiptHtml('80mm', profile, {
+      ...summary,
+      closingAmountCop: 48_000,
+      differenceCop: -2_000,
+    })
+    expect(html).toContain('<span class="total-label">Efectivo contado</span>')
+    expect(html).toContain('Diferencia')
+    expect(html).toContain('Falta')
+  })
+
+  it('imprime el total del turno cuando se cerró sin conteo', () => {
+    const html = createCashCloseReceiptHtml('80mm', profile, {
+      ...summary,
+      closingAmountCop: null,
+      differenceCop: null,
+    })
+    expect(html).toContain('<span class="total-label">Total del turno</span>')
+    expect(html).toContain('Anulado')
+    expect(html).not.toContain('Efectivo contado')
+    expect(html).not.toContain('Diferencia')
+    expect(html).not.toContain('Fondo inicial')
   })
 })

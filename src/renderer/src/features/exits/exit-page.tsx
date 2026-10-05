@@ -235,6 +235,8 @@ export function ExitPage(): React.JSX.Element {
                   render={({ field }) => (
                     <input
                       id="exit-code"
+                      // Este campo ya recibe el lector: la escucha global no lo intercepta.
+                      data-scanner-field
                       // Un código escaneado es largo: se muestra compacto en lugar de a tamaño de matrícula.
                       className={
                         field.value.length > MAX_PLATE_LENGTH || isEntryTicketCode(field.value)

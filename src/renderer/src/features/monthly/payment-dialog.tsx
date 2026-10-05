@@ -1,5 +1,5 @@
 import { LoaderCircle } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { MonthlyPaymentRegistration, MonthlySubscription } from '@shared/contracts'
 import { formatCurrency } from '@shared/format'
 import { describeCoverage } from '@shared/monthly'
@@ -29,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useChargeModeStore } from '@/store/charge-mode-store'
 
 type PaymentDialogProps = {
   /** El diálogo se monta por mensualidad: el llamador usa `key={subscription.id}`. */
@@ -57,11 +58,19 @@ export function PaymentDialog({
   const [received, setReceived] = useState<number>(Number.NaN)
   const [reference, setReference] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const simpleChargeMode = useChargeModeStore((store) => store.simpleChargeMode)
+  const initializeChargeMode = useChargeModeStore((store) => store.initialize)
+
+  useEffect(() => {
+    void initializeChargeMode()
+  }, [initializeChargeMode])
 
   const amountValue = Number.isFinite(amount) ? amount : 0
   const receivedValue = Number.isFinite(received) ? received : null
-  const change = method === 'cash' ? calculateChange(amountValue, receivedValue) : null
-  const missingCash = method === 'cash' && (receivedValue === null || receivedValue < amountValue)
+  // Con el cobro simplificado no se registra efectivo recibido ni cambio.
+  const cashIsCounted = method === 'cash' && !simpleChargeMode
+  const change = cashIsCounted ? calculateChange(amountValue, receivedValue) : null
+  const missingCash = cashIsCounted && (receivedValue === null || receivedValue < amountValue)
   const aboveBalance = amountValue > subscription.balanceCop
   const invalidAmount = amountValue <= 0 || !Number.isInteger(amountValue)
 
@@ -71,7 +80,7 @@ export function PaymentDialog({
       subscriptionId: subscription.id,
       amountCop: amountValue,
       method,
-      receivedCop: method === 'cash' ? receivedValue : null,
+      receivedCop: cashIsCounted ? receivedValue : null,
       reference: reference.trim() === '' ? null : reference.trim(),
     })
     setSubmitting(false)
@@ -150,7 +159,7 @@ export function PaymentDialog({
           </Select>
         </Field>
 
-        {method === 'cash' ? (
+        {cashIsCounted ? (
           <Field>
             <FieldLabel htmlFor="payment-received">Efectivo recibido</FieldLabel>
             <Input
@@ -171,7 +180,7 @@ export function PaymentDialog({
                   : `Cambio a entregar: ${formatCurrency(change ?? 0)}`}
             </FieldDescription>
           </Field>
-        ) : (
+        ) : method === 'cash' ? null : (
           <Field>
             <FieldLabel htmlFor="payment-reference">Referencia (opcional)</FieldLabel>
             <Input
