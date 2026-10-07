@@ -230,7 +230,8 @@ export class CashService {
    * Anula un cobro ya emitido con motivo.
    *
    * Solo se anulan cobros de la caja abierta: modificar una caja cerrada rompería
-   * su arqueo, que queda inmutable tras el cierre.
+   * su arqueo, que queda inmutable tras el cierre. La anulación es definitiva:
+   * no reabre la sesión ni devuelve a pendiente la deuda que el cobro saldaba.
    */
   voidPayment(input: VoidPaymentInput): CashState {
     const session = this.getOpenSession()
@@ -266,15 +267,8 @@ export class CashService {
           "UPDATE receipts SET status = 'voided', updated_at = ? WHERE payment_id = ? AND status = 'issued'",
         )
         .run(now, input.paymentId)
-      // Si el cobro saldaba un pago pendiente, la deuda vuelve a quedar por
-      // cobrar: anularlo no puede hacerla desaparecer.
-      this.sqlite
-        .prepare(
-          `UPDATE pending_payments
-           SET status = 'pending', payment_id = NULL, settled_at = NULL, updated_at = ?
-           WHERE payment_id = ?`,
-        )
-        .run(now, input.paymentId)
+      // Si el cobro saldaba un pago pendiente, la deuda queda anulada con él:
+      // su fila sigue enlazada al pago anulado y no vuelve al listado.
       this.writeAudit('cash.payment_voided', 'payment', input.paymentId, now, {
         amountCop: payment.amount_cop,
         reason: input.reason,

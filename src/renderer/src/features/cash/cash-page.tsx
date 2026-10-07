@@ -515,8 +515,9 @@ export function CashPage(): React.JSX.Element {
               ¿Anular el cobro de {voiding ? formatCurrency(voiding.amountCop) : ''}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              El importe dejará de contar en la caja y su recibo quedará anulado. Esta acción no se
-              puede deshacer.
+              El importe dejará de contar en la caja y su recibo quedará anulado. Si era el cobro de
+              un pago pendiente, esa deuda también queda anulada y no vuelve al listado. Esta acción
+              no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <Field>

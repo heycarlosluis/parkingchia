@@ -402,6 +402,15 @@ Estados posibles: `propuesta`, `aceptada`, `reemplazada` o `descartada`.
 - Motivo: el propietario necesita recuperar un tiquete desde el listado de deudas. Reimprimir el tiquete normal de ingreso de una sesión cerrada podría presentarla como un vehículo todavía estacionado, y emitir un recibo sin haber cobrado atribuiría un pago inexistente.
 - Consecuencia: `reprintEntryTicket` sigue limitado a ingresos activos; la deuda usa `reprintPendingPaymentTicket`. Los símbolos comparten la referencia original y al escanearlos se consulta SQLite. Las plantillas comparten el generador de símbolos y los perfiles térmicos de 58 y 80 mm. No hay cambios de esquema ni recalculo del saldo; la interfaz bloquea impresiones repetidas en curso y muestra errores o cancelaciones para poder reintentar.
 
+## D-048 — Anular el cobro de un pago pendiente anula también la deuda
+
+- Fecha: 2026-10-06
+- Estado: aceptada
+- Reemplaza: la excepción de D-044 por la que anular en Caja el cobro de un pendiente lo devolvía a pendiente. El resto de D-044 sigue vigente.
+- Decisión: `voidPayment` deja de tocar `pending_payments`. Al anular el cobro que saldó un pendiente, el pago y el recibo quedan `voided` y la fila de la deuda permanece en `paid` enlazada a ese pago anulado; esa combinación es una deuda anulada. No vuelve a Pagos pendientes, al saldo pendiente de la caja, al aviso «Este carro tiene un pago pendiente» ni al estado «Pago pendiente» del Historial, y la sesión sigue cerrada, así que tampoco reaparece en Parqueo activo. La confirmación de Caja lo advierte. La migración `0011` es solo de datos: enlaza a su pago anulado más reciente los pendientes que una anulación de `0.1.0-alpha.10` había devuelto al listado y registra cada corrección en `audit_logs` con el actor `system-migration`.
+- Motivo: el propietario lo pidió expresamente tras usarlo en operación: una anulación debe dejar el cobro anulado por completo, sin que la deuda reaparezca como pendiente. Se conserva la fila en lugar de borrarla o de ampliar el `CHECK` de estado, lo que habría obligado a recrear la tabla; el pago anulado ya expresa el resultado y la restricción `pending_payments_settlement_consistent` se sigue cumpliendo.
+- Consecuencia: anular no reabre nada, sin excepciones. Un cobro de pendiente anulado por error (por ejemplo, por el medio de pago equivocado) ya no se puede volver a cobrar desde el listado: la corrección es manual. Toda consulta de deudas vigentes debe seguir filtrando `status = 'pending'`, y «deuda cobrada» significa `paid` con un pago `completed`. La migración solo afecta pendientes cuya sesión tiene un pago anulado; los que nunca se cobraron siguen por cobrar.
+
 ## Plantilla para una nueva decisión
 
 ```markdown

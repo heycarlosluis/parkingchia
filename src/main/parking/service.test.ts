@@ -1026,7 +1026,7 @@ describe('pago pendiente', () => {
     expect(after.totalCollectedCop).toBe(10_000)
   })
 
-  it('anular el cobro de un pendiente lo deja otra vez por cobrar', () => {
+  it('anular el cobro de un pendiente lo anula por completo, sin devolverlo al listado', () => {
     const pending = leavePending()
     parking.settlePendingPayment({
       pendingPaymentId: pending.id,
@@ -1035,22 +1035,57 @@ describe('pago pendiente', () => {
     })
     const paymentId = cash.getState().movements[0]!.paymentId
 
-    cash.voidPayment({ paymentId, reason: 'Se cobró con el medio equivocado' })
+    const state = cash.voidPayment({ paymentId, reason: 'El cliente no debía ese cobro' })
 
-    expect(parking.listPendingPayments()).toEqual([pending])
-    expect(cash.getState().collectedCop).toBe(0)
+    expect(state.collectedCop).toBe(0)
+    expect(state.voidedCop).toBe(10_000)
+    expect(state.pendingBalance).toEqual({ count: 0, totalCop: 0 })
+    expect(parking.listPendingPayments()).toEqual([])
+    expect(parking.listActiveSessions({ search: '' })).toEqual([])
+    // Ni la matrícula ni el tiquete viejo vuelven a avisar de una deuda.
+    expect(() => parking.resolveExitTarget(pending.plate)).toThrow(
+      expect.objectContaining({ code: 'SESSION_NOT_FOUND' }),
+    )
+    expect(() => parking.resolveExitTarget(encodeEntryTicketReference(pending.sessionId))).toThrow(
+      expect.objectContaining({ code: 'SESSION_NOT_ACTIVE' }),
+    )
 
-    // Se vuelve a cobrar con un recibo nuevo; el anulado conserva su número.
-    const again = parking.settlePendingPayment({
+    // La deuda anulada ya no se puede cobrar ni reimprimir.
+    expect(() =>
+      parking.settlePendingPayment({
+        pendingPaymentId: pending.id,
+        method: 'card',
+        receivedCop: null,
+      }),
+    ).toThrow(expect.objectContaining({ code: 'PENDING_PAYMENT_NOT_FOUND' }))
+    expect(() => parking.findPendingPayment(pending.id)).toThrow(
+      expect.objectContaining({ code: 'PENDING_PAYMENT_NOT_FOUND' }),
+    )
+
+    // El historial deja de marcarla pendiente y no suma el importe anulado.
+    const history = parking.listExits({ search: '', from: '', to: '', limit: 10 })
+    expect(history.records[0]).toMatchObject({
+      sessionId: pending.sessionId,
+      paymentPending: false,
+      receiptNumber: null,
+    })
+    expect(history.totalCollectedCop).toBe(0)
+  })
+
+  it('el vehículo puede volver a ingresar sin aviso de deuda tras anular el cobro', () => {
+    const pending = leavePending()
+    parking.settlePendingPayment({
       pendingPaymentId: pending.id,
-      method: 'card',
-      receivedCop: null,
+      method: 'cash',
+      receivedCop: 10_000,
     })
-    expect(again.receiptNumber).toBe(2)
-    expect(parking.findReceiptSnapshot(pending.sessionId)).toMatchObject({
-      receiptNumber: 2,
-      method: 'card',
+    cash.voidPayment({
+      paymentId: cash.getState().movements[0]!.paymentId,
+      reason: 'El cliente no debía ese cobro',
     })
+
+    parking.registerEntry(entry(pending.plate))
+    expect(parking.resolveExitTarget(pending.plate).kind).toBe('session')
   })
 })
 

@@ -388,3 +388,91 @@ describe('saldo pendiente en el cierre de caja', () => {
     })
   })
 })
+
+describe('pagos pendientes devueltos por una anulación', () => {
+  it('migra desde 0010 anulando solo las deudas que una anulación había devuelto al listado', () => {
+    const databasePath = path.join(directory, 'voided-pending.sqlite')
+    const at = '2026-10-06T15:00:00.000Z'
+    const legacy = new DatabaseManager(databasePath, migrationsUpTo(10))
+    legacy.initialize()
+    const sqlite = legacy.getNativeConnection()
+    const seedSession = sqlite.prepare(
+      `INSERT INTO parking_sessions
+       (id, vehicle_id, entered_at, exited_at, status, calculated_amount_cop, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'closed', 10000, ?, ?)`,
+    )
+    const seedPayment = sqlite.prepare(
+      `INSERT INTO payments
+       (id, parking_session_id, amount_cop, method, status, paid_at, created_at, updated_at)
+       VALUES (?, ?, 10000, 'cash', ?, ?, ?, ?)`,
+    )
+    const seedPending = sqlite.prepare(
+      `INSERT INTO pending_payments
+       (id, parking_session_id, amount_cop, status, payment_id, snapshot_json, registered_at,
+        settled_at, created_at, updated_at)
+       VALUES (?, ?, 10000, ?, ?, '{}', ?, ?, ?, ?)`,
+    )
+    for (const [index, key] of ['returned', 'owed', 'paid'].entries()) {
+      sqlite
+        .prepare(
+          `INSERT INTO vehicles (id, plate, vehicle_type, status, created_at, updated_at)
+           VALUES (?, ?, 'car', 'active', ?, ?)`,
+        )
+        .run(`vehicle-${key}`, `PLA00${index}`, at, at)
+      seedSession.run(`session-${key}`, `vehicle-${key}`, at, at, at, at)
+    }
+    // Cobrada y anulada dos veces con la regla anterior: volvió a quedar pendiente.
+    seedPayment.run('void-old', 'session-returned', 'voided', '2026-10-06T16:00:00.000Z', at, at)
+    seedPayment.run('void-new', 'session-returned', 'voided', '2026-10-06T17:00:00.000Z', at, at)
+    seedPending.run('pending-returned', 'session-returned', 'pending', null, at, null, at, at)
+    // Nunca se cobró: debe seguir por cobrar.
+    seedPending.run('pending-owed', 'session-owed', 'pending', null, at, null, at, at)
+    // Cobrada con normalidad: no cambia.
+    seedPayment.run('payment-paid', 'session-paid', 'completed', at, at, at)
+    seedPending.run('pending-paid', 'session-paid', 'paid', 'payment-paid', at, at, at, at)
+    const untouched = {
+      owed: sqlite.prepare("SELECT * FROM pending_payments WHERE id = 'pending-owed'").get(),
+      paid: sqlite.prepare("SELECT * FROM pending_payments WHERE id = 'pending-paid'").get(),
+      payments: sqlite.prepare('SELECT * FROM payments ORDER BY id').all(),
+    }
+    legacy.close()
+
+    const upgraded = new DatabaseManager(databasePath, path.resolve('drizzle'))
+    upgraded.initialize()
+    const migrated = upgraded.getNativeConnection()
+    expect(
+      migrated
+        .prepare(
+          "SELECT status, payment_id, settled_at, amount_cop FROM pending_payments WHERE id = 'pending-returned'",
+        )
+        .get(),
+    ).toEqual({
+      status: 'paid',
+      payment_id: 'void-new',
+      settled_at: '2026-10-06T17:00:00.000Z',
+      amount_cop: 10000,
+    })
+    expect(
+      migrated.prepare("SELECT * FROM pending_payments WHERE id = 'pending-owed'").get(),
+    ).toEqual(untouched.owed)
+    expect(
+      migrated.prepare("SELECT * FROM pending_payments WHERE id = 'pending-paid'").get(),
+    ).toEqual(untouched.paid)
+    expect(migrated.prepare('SELECT * FROM payments ORDER BY id').all()).toEqual(untouched.payments)
+    expect(
+      migrated
+        .prepare(
+          "SELECT entity_id, actor, details_json FROM audit_logs WHERE action = 'parking.pending_payment_voided_by_migration'",
+        )
+        .all(),
+    ).toEqual([
+      {
+        entity_id: 'session-returned',
+        actor: 'system-migration',
+        details_json: '{"pendingPaymentId":"pending-returned","amountCop":10000}',
+      },
+    ])
+    expect(migrated.pragma('foreign_key_check')).toEqual([])
+    upgraded.close()
+  })
+})

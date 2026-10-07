@@ -7,7 +7,7 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 ## Línea base
 
 - Rama de referencia: `main`.
-- Versión del corte: `0.1.0-alpha.10`.
+- Versión del corte: `0.1.0-alpha.11`.
 - Versión publicada más reciente: `0.1.0-alpha.10`.
 - Tag publicado más reciente: `v0.1.0-alpha.10`.
 - CI de la versión publicada: aprobado.
@@ -64,9 +64,9 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 
 - Reportes tiene navegación y estado vacío; falta su flujo de negocio.
 - Un cobro solo se anula dentro de la caja abierta que lo contiene; un cobro emitido sin caja abierta o en una caja ya cerrada no se anula desde Caja.
-- Anular un cobro de parqueo no reabre la sesión ya cerrada: solo descuenta el importe del arqueo y deja el recibo anulado. Reabrir o volver a cobrar es una corrección manual del operador.
+- Anular un cobro de parqueo no reabre la sesión ya cerrada ni devuelve a pendiente la deuda que ese cobro saldaba (D-048): solo descuenta el importe del arqueo y deja el recibo anulado. Reabrir o volver a cobrar es una corrección manual del operador. El Historial muestra esas salidas como «sin cobro», sin un estado propio de cobro anulado.
 - No hay noción de cupos ni de aforo del parqueadero.
-- Un pago pendiente solo sale del listado cobrándolo: no existe una acción para condonarlo o anularlo, ni impresión automática al dejarlo pendiente; sí existe reimpresión manual desde Parqueo activo.
+- Un pago pendiente solo sale del listado cobrándolo; anular después ese cobro en Caja lo deja anulado. No existe una acción para condonar o anular un pendiente sin cobrarlo antes, ni impresión automática al dejarlo pendiente; sí existe reimpresión manual desde Parqueo activo.
 - El plan `day` del modelo no tiene pantalla ni servicio; queda reservado para un eventual cobro por día distinto de la plena.
 
 ## Validaciones conocidas de la línea base
@@ -78,7 +78,7 @@ npm ci
 npm run format:check
 npm run typecheck
 npm run lint
-npm run test:run       33 archivos, 375 pruebas
+npm run test:run       33 archivos, 377 pruebas
 npm run db:generate
 npm run db:migrate
 npm run db:seed
@@ -178,3 +178,5 @@ El 2026-10-06 se añadió «Reimprimir tiquete» a cada fila de Pagos pendientes
 En la preparación de `0.1.0-alpha.10` volvieron a pasar formato, tipos, lint, las 375 pruebas y la compilación; `db:generate` no produjo cambios y `db:migrate` completó las once migraciones sobre una base temporal. El empaquetado local creó ambas aplicaciones macOS con las migraciones y SQLite nativo incluidos, pero la creación de DMG falló por `hdiutil: Resource temporarily unavailable` en este sistema. La validación del DMG queda a cargo del runner macOS del workflow oficial; no se considera aprobado el comando local completo.
 
 `0.1.0-alpha.10` se publicó el 2026-10-06 (2026-10-07 UTC) en [GitHub Releases](https://github.com/heycarlosluis/parkingchia/releases/tag/v0.1.0-alpha.10). [CI](https://github.com/heycarlosluis/parkingchia/actions/runs/37567187627) y los cuatro jobs de [Release](https://github.com/heycarlosluis/parkingchia/actions/runs/37567190787) terminaron correctamente. Se comprobaron el instalador NSIS de Windows x64, los DMG y ZIP de macOS x64/arm64, sus blockmaps y los YAML de actualización: ambos metadatos declaran la versión correcta y referencian archivos publicados con los tamaños correspondientes. Los dos ZIP locales pasaron la comprobación de integridad. La release sigue siendo alpha y los instaladores continúan sin firma; la impresión física y la actualización completa en un equipo instalado siguen pendientes de validación en el hardware del propietario.
+
+El mismo 2026-10-06 se corrigió la anulación del cobro de un pago pendiente (D-048), a pedido del propietario: anularlo en Caja devolvía la deuda a Pagos pendientes y ahora queda anulada por completo, fuera del listado, del saldo pendiente, de los avisos y del Historial como pendiente. La migración `0011` solo corrige datos: anula las deudas que una anulación hecha con `0.1.0-alpha.10` había devuelto al listado, con auditoría, sin tocar los pendientes que nunca se cobraron. `0.1.0-alpha.11` se preparó para distribuir esta corrección.

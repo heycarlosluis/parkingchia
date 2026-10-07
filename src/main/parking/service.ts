@@ -665,7 +665,7 @@ export class ParkingService {
     if (!row) {
       throw new OperationError(
         'PENDING_PAYMENT_NOT_FOUND',
-        'Ese pago pendiente ya se cobró o no existe. Actualiza el listado.',
+        'Ese pago pendiente ya se cobró, se anuló o no existe. Actualiza el listado.',
       )
     }
     return this.toPendingPayment(row)
@@ -684,7 +684,7 @@ export class ParkingService {
     if (!row) {
       throw new OperationError(
         'PENDING_PAYMENT_NOT_FOUND',
-        'Ese pago pendiente ya se cobró o no existe. Actualiza el listado.',
+        'Ese pago pendiente ya se cobró, se anuló o no existe. Actualiza el listado.',
       )
     }
     if (this.cash.getOpenSessionId() === null) {
