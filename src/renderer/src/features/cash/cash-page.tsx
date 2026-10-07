@@ -10,7 +10,8 @@ import {
   Wallet,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import type { CashMovement } from '@shared/contracts'
+import type { CloseCashSessionInput } from '@shared/cash'
+import type { CashCloseSummary, CashMovement } from '@shared/contracts'
 import { formatCurrency } from '@shared/format'
 import {
   CASH_MOVEMENT_SOURCE_LABELS,
@@ -106,6 +107,13 @@ export function CashPage(): React.JSX.Element {
     setReprintMessage(result.ok ? result.data.message : result.error.message)
   }
 
+  /** Cierra la caja y envía su recibo a la impresora sin esperar otro clic. */
+  const closeAndPrint = async (input: CloseCashSessionInput): Promise<CashCloseSummary | null> => {
+    const summary = await closeSession(input)
+    if (summary !== null) void printClose(summary.sessionId)
+    return summary
+  }
+
   const closeSummary = lastClose
 
   return (
@@ -181,7 +189,7 @@ export function CashPage(): React.JSX.Element {
               onClick={() => void printClose(closeSummary.sessionId)}
             >
               <Printer data-icon="inline-start" />
-              Imprimir recibo de cierre
+              Reimprimir recibo de cierre
             </Button>
             <Button
               type="button"
@@ -497,7 +505,7 @@ export function CashPage(): React.JSX.Element {
         simpleChargeMode={simpleChargeMode}
         error={error}
         onOpenChange={setClosing}
-        onSubmit={closeSession}
+        onSubmit={closeAndPrint}
       />
 
       <AlertDialog

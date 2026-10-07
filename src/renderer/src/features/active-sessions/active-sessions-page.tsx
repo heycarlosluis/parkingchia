@@ -170,27 +170,27 @@ export function ActiveSessionsPage(): React.JSX.Element {
               {notice.exit.receiptNumber === null
                 ? notice.exit.monthlyCoverage
                   ? `Cubierta por la mensualidad de ${notice.exit.monthlyCoverage.customerName}.`
-                  : 'Dentro del tiempo de gracia, sin cobro ni recibo.'
+                  : 'Dentro del tiempo de gracia, sin cobro.'
                 : `Recibo N.º ${notice.exit.receiptNumber} · ${PAYMENT_METHOD_LABELS[notice.exit.method]}`}
               {notice.exit.changeCop === null
                 ? ''
                 : ` · Cambio a entregar: ${formatCurrency(notice.exit.changeCop)}`}
             </span>
             {/* El aviso ya es una región viva: anunciar aquí duplicaría la lectura. */}
-            <span className="reprint-status">{reprintMessage}</span>
+            <span className="reprint-status">
+              {reprintMessage === '' ? notice.exit.printMessage : reprintMessage}
+            </span>
           </AlertDescription>
           <AlertActions>
-            {notice.exit.receiptNumber === null ? null : (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void reprintReceipt(notice.exit.sessionId)}
-              >
-                <Printer data-icon="inline-start" />
-                Reimprimir recibo
-              </Button>
-            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void reprintReceipt(notice.exit.sessionId)}
+            >
+              <Printer data-icon="inline-start" />
+              {notice.exit.receiptNumber === null ? 'Reimprimir comprobante' : 'Reimprimir recibo'}
+            </Button>
             <Button
               type="button"
               variant="ghost"

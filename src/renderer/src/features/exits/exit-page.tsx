@@ -277,17 +277,19 @@ export function ExitPage(): React.JSX.Element {
               <LogOut data-icon="inline-start" />
               Registrar otra salida
             </Button>
-            {lastExit.receiptNumber === null ? null : (
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => void reprint()}
-                disabled={reprinting}
-              >
-                <Printer data-icon="inline-start" />
-                {reprinting ? 'Imprimiendo…' : 'Reimprimir recibo'}
-              </Button>
-            )}
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => void reprint()}
+              disabled={reprinting}
+            >
+              <Printer data-icon="inline-start" />
+              {reprinting
+                ? 'Imprimiendo…'
+                : lastExit.receiptNumber === null
+                  ? 'Reimprimir comprobante'
+                  : 'Reimprimir recibo'}
+            </Button>
           </CardFooter>
         </Card>
       ) : (

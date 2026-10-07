@@ -38,6 +38,15 @@ function describeCharge(record: ExitRecord): string {
   return describeBilledTime(record.charge)
 }
 
+/**
+ * Una salida se reimprime si tiene recibo o si cerró en cero, con su
+ * comprobante sin cobro. Un cobro anulado o pendiente no tiene qué reimprimir.
+ */
+function canReprint(record: ExitRecord): boolean {
+  if (record.receiptNumber !== null) return true
+  return record.status === 'closed' && !record.paymentPending && record.totalCop === 0
+}
+
 export function HistoryPage(): React.JSX.Element {
   const [history, setHistory] = useState<ExitHistory>(EMPTY_HISTORY)
   const [search, setSearch] = useState('')
@@ -272,7 +281,7 @@ export function HistoryPage(): React.JSX.Element {
                           )}
                         </td>
                         <td className="actions">
-                          {record.receiptNumber === null ? null : (
+                          {canReprint(record) ? (
                             <Button
                               type="button"
                               variant="outline"
@@ -282,7 +291,7 @@ export function HistoryPage(): React.JSX.Element {
                               <Printer data-icon="inline-start" />
                               Reimprimir
                             </Button>
-                          )}
+                          ) : null}
                         </td>
                       </tr>
                     )

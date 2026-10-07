@@ -112,6 +112,31 @@ describe('Historial de salidas', () => {
     })
   })
 
+  it('reimprime el comprobante de una salida en cero, pero no el de un cobro anulado', async () => {
+    const free = { ...exitRecords[0]!, totalCop: 0, receiptNumber: null, method: null }
+    vi.mocked(window.parkingAPI.listExits).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        records: [
+          { ...free, sessionId: 'free-1', plate: 'FRE001' },
+          // Cobro anulado: quedó sin recibo, pero no fue una salida en cero.
+          { ...free, sessionId: 'void-1', plate: 'VOI001', totalCop: 10_000 },
+        ],
+        totalCount: 2,
+        totalCollectedCop: 0,
+      },
+    })
+    render(<HistoryPage />)
+
+    const table = await screen.findByRole('table')
+    const voided = within(table).getByRole('row', { name: /VOI001/ })
+    expect(within(voided).queryByRole('button', { name: /Reimprimir/ })).not.toBeInTheDocument()
+
+    const row = within(table).getByRole('row', { name: /FRE001/ })
+    await userEvent.click(within(row).getByRole('button', { name: /Reimprimir/ }))
+    expect(window.parkingAPI.reprintReceipt).toHaveBeenCalledWith({ sessionId: 'free-1' })
+  })
+
   it('muestra el error cuando la consulta falla', async () => {
     vi.mocked(window.parkingAPI.listExits).mockResolvedValueOnce({
       ok: false,

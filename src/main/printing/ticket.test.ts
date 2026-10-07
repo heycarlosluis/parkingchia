@@ -11,6 +11,7 @@ import {
   createCashCloseReceiptHtml,
   createEntryTicketHtml,
   createExitReceiptHtml,
+  createFreeExitTicketHtml,
   createMonthlyReceiptHtml,
   createPendingPaymentTicketHtml,
   createTestTicketHtml,
@@ -204,6 +205,47 @@ describe('recibo de salida', () => {
     expect(html).not.toContain('IVA')
     expect(html).not.toContain('Recibido')
     expect(html).toContain('Tarjeta')
+  })
+})
+
+describe('comprobante de salida sin cobro', () => {
+  const ticket = {
+    sessionId: '123e4567-e89b-12d3-a456-426614174000',
+    plate: 'ABC123',
+    vehicleType: 'car' as const,
+    ratePlanName: 'Automóvil por hora',
+    enteredAt: '2026-08-18T15:00:00.000Z',
+    exitedAt: '2026-08-18T15:05:00.000Z',
+    totalMinutes: 5,
+    monthlyCustomerName: null,
+    employeeName: 'Ana Ruiz',
+    notes: null,
+  }
+
+  it('deja constancia de la salida en cero sin presentarse como recibo', () => {
+    const html = createFreeExitTicketHtml('80mm', profile, ticket)
+    expect(html).toContain('Comprobante de salida')
+    expect(html).not.toContain('Recibo de salida')
+    expect(html).not.toContain('N.º')
+    expect(html).toContain('ABC123')
+    expect(html).toContain('5 min')
+    expect(html).toMatch(/Total<\/span><span class="total-amount">\$\s0</)
+    expect(html).toContain('Sin cobro')
+    expect(html).toContain('Ana Ruiz')
+    expect(html).not.toContain('REIMPRESIÓN')
+  })
+
+  it('nombra la mensualidad que cubrió la salida y marca los duplicados', () => {
+    const html = createFreeExitTicketHtml(
+      '58mm',
+      profile,
+      { ...ticket, monthlyCustomerName: 'María <Ríos>', employeeName: null },
+      { reprint: true },
+    )
+    expect(html).toContain('María &lt;Ríos&gt;')
+    expect(html).toContain('Cubierto por mensualidad')
+    expect(html).not.toContain('Atendió')
+    expect(html).toContain('REIMPRESIÓN')
   })
 })
 

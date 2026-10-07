@@ -179,6 +179,50 @@ describe('Caja', () => {
     })
   })
 
+  it('imprime el recibo de cierre automáticamente al cerrar la caja', async () => {
+    vi.mocked(window.parkingAPI.getCashState).mockResolvedValue(ok(openState))
+    vi.mocked(window.parkingAPI.closeCashSession).mockResolvedValueOnce(ok(closedSummary))
+    vi.mocked(window.parkingAPI.printCashCloseReceipt).mockClear()
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('button', { name: /Cerrar caja/ }))
+    const dialog = await screen.findByRole('dialog')
+    const counted = within(dialog).getByLabelText('Efectivo contado')
+    await userEvent.clear(counted)
+    await userEvent.type(counted, '55000')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cerrar caja' }))
+
+    await waitFor(() => {
+      expect(window.parkingAPI.printCashCloseReceipt).toHaveBeenCalledTimes(1)
+    })
+    expect(window.parkingAPI.printCashCloseReceipt).toHaveBeenCalledWith({
+      sessionId: 'cash-closed-1',
+    })
+    // El resultado de la impresión queda a la vista y se puede repetir.
+    expect(await screen.findByText('No hay impresoras.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Reimprimir recibo de cierre/ })).toBeInTheDocument()
+  })
+
+  it('no imprime nada si el cierre de caja falla', async () => {
+    vi.mocked(window.parkingAPI.getCashState).mockResolvedValue(ok(openState))
+    vi.mocked(window.parkingAPI.closeCashSession).mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'NO_CASH_SESSION', message: 'No hay una caja abierta para cerrar.' },
+    })
+    vi.mocked(window.parkingAPI.printCashCloseReceipt).mockClear()
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('button', { name: /Cerrar caja/ }))
+    const dialog = await screen.findByRole('dialog')
+    const counted = within(dialog).getByLabelText('Efectivo contado')
+    await userEvent.clear(counted)
+    await userEvent.type(counted, '55000')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cerrar caja' }))
+
+    expect(await screen.findAllByText('No hay una caja abierta para cerrar.')).not.toHaveLength(0)
+    expect(window.parkingAPI.printCashCloseReceipt).not.toHaveBeenCalled()
+  })
+
   it('al cerrar informa los pagos pendientes sin tocar el esperado ni la diferencia', async () => {
     vi.mocked(window.parkingAPI.getCashState).mockResolvedValue(
       ok({ ...openState, pendingBalance: { count: 2, totalCop: 25_000 } }),
@@ -250,12 +294,12 @@ describe('Caja', () => {
     })
   })
 
-  it('ofrece imprimir el recibo del cierre recién hecho y deja descartarlo', async () => {
+  it('ofrece reimprimir el recibo del cierre recién hecho y deja descartarlo', async () => {
     useCashStore.setState({ lastClose: closedSummary, session: null, loading: false })
     renderPage()
 
     expect(await screen.findByText(/Caja cerrada/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Imprimir recibo de cierre/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Reimprimir recibo de cierre/ })).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'Entendido' }))
     expect(screen.queryByText(/Caja cerrada/)).not.toBeInTheDocument()

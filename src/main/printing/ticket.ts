@@ -15,7 +15,7 @@ import { describeBillingUnit, VEHICLE_TYPE_LABELS } from '@shared/tariff'
 import { describeCoverage } from '@shared/monthly'
 import { encodeEntryTicketReference, formatEntryTicketReference } from '@shared/entry-ticket'
 import type { MonthlyReceiptSnapshot } from '@main/monthly/service'
-import type { ReceiptSnapshot } from '@main/parking/service'
+import type { FreeExitTicket, ReceiptSnapshot } from '@main/parking/service'
 
 /** Ajustes de render comunes a todos los documentos. */
 export type TicketRenderOptions = {
@@ -418,6 +418,36 @@ export function createExitReceiptHtml(
     body,
     options,
   )
+}
+
+/** Comprobante de una salida que cerró en cero: deja constancia sin ser un recibo. */
+export function createFreeExitTicketHtml(
+  layout: LayoutInput,
+  profile: ParkingProfile | null,
+  ticket: FreeExitTicket,
+  options: TicketRenderOptions = {},
+): string {
+  const body = `
+    ${plateBlock(ticket.plate, ticket.vehicleType)}
+    ${RULE}
+    <dl>
+      ${row('Ingreso', dateTimeHtml(ticket.enteredAt))}
+      ${row('Salida', dateTimeHtml(ticket.exitedAt))}
+      ${row('Permanencia', escapeHtml(describeElapsed(ticket.totalMinutes)))}
+      ${row('Tarifa', escapeHtml(ticket.ratePlanName ?? 'Sin tarifa'))}
+      ${ticket.monthlyCustomerName === null ? '' : row('Mensualidad', escapeHtml(ticket.monthlyCustomerName))}
+    </dl>
+    ${RULE}
+    ${totalBlock('Total', 0)}
+    <dl>
+      ${row('Pago', ticket.monthlyCustomerName === null ? 'Sin cobro' : 'Cubierto por mensualidad')}
+      ${ticket.employeeName === null ? '' : row('Atendió', escapeHtml(ticket.employeeName))}
+    </dl>
+    ${notesBlock(ticket.notes)}
+    ${RULE}
+    <p class="footer">Gracias por su visita.</p>
+    ${LIABILITY_NOTE}`
+  return documentShell(layout, profile, { title: 'Comprobante de salida' }, body, options)
 }
 
 export function createMonthlyReceiptHtml(

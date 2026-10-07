@@ -204,6 +204,25 @@ describe('Registrar salida', () => {
         quotedAt: new Date().toISOString(),
       },
     })
+    vi.mocked(window.parkingAPI.closeSession).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        sessionId: covered.id,
+        plate: covered.plate,
+        vehicleType: covered.vehicleType,
+        ratePlanName: covered.ratePlanName,
+        enteredAt: covered.enteredAt,
+        exitedAt: new Date().toISOString(),
+        charge: { ...zeroCharge, totalMinutes: 90 },
+        method: 'cash',
+        receivedCop: null,
+        changeCop: null,
+        receiptNumber: null,
+        monthlyCoverage: coverage,
+        printed: true,
+        printMessage: 'El comprobante de salida se envió a la impresora.',
+      },
+    })
     renderExits()
 
     await userEvent.type(await screen.findByLabelText('Tiquete o matrícula'), 'ABC123')
@@ -220,6 +239,12 @@ describe('Registrar salida', () => {
 
     await userEvent.click(confirm)
     expect(await screen.findByText('Salida registrada')).toBeInTheDocument()
+    // La salida en cero también imprime y deja repetir su comprobante.
+    expect(
+      screen.getByText('El comprobante de salida se envió a la impresora.'),
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Reimprimir comprobante/ }))
+    expect(window.parkingAPI.reprintReceipt).toHaveBeenCalled()
   })
 
   it('registra la salida dentro de la tolerancia sin cobrar', async () => {

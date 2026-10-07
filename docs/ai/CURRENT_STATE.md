@@ -1,13 +1,13 @@
 # Estado actual del proyecto
 
-Última actualización: **2026-10-06**.
+Última actualización: **2026-10-07**.
 
 Este archivo describe el último corte conocido, no sustituye la verificación de `git status`, `package.json`, GitHub Actions ni el comportamiento ejecutable.
 
 ## Línea base
 
 - Rama de referencia: `main`.
-- Versión del corte: `0.1.0-alpha.11`.
+- Versión del corte: `0.1.0-alpha.12`.
 - Versión publicada más reciente: `0.1.0-alpha.11`.
 - Tag publicado más reciente: `v0.1.0-alpha.11`.
 - CI de la versión publicada: aprobado.
@@ -39,7 +39,8 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 - Salida transaccional: cotización contra el proceso principal, medio de pago, efectivo recibido con cálculo de cambio, pago y recibo consecutivo con snapshot inmutable, cierre de sesión e impresión del recibo con reimpresión disponible.
 - Registrar salida como pantalla propia en `/salidas`: acepta QR, Code 128 o matrícula, resuelve la sesión activa en el proceso principal y abre el diálogo de cobro ya liquidado. Los lectores USB HID en modo teclado funcionan en el campo y un código con prefijo propio abre la salida desde las demás pantallas cuando no hay un formulario o diálogo activo (D-034).
 - El recibo de salida deja constancia del empleado del turno y de la nota de la salida, y todo duplicado sale marcado como «REIMPRESIÓN» con su fecha y hora.
-- Salida dentro del tiempo de gracia que cierra la sesión sin cobro ni recibo.
+- Salida dentro del tiempo de gracia que cierra la sesión sin cobro ni recibo. Toda salida en cero, por tolerancia o por mensualidad, imprime un comprobante de salida sin número, reimprimible desde la confirmación y el Historial (D-049).
+- El cierre de caja imprime su recibo automáticamente y deja reimprimirlo (D-050).
 - Reimpresión de tiquetes desde cada fila de Pagos pendientes (D-047), con datos e importe guardados, marca de duplicado y código del ingreso original; sin cobro, recibo ni caja abierta.
 - Pago pendiente (D-044): el diálogo de cobro ofrece «Pago pendiente» junto a «Cancelar» y «Cobrar». La permanencia se detiene en ese instante, la sesión se cierra y el importe queda como una deuda independiente en `pending_payments`, sin pago ni recibo. El vehículo puede volver a ingresar con un tiquete nuevo y acumular varios pendientes, que se cobran por separado con su recibo normal. Registrar ingreso, Registrar salida (por matrícula o con el tiquete viejo) y el cobro de un ingreso nuevo muestran «Este carro tiene un pago pendiente»; Parqueo activo los reúne en el bloque «Pagos pendientes» y el Historial los marca con un estado propio.
 - Migración `0001` que recrea `rate_plans` preservando datos y referencias, con claves foráneas desactivadas alrededor de `migrate()` y verificación posterior con `PRAGMA foreign_key_check`.
@@ -78,7 +79,7 @@ npm ci
 npm run format:check
 npm run typecheck
 npm run lint
-npm run test:run       33 archivos, 377 pruebas
+npm run test:run       33 archivos, 384 pruebas
 npm run db:generate
 npm run db:migrate
 npm run db:seed
@@ -182,3 +183,5 @@ En la preparación de `0.1.0-alpha.10` volvieron a pasar formato, tipos, lint, l
 El mismo 2026-10-06 se corrigió la anulación del cobro de un pago pendiente (D-048), a pedido del propietario: anularlo en Caja devolvía la deuda a Pagos pendientes y ahora queda anulada por completo, fuera del listado, del saldo pendiente, de los avisos y del Historial como pendiente. La migración `0011` solo corrige datos: anula las deudas que una anulación hecha con `0.1.0-alpha.10` había devuelto al listado, con auditoría, sin tocar los pendientes que nunca se cobraron. `0.1.0-alpha.11` se preparó para distribuir esta corrección.
 
 `0.1.0-alpha.11` se publicó el 2026-10-06 (2026-10-07 UTC) en [GitHub Releases](https://github.com/heycarlosluis/parkingchia/releases/tag/v0.1.0-alpha.11). [CI](https://github.com/heycarlosluis/parkingchia/actions/runs/37572845884) y [Release](https://github.com/heycarlosluis/parkingchia/actions/runs/37572848572) terminaron correctamente. La release incluye el instalador NSIS de Windows x64, los DMG y ZIP de macOS x64/arm64, sus blockmaps y los YAML de actualización, que declaran la versión `0.1.0-alpha.11`. La corrección de D-048 se validó con pruebas automatizadas; falta comprobarla a mano en un equipo instalado, junto con el salto de actualización desde `0.1.0-alpha.10`.
+
+El 2026-10-07 se atendieron dos pedidos del propietario sobre la impresión. Las salidas en cero imprimen ahora un comprobante de salida sin número (D-049): antes solo imprimían las salidas cobradas, porque el papel dependía del recibo. Y el cierre de caja envía su recibo a la impresora sin pulsar el botón (D-050). No hay migración ni canales IPC nuevos. Pasaron `format:check`, `typecheck`, `lint`, 33 archivos con 384 pruebas y `build`. Falta confirmar ambos documentos en papel con la impresora del cliente. `0.1.0-alpha.12` se preparó para distribuir estos cambios.

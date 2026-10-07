@@ -411,6 +411,24 @@ Estados posibles: `propuesta`, `aceptada`, `reemplazada` o `descartada`.
 - Motivo: el propietario lo pidió expresamente tras usarlo en operación: una anulación debe dejar el cobro anulado por completo, sin que la deuda reaparezca como pendiente. Se conserva la fila en lugar de borrarla o de ampliar el `CHECK` de estado, lo que habría obligado a recrear la tabla; el pago anulado ya expresa el resultado y la restricción `pending_payments_settlement_consistent` se sigue cumpliendo.
 - Consecuencia: anular no reabre nada, sin excepciones. Un cobro de pendiente anulado por error (por ejemplo, por el medio de pago equivocado) ya no se puede volver a cobrar desde el listado: la corrección es manual. Toda consulta de deudas vigentes debe seguir filtrando `status = 'pending'`, y «deuda cobrada» significa `paid` con un pago `completed`. La migración solo afecta pendientes cuya sesión tiene un pago anulado; los que nunca se cobraron siguen por cobrar.
 
+## D-049 — Toda salida imprime: las que cierran en cero llevan un comprobante sin número
+
+- Fecha: 2026-10-07
+- Estado: aceptada
+- Complementa: D-013 y D-032, que siguen vigentes: una salida en cero no genera pago ni recibo
+- Decisión: registrar una salida imprime siempre. Si hubo cobro sale el recibo de siempre; si el total fue cero (tolerancia, tarifa en cero o mensualidad vigente) sale un «Comprobante de salida» con matrícula, ingreso, salida, permanencia, tarifa, total en cero, el motivo («Sin cobro» o «Cubierto por mensualidad» con el cliente), el empleado del turno y la nota. `findExitDocument` devuelve el recibo o el comprobante, y el canal existente de reimpresión de recibos sirve para ambos; no hay canal IPC nuevo. La confirmación de la salida y el Historial ofrecen reimprimirlo.
+- Motivo: el propietario necesita entregar siempre un papel al registrar una salida, aunque no haya nada que cobrar. No se emite un recibo en cero porque `payments.amount_cop` exige un valor positivo y un recibo sin pago consumiría un consecutivo y atribuiría un cobro inexistente.
+- Consecuencia: el comprobante no tiene número ni snapshot guardado: se reconstruye desde `parking_sessions`, así que no hay migración. La reimpresión omite al empleado en lugar de atribuir la salida a quien opera hoy, y su fecha y permanencia no dependen de la tarifa vigente. Un cobro anulado y un pago pendiente no son salidas en cero y no tienen comprobante. Las salidas en cero de versiones anteriores también pueden reimprimirlo.
+
+## D-050 — El cierre de caja imprime su recibo sin pedirlo
+
+- Fecha: 2026-10-07
+- Estado: aceptada
+- Complementa: D-019 y D-045
+- Decisión: al cerrar la caja, la pantalla envía el recibo de cierre a la impresora de inmediato, sin un clic adicional. El aviso del cierre muestra el resultado de la impresión y su botón pasa a llamarse «Reimprimir recibo de cierre».
+- Motivo: el propietario imprime el cierre siempre; pedirlo con un botón era un paso de más que podía olvidarse.
+- Consecuencia: la impresión ocurre después de guardar el cierre y un fallo de la impresora no lo deshace: se informa en el aviso y se reintenta con el botón o desde Cierres anteriores. Si el cierre falla no se imprime nada.
+
 ## Plantilla para una nueva decisión
 
 ```markdown

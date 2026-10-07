@@ -434,6 +434,57 @@ describe('cotización y salida', () => {
     expect(() => parking.findReceiptSnapshot(registration.sessionId)).toThrow(OperationError)
   })
 
+  it('una salida en cero tiene comprobante imprimible aunque no genere recibo', () => {
+    const registration = parking.registerEntry(entry())
+    ageSession(registration.sessionId, 5)
+    parking.closeSession({
+      sessionId: registration.sessionId,
+      expectedTotalCop: 0,
+      method: 'cash',
+      receivedCop: null,
+      notes: 'Solo dejó un paquete',
+    })
+
+    const atExit = parking.findExitDocument(registration.sessionId, { attendedNow: true })
+    expect(atExit).toMatchObject({
+      kind: 'free',
+      ticket: {
+        sessionId: registration.sessionId,
+        plate: 'ABC123',
+        vehicleType: 'car',
+        totalMinutes: 5,
+        monthlyCustomerName: null,
+        employeeName: cash.getOpenSessionEmployeeName(),
+        notes: 'Solo dejó un paquete',
+      },
+    })
+    // La reimpresión no atribuye la salida a quien opera hoy.
+    const reprint = parking.findExitDocument(registration.sessionId)
+    expect(reprint).toMatchObject({ kind: 'free', ticket: { employeeName: null } })
+  })
+
+  it('el documento de una salida cobrada es su recibo y un ingreso anulado no tiene ninguno', () => {
+    const charged = parking.registerEntry(entry())
+    ageSession(charged.sessionId, 90)
+    parking.closeSession({
+      sessionId: charged.sessionId,
+      expectedTotalCop: 10_000,
+      method: 'cash',
+      receivedCop: 10_000,
+      notes: null,
+    })
+    expect(parking.findExitDocument(charged.sessionId)).toMatchObject({
+      kind: 'receipt',
+      receipt: { receiptNumber: 1 },
+    })
+
+    const cancelled = parking.registerEntry(entry('DDD444'))
+    parking.cancelSession({ sessionId: cancelled.sessionId, reason: 'Ingreso por error' })
+    expect(() => parking.findExitDocument(cancelled.sessionId)).toThrow(
+      expect.objectContaining({ code: 'RECEIPT_NOT_FOUND' }),
+    )
+  })
+
   it('cobra la primera hora completa cuando la tolerancia arranca en la hora 1', () => {
     tariffs.updateSettings({ graceFromHour: 1 })
     const registration = parking.registerEntry(entry())
@@ -667,6 +718,11 @@ describe('exención por mensualidad', () => {
     const history = parking.listExits({ search: 'MEN001', from: '', to: '', limit: 50 })
     expect(history.records[0]?.monthlyCustomerName).toBe('Cliente mensual')
     expect(history.totalCollectedCop).toBe(0)
+    // La salida cubierta también imprime su comprobante, con el cliente mensual.
+    expect(parking.findExitDocument(registered.sessionId)).toMatchObject({
+      kind: 'free',
+      ticket: { plate: 'MEN001', monthlyCustomerName: 'Cliente mensual' },
+    })
   })
 
   it('cotiza en cero y muestra la mensualidad en el parqueo activo', () => {

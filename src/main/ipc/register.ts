@@ -194,9 +194,9 @@ export function registerIpcHandlers(services: Services): void {
   ipcMain.handle(IPC_CHANNELS.PARKING_CLOSE, (_event, rawInput: unknown) =>
     withAccess(async () => {
       const exit = services.parking.closeSession(parseOrReject(closeSessionSchema, rawInput))
-      if (exit.receiptNumber === null) return exit
-      const print = await services.printing.printExitReceipt(
-        services.parking.findReceiptSnapshot(exit.sessionId),
+      // Toda salida imprime: el recibo si se cobró o el comprobante si cerró en cero.
+      const print = await services.printing.printExitDocument(
+        services.parking.findExitDocument(exit.sessionId, { attendedNow: true }),
       )
       return { ...exit, printed: print.printed, printMessage: print.message }
     }),
@@ -245,8 +245,8 @@ export function registerIpcHandlers(services: Services): void {
   )
   ipcMain.handle(IPC_CHANNELS.PARKING_REPRINT, (_event, rawInput: unknown) =>
     withAccess(() =>
-      services.printing.printExitReceipt(
-        services.parking.findReceiptSnapshot(parseOrReject(quoteSessionSchema, rawInput).sessionId),
+      services.printing.printExitDocument(
+        services.parking.findExitDocument(parseOrReject(quoteSessionSchema, rawInput).sessionId),
         { reprint: true },
       ),
     ),

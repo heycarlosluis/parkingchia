@@ -103,7 +103,7 @@ Consulta `docs/database.md` y `src/main/database/schema.ts` antes de cambiar el 
 - Registrar el ingreso de un vehículo e imprimir su tiquete.
 - Listar y buscar sesiones activas, cotizar una salida, cobrarla con recibo o anular un ingreso.
 - Dejar una salida con el pago pendiente, listar los pagos pendientes, reimprimir su tiquete identificado como deuda y cobrar cada uno con su recibo.
-- Reimprimir el recibo de una salida ya cobrada.
+- Reimprimir el recibo de una salida ya cobrada o el comprobante de una salida que cerró en cero.
 - Consultar el historial de salidas por matrícula y rango de fechas.
 - Administrar mensualidades: clientes, planes mensuales, suscripciones, renovaciones, cancelaciones y pagos por abono, reimprimir el comprobante de un pago y consultar la cobertura vigente de una matrícula.
 - Consultar el estado de la caja, abrirla (eligiendo el empleado que opera el turno), cerrarla y anular un cobro con motivo.

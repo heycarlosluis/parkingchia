@@ -12,13 +12,14 @@ import type { SettingsService } from '@main/settings/service'
 import { MIN_PRINT_WIDTH_MM } from '@shared/ipc'
 import type { AccessService } from '@main/security/access-service'
 import type { MonthlyReceiptSnapshot } from '@main/monthly/service'
-import type { ReceiptSnapshot } from '@main/parking/service'
+import type { ExitDocument, FreeExitTicket, ReceiptSnapshot } from '@main/parking/service'
 import {
   contentWidthMm,
   createCalibrationGuideHtml,
   createCashCloseReceiptHtml,
   createEntryTicketHtml,
   createExitReceiptHtml,
+  createFreeExitTicketHtml,
   createMonthlyReceiptHtml,
   createPendingPaymentTicketHtml,
   createTestTicketHtml,
@@ -37,6 +38,8 @@ export interface TicketPrinter {
     options?: TicketRenderOptions,
   ): Promise<PrintResult>
   printExitReceipt(receipt: ReceiptSnapshot, options?: TicketRenderOptions): Promise<PrintResult>
+  printFreeExitTicket(ticket: FreeExitTicket, options?: TicketRenderOptions): Promise<PrintResult>
+  printExitDocument(document: ExitDocument, options?: TicketRenderOptions): Promise<PrintResult>
   printMonthlyReceipt(
     receipt: MonthlyReceiptSnapshot,
     options?: TicketRenderOptions,
@@ -99,6 +102,28 @@ export class ElectronTicketPrinter implements TicketPrinter {
         ? 'El recibo se reimprimió como duplicado.'
         : 'El recibo se envió a la impresora.',
     )
+  }
+
+  async printFreeExitTicket(
+    ticket: FreeExitTicket,
+    options: TicketRenderOptions = {},
+  ): Promise<PrintResult> {
+    return this.render(
+      (layout, profile) => createFreeExitTicketHtml(layout, profile, ticket, options),
+      options.reprint
+        ? 'El comprobante de salida se reimprimió como duplicado.'
+        : 'El comprobante de salida se envió a la impresora.',
+    )
+  }
+
+  /** Imprime lo que corresponda a una salida: su recibo o su comprobante sin cobro. */
+  async printExitDocument(
+    document: ExitDocument,
+    options: TicketRenderOptions = {},
+  ): Promise<PrintResult> {
+    return document.kind === 'receipt'
+      ? this.printExitReceipt(document.receipt, options)
+      : this.printFreeExitTicket(document.ticket, options)
   }
 
   async printPendingPaymentTicket(

@@ -78,6 +78,31 @@ export type ReceiptSnapshot = {
 }
 
 /**
+ * Comprobante de una salida que cerró en cero, por tolerancia o mensualidad.
+ *
+ * No es un recibo: no hay pago ni número consecutivo. Se arma con lo que quedó
+ * en la sesión, así que también sirve para reimprimirlo después.
+ */
+export type FreeExitTicket = {
+  sessionId: string
+  plate: string
+  vehicleType: VehicleType
+  ratePlanName: string | null
+  enteredAt: string
+  exitedAt: string
+  totalMinutes: number
+  /** Cliente mensual que cubrió la salida; `null` cuando fue la tolerancia. */
+  monthlyCustomerName: string | null
+  /** Empleado del turno al registrar la salida; `null` en una reimpresión. */
+  employeeName: string | null
+  notes: string | null
+}
+
+/** Documento imprimible de una salida: su recibo o, si cerró en cero, su comprobante. */
+export type ExitDocument =
+  { kind: 'receipt'; receipt: ReceiptSnapshot } | { kind: 'free'; ticket: FreeExitTicket }
+
+/**
  * Completa un recibo antiguo con los campos que agregaron la plena y el turno.
  *
  * Los recibos versión 1 se emitieron sin plenas: todas sus unidades eran horas
@@ -850,6 +875,56 @@ export class ParkingService {
       receiptNumber: row.receipt_number,
       charge,
       monthlyCustomerName: row.monthly_customer_name,
+    }
+  }
+
+  /**
+   * Documento de una salida ya registrada: el recibo si se cobró o el
+   * comprobante sin cobro si cerró en cero.
+   *
+   * `attendedNow` deja constancia del empleado del turno; solo aplica al
+   * imprimir en el momento de la salida, nunca en una reimpresión.
+   */
+  findExitDocument(sessionId: string, options: { attendedNow?: boolean } = {}): ExitDocument {
+    const row = this.sqlite
+      .prepare(
+        `SELECT s.id, v.plate, v.vehicle_type, r.name AS rate_plan_name, s.entered_at,
+                s.exited_at, s.notes, mc.full_name AS monthly_customer_name
+         FROM parking_sessions s
+         JOIN vehicles v ON v.id = s.vehicle_id
+         LEFT JOIN rate_plans r ON r.id = s.rate_plan_id
+         LEFT JOIN monthly_subscriptions ms ON ms.id = s.subscription_id
+         LEFT JOIN monthly_customers mc ON mc.id = ms.customer_id
+         WHERE s.id = ? AND s.status = 'closed' AND s.calculated_amount_cop = 0
+           AND s.exited_at IS NOT NULL`,
+      )
+      .get(sessionId) as
+      | {
+          id: string
+          plate: string
+          vehicle_type: VehicleType
+          rate_plan_name: string | null
+          entered_at: string
+          exited_at: string
+          notes: string | null
+          monthly_customer_name: string | null
+        }
+      | undefined
+    if (!row) return { kind: 'receipt', receipt: this.findReceiptSnapshot(sessionId) }
+    return {
+      kind: 'free',
+      ticket: {
+        sessionId: row.id,
+        plate: row.plate,
+        vehicleType: row.vehicle_type,
+        ratePlanName: row.rate_plan_name,
+        enteredAt: row.entered_at,
+        exitedAt: row.exited_at,
+        totalMinutes: elapsedMinutesOrZero(row.entered_at, row.exited_at),
+        monthlyCustomerName: row.monthly_customer_name,
+        employeeName: options.attendedNow ? this.cash.getOpenSessionEmployeeName() : null,
+        notes: row.notes,
+      },
     }
   }
 
