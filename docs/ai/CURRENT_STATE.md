@@ -8,10 +8,10 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 
 - Rama de referencia: `main`.
 - Versión del corte: `0.1.0-alpha.11`.
-- Versión publicada más reciente: `0.1.0-alpha.10`.
-- Tag publicado más reciente: `v0.1.0-alpha.10`.
+- Versión publicada más reciente: `0.1.0-alpha.11`.
+- Tag publicado más reciente: `v0.1.0-alpha.11`.
 - CI de la versión publicada: aprobado.
-- Release multiplataforma publicada: `0.1.0-alpha.10`, como pre-release.
+- Release multiplataforma publicada: `0.1.0-alpha.11`, como pre-release.
 - Artefactos publicados: NSIS Windows x64; DMG y ZIP macOS x64/arm64; metadatos YAML y blockmaps.
 
 ## Implementado y funcional
@@ -180,3 +180,5 @@ En la preparación de `0.1.0-alpha.10` volvieron a pasar formato, tipos, lint, l
 `0.1.0-alpha.10` se publicó el 2026-10-06 (2026-10-07 UTC) en [GitHub Releases](https://github.com/heycarlosluis/parkingchia/releases/tag/v0.1.0-alpha.10). [CI](https://github.com/heycarlosluis/parkingchia/actions/runs/37567187627) y los cuatro jobs de [Release](https://github.com/heycarlosluis/parkingchia/actions/runs/37567190787) terminaron correctamente. Se comprobaron el instalador NSIS de Windows x64, los DMG y ZIP de macOS x64/arm64, sus blockmaps y los YAML de actualización: ambos metadatos declaran la versión correcta y referencian archivos publicados con los tamaños correspondientes. Los dos ZIP locales pasaron la comprobación de integridad. La release sigue siendo alpha y los instaladores continúan sin firma; la impresión física y la actualización completa en un equipo instalado siguen pendientes de validación en el hardware del propietario.
 
 El mismo 2026-10-06 se corrigió la anulación del cobro de un pago pendiente (D-048), a pedido del propietario: anularlo en Caja devolvía la deuda a Pagos pendientes y ahora queda anulada por completo, fuera del listado, del saldo pendiente, de los avisos y del Historial como pendiente. La migración `0011` solo corrige datos: anula las deudas que una anulación hecha con `0.1.0-alpha.10` había devuelto al listado, con auditoría, sin tocar los pendientes que nunca se cobraron. `0.1.0-alpha.11` se preparó para distribuir esta corrección.
+
+`0.1.0-alpha.11` se publicó el 2026-10-06 (2026-10-07 UTC) en [GitHub Releases](https://github.com/heycarlosluis/parkingchia/releases/tag/v0.1.0-alpha.11). [CI](https://github.com/heycarlosluis/parkingchia/actions/runs/37572845884) y [Release](https://github.com/heycarlosluis/parkingchia/actions/runs/37572848572) terminaron correctamente. La release incluye el instalador NSIS de Windows x64, los DMG y ZIP de macOS x64/arm64, sus blockmaps y los YAML de actualización, que declaran la versión `0.1.0-alpha.11`. La corrección de D-048 se validó con pruebas automatizadas; falta comprobarla a mano en un equipo instalado, junto con el salto de actualización desde `0.1.0-alpha.10`.
