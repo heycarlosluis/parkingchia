@@ -7,7 +7,7 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 ## Línea base
 
 - Rama de referencia: `main`.
-- Versión del corte: `0.1.0-alpha.9`.
+- Versión del corte: `0.1.0-alpha.10` (preparada; publicación pendiente).
 - Versión publicada más reciente: `0.1.0-alpha.9`.
 - Tag publicado más reciente: `v0.1.0-alpha.9`.
 - CI de la versión publicada: aprobado.
@@ -171,3 +171,7 @@ El mismo 2026-10-06 se revisó y corrigió el flujo de mensualidades (D-046), ta
 Pasaron `format:check`, `typecheck`, `lint`, 33 archivos con 367 pruebas, `build`, `db:generate` (sin cambios adicionales) y `db:migrate` sobre una base temporal desechable. Las pruebas cubren migración desde `0009` con mensualidades, pagos y recibos anteriores, apertura del respaldo previo y comprobación de integridad, eliminación con historial, cobro y anulación de abonos desde Caja tras eliminar cliente y plan, cobertura y salida sin cobro conservadas, renovación, cancelación y errores de interfaz. Los cambios previos de pagos pendientes y cierre de caja se conservaron y quedan incluidos en esta validación general. Falta probar estos cambios manualmente en la aplicación instalada; no se generó instalador ni se publicó una versión en esta revisión.
 
 El 2026-10-06 se añadió «Reimprimir tiquete» a cada fila de Pagos pendientes (D-047). El proceso principal recupera la deuda seleccionada y conserva importe, fechas, tarifa y código originales; el papel indica el saldo pendiente y la marca de reimpresión, sin registrar un cobro ni emitir un recibo. Se rechazan deudas ya cobradas y se bloquean clics repetidos durante la impresión. Pasaron `format:check`, `typecheck`, `lint`, 33 archivos con 375 pruebas y `build`. Una verificación nativa con Electron generó PDFs de una página para 80 mm (72 mm imprimibles) y 58 mm (48 mm imprimibles), tanto sin margen como con 4 mm por lado. La impresión física sigue pendiente.
+
+`0.1.0-alpha.10` está preparada para publicar la reimpresión de tiquetes pendientes y los cambios D-044 a D-046. Incluye las migraciones aditivas `0008`, `0009` y `0010`; conserva los datos y crea un respaldo antes de migrar. Los builds oficiales de Windows y macOS se verificarán mediante GitHub Actions al enviar el tag.
+
+En la preparación de `0.1.0-alpha.10` volvieron a pasar formato, tipos, lint, las 375 pruebas y la compilación; `db:generate` no produjo cambios y `db:migrate` completó las once migraciones sobre una base temporal. El empaquetado local creó ambas aplicaciones macOS con las migraciones y SQLite nativo incluidos, pero la creación de DMG falló por `hdiutil: Resource temporarily unavailable` en este sistema. La validación del DMG queda a cargo del runner macOS del workflow oficial; no se considera aprobado el comando local completo.
