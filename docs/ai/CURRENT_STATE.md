@@ -8,10 +8,10 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 
 - Rama de referencia: `main`.
 - Versión del corte: `0.1.0-alpha.12`.
-- Versión publicada más reciente: `0.1.0-alpha.11`.
-- Tag publicado más reciente: `v0.1.0-alpha.11`.
+- Versión publicada más reciente: `0.1.0-alpha.12`.
+- Tag publicado más reciente: `v0.1.0-alpha.12`.
 - CI de la versión publicada: aprobado.
-- Release multiplataforma publicada: `0.1.0-alpha.11`, como pre-release.
+- Release multiplataforma publicada: `0.1.0-alpha.12`, como pre-release.
 - Artefactos publicados: NSIS Windows x64; DMG y ZIP macOS x64/arm64; metadatos YAML y blockmaps.
 
 ## Implementado y funcional
@@ -185,3 +185,5 @@ El mismo 2026-10-06 se corrigió la anulación del cobro de un pago pendiente (D
 `0.1.0-alpha.11` se publicó el 2026-10-06 (2026-10-07 UTC) en [GitHub Releases](https://github.com/heycarlosluis/parkingchia/releases/tag/v0.1.0-alpha.11). [CI](https://github.com/heycarlosluis/parkingchia/actions/runs/37572845884) y [Release](https://github.com/heycarlosluis/parkingchia/actions/runs/37572848572) terminaron correctamente. La release incluye el instalador NSIS de Windows x64, los DMG y ZIP de macOS x64/arm64, sus blockmaps y los YAML de actualización, que declaran la versión `0.1.0-alpha.11`. La corrección de D-048 se validó con pruebas automatizadas; falta comprobarla a mano en un equipo instalado, junto con el salto de actualización desde `0.1.0-alpha.10`.
 
 El 2026-10-07 se atendieron dos pedidos del propietario sobre la impresión. Las salidas en cero imprimen ahora un comprobante de salida sin número (D-049): antes solo imprimían las salidas cobradas, porque el papel dependía del recibo. Y el cierre de caja envía su recibo a la impresora sin pulsar el botón (D-050). No hay migración ni canales IPC nuevos. Pasaron `format:check`, `typecheck`, `lint`, 33 archivos con 384 pruebas y `build`. Falta confirmar ambos documentos en papel con la impresora del cliente. `0.1.0-alpha.12` se preparó para distribuir estos cambios.
+
+`0.1.0-alpha.12` se publicó el 2026-10-07 en [GitHub Releases](https://github.com/heycarlosluis/parkingchia/releases/tag/v0.1.0-alpha.12). [CI](https://github.com/heycarlosluis/parkingchia/actions/runs/37574408149) y [Release](https://github.com/heycarlosluis/parkingchia/actions/runs/37574410734) terminaron correctamente. La release incluye el instalador NSIS de Windows x64, los DMG y ZIP de macOS x64/arm64, sus blockmaps y los YAML de actualización, que declaran la versión `0.1.0-alpha.12`. El comprobante de salida en cero (D-049) y la impresión automática del cierre (D-050) se validaron con pruebas automatizadas; falta confirmarlos en papel y probar la actualización en un equipo instalado.
