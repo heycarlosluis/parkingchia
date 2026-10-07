@@ -29,6 +29,7 @@ describe('Dashboard', () => {
       voidedCop: 0,
       expectedCop: 0,
       movementCount: 0,
+      pendingBalance: { count: 0, totalCop: 0 },
       loading: false,
       error: null,
       message: '',

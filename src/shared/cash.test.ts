@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   closeCashSessionSchema,
   describeCashDifference,
+  describePendingCount,
   openCashSessionSchema,
   voidPaymentSchema,
 } from './cash'
@@ -77,5 +78,12 @@ describe('cierre sin conteo', () => {
     expect(describeCashDifference(0)).toBe('Cuadra')
     expect(describeCashDifference(-2000)).toMatch(/^Falta /)
     expect(describeCashDifference(2000)).toMatch(/^Sobra /)
+  })
+})
+
+describe('rótulo de pagos pendientes', () => {
+  it('concuerda en número', () => {
+    expect(describePendingCount(1)).toBe('1 pago pendiente')
+    expect(describePendingCount(4)).toBe('4 pagos pendientes')
   })
 })

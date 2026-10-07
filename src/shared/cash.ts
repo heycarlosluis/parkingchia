@@ -43,6 +43,11 @@ export function describeCashDifference(differenceCop: number | null): string {
     : `Falta ${formatCurrency(-differenceCop)}`
 }
 
+/** «1 pago pendiente» o «N pagos pendientes», para rotular el saldo que queda por cobrar. */
+export function describePendingCount(count: number): string {
+  return count === 1 ? '1 pago pendiente' : `${count} pagos pendientes`
+}
+
 const copAmount = (label: string) =>
   z
     .number()

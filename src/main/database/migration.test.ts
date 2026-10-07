@@ -116,6 +116,69 @@ describe('actualización del esquema de tarifas', () => {
   })
 })
 
+describe('eliminación de clientes y planes mensuales', () => {
+  it('migra desde 0009 sin perder mensualidades, cobros ni referencias y conserva un respaldo recuperable', () => {
+    const databasePath = path.join(directory, 'monthly.sqlite')
+    const previousMigrations = migrationsUpTo(9)
+    const legacy = new DatabaseManager(databasePath, previousMigrations)
+    legacy.initialize()
+    const sqlite = legacy.getNativeConnection()
+    sqlite.exec(`
+      INSERT INTO monthly_customers (id, full_name, status, created_at, updated_at)
+      VALUES ('customer', 'Cliente anterior', 'active', '2026-10-01T05:00:00.000Z', '2026-10-01T05:00:00.000Z');
+      INSERT INTO rate_plans (id, name, vehicle_type, billing_unit, amount_cop, status, created_at, updated_at)
+      VALUES ('plan', 'Plan anterior', 'car', 'month', 150000, 'active', '2026-10-01T05:00:00.000Z', '2026-10-01T05:00:00.000Z');
+      INSERT INTO vehicles (id, plate, vehicle_type, status, created_at, updated_at)
+      VALUES ('vehicle', 'MEN001', 'car', 'active', '2026-10-01T05:00:00.000Z', '2026-10-01T05:00:00.000Z');
+      INSERT INTO monthly_subscriptions (id, customer_id, vehicle_id, rate_plan_id, starts_at, ends_at, amount_cop, status, created_at, updated_at)
+      VALUES ('subscription', 'customer', 'vehicle', 'plan', '2026-10-01T05:00:00.000Z', '2026-11-01T05:00:00.000Z', 150000, 'active', '2026-10-01T05:00:00.000Z', '2026-10-01T05:00:00.000Z');
+      INSERT INTO payments (id, subscription_id, amount_cop, method, status, paid_at, created_at, updated_at)
+      VALUES ('payment', 'subscription', 50000, 'cash', 'completed', '2026-10-01T05:00:00.000Z', '2026-10-01T05:00:00.000Z', '2026-10-01T05:00:00.000Z');
+      INSERT INTO receipts (id, receipt_number, payment_id, issued_at, status, snapshot_json, created_at, updated_at)
+      VALUES ('receipt', 1, 'payment', '2026-10-01T05:00:00.000Z', 'issued', '{"paidCop":50000}', '2026-10-01T05:00:00.000Z', '2026-10-01T05:00:00.000Z');
+    `)
+    const original = {
+      subscription: sqlite.prepare('SELECT * FROM monthly_subscriptions').get(),
+      payment: sqlite.prepare('SELECT * FROM payments').get(),
+      receipt: sqlite.prepare('SELECT * FROM receipts').get(),
+    }
+    legacy.close()
+
+    const upgraded = new DatabaseManager(databasePath, path.resolve('drizzle'))
+    upgraded.initialize()
+    const migrated = upgraded.getNativeConnection()
+    expect(migrated.prepare('SELECT deleted_at FROM monthly_customers').get()).toEqual({
+      deleted_at: null,
+    })
+    expect(migrated.prepare('SELECT deleted_at FROM rate_plans').get()).toEqual({
+      deleted_at: null,
+    })
+    expect(migrated.prepare('SELECT * FROM monthly_subscriptions').get()).toEqual(
+      original.subscription,
+    )
+    expect(migrated.prepare('SELECT * FROM payments').get()).toEqual(original.payment)
+    expect(migrated.prepare('SELECT * FROM receipts').get()).toEqual(original.receipt)
+    expect(migrated.pragma('foreign_key_check')).toEqual([])
+    upgraded.close()
+
+    const backupDirectory = path.join(directory, 'migration-backups')
+    const backup = fs.readdirSync(backupDirectory).find((file) => file.endsWith('.sqlite'))!
+    const recovered = new DatabaseManager(path.join(backupDirectory, backup), previousMigrations)
+    recovered.initialize()
+    expect(
+      recovered.getNativeConnection().prepare('SELECT * FROM monthly_subscriptions').get(),
+    ).toEqual(original.subscription)
+    expect(recovered.getNativeConnection().prepare('SELECT * FROM payments').get()).toEqual(
+      original.payment,
+    )
+    expect(recovered.getNativeConnection().prepare('SELECT * FROM receipts').get()).toEqual(
+      original.receipt,
+    )
+    expect(recovered.getNativeConnection().pragma('integrity_check', { simple: true })).toBe('ok')
+    recovered.close()
+  })
+})
+
 describe('snapshot del tiquete de ingreso', () => {
   it('agrega el snapshot sin perder sesiones activas existentes', () => {
     const databasePath = path.join(directory, 'entry-ticket.sqlite')
@@ -215,5 +278,113 @@ describe('tipos de vehículo', () => {
     expect(violations).toHaveLength(0)
     expect(session).toMatchObject({ vehicle_id: 'legacy-vehicle', rate_plan_id: 'legacy-car' })
     expect(rejected).toThrow()
+  })
+})
+
+describe('pagos pendientes', () => {
+  it('agrega la tabla sin tocar las sesiones ni los cobros anteriores', () => {
+    const databasePath = path.join(directory, 'pendientes.sqlite')
+    const now = new Date().toISOString()
+
+    const legacy = new DatabaseManager(databasePath, migrationsUpTo(7))
+    legacy.initialize()
+    const legacySqlite = legacy.getNativeConnection()
+    legacySqlite
+      .prepare(
+        `INSERT INTO vehicles (id, plate, vehicle_type, status, created_at, updated_at)
+         VALUES ('legacy-vehicle', 'ABC123', 'car', 'active', ?, ?)`,
+      )
+      .run(now, now)
+    legacySqlite
+      .prepare(
+        `INSERT INTO parking_sessions
+         (id, vehicle_id, entered_at, exited_at, status, calculated_amount_cop, created_at, updated_at)
+         VALUES ('legacy-session', 'legacy-vehicle', ?, ?, 'closed', 5000, ?, ?)`,
+      )
+      .run(now, now, now, now)
+    legacySqlite
+      .prepare(
+        `INSERT INTO payments
+         (id, parking_session_id, amount_cop, method, status, paid_at, created_at, updated_at)
+         VALUES ('legacy-payment', 'legacy-session', 5000, 'cash', 'completed', ?, ?, ?)`,
+      )
+      .run(now, now, now)
+    legacy.close()
+
+    const upgraded = new DatabaseManager(databasePath, path.resolve('drizzle'))
+    upgraded.initialize()
+    const sqlite = upgraded.getNativeConnection()
+    const session = sqlite
+      .prepare('SELECT status, calculated_amount_cop FROM parking_sessions WHERE id = ?')
+      .get('legacy-session')
+    const payment = sqlite.prepare('SELECT status FROM payments WHERE id = ?').get('legacy-payment')
+    const pending = sqlite.prepare('SELECT count(*) AS total FROM pending_payments').get()
+    const insertPending = sqlite.prepare(
+      `INSERT INTO pending_payments
+       (id, parking_session_id, amount_cop, status, payment_id, snapshot_json, registered_at,
+        created_at, updated_at)
+       VALUES (?, 'legacy-session', ?, ?, ?, '{}', ?, ?, ?)`,
+    )
+    // Un pendiente no puede figurar pagado sin el pago que lo saldó.
+    const paidWithoutPayment = (): void => {
+      insertPending.run('pending-invalid', 5000, 'paid', null, now, now, now)
+    }
+    const withoutAmount = (): void => {
+      insertPending.run('pending-zero', 0, 'pending', null, now, now, now)
+    }
+    insertPending.run('pending-valid', 5000, 'pending', null, now, now, now)
+    const duplicated = (): void => {
+      insertPending.run('pending-again', 5000, 'pending', null, now, now, now)
+    }
+    const violations = sqlite.pragma('foreign_key_check') as unknown[]
+
+    expect(session).toEqual({ status: 'closed', calculated_amount_cop: 5000 })
+    expect(payment).toEqual({ status: 'completed' })
+    expect(pending).toEqual({ total: 0 })
+    expect(paidWithoutPayment).toThrow()
+    expect(withoutAmount).toThrow()
+    expect(duplicated).toThrow()
+    expect(violations).toHaveLength(0)
+    upgraded.close()
+  })
+})
+
+describe('saldo pendiente en el cierre de caja', () => {
+  it('agrega las columnas sin alterar los cierres anteriores', () => {
+    const databasePath = path.join(directory, 'cierre.sqlite')
+    const now = new Date().toISOString()
+
+    const legacy = new DatabaseManager(databasePath, migrationsUpTo(8))
+    legacy.initialize()
+    legacy
+      .getNativeConnection()
+      .prepare(
+        `INSERT INTO cash_register_sessions
+         (id, opened_at, closed_at, opening_amount_cop, closing_amount_cop, expected_amount_cop,
+          status, created_at, updated_at)
+         VALUES ('legacy-cash', ?, ?, 50000, 60000, 60000, 'closed', ?, ?)`,
+      )
+      .run(now, now, now, now)
+    legacy.close()
+
+    const upgraded = new DatabaseManager(databasePath, path.resolve('drizzle'))
+    upgraded.initialize()
+    const session = upgraded
+      .getNativeConnection()
+      .prepare(
+        `SELECT status, closing_amount_cop, expected_amount_cop, pending_count, pending_amount_cop
+         FROM cash_register_sessions WHERE id = ?`,
+      )
+      .get('legacy-cash')
+    upgraded.close()
+
+    // Un cierre anterior a la función no tiene saldo guardado.
+    expect(session).toEqual({
+      status: 'closed',
+      closing_amount_cop: 60_000,
+      expected_amount_cop: 60_000,
+      pending_count: null,
+      pending_amount_cop: null,
+    })
   })
 })

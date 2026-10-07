@@ -1,5 +1,11 @@
 import { create } from 'zustand'
-import type { CashCloseSummary, CashMovement, CashSession, CashState } from '@shared/contracts'
+import type {
+  CashCloseSummary,
+  CashMovement,
+  CashSession,
+  CashState,
+  PendingBalance,
+} from '@shared/contracts'
 import type { CloseCashSessionInput, OpenCashSessionInput, VoidPaymentInput } from '@shared/cash'
 
 type CashStore = {
@@ -9,6 +15,7 @@ type CashStore = {
   voidedCop: number
   expectedCop: number
   movementCount: number
+  pendingBalance: PendingBalance
   closedSessions: CashCloseSummary[]
   loading: boolean
   error: string | null
@@ -30,6 +37,7 @@ const EMPTY_STATE: CashState = {
   voidedCop: 0,
   expectedCop: 0,
   movementCount: 0,
+  pendingBalance: { count: 0, totalCop: 0 },
 }
 
 export const useCashStore = create<CashStore>((set, get) => {
@@ -41,6 +49,7 @@ export const useCashStore = create<CashStore>((set, get) => {
       voidedCop: state.voidedCop,
       expectedCop: state.expectedCop,
       movementCount: state.movementCount,
+      pendingBalance: state.pendingBalance,
       loading: false,
       error: null,
     })

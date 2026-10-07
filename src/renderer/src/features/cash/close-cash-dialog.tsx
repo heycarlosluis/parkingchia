@@ -3,8 +3,12 @@ import { LoaderCircle } from 'lucide-react'
 import { useEffect } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { z } from 'zod'
-import type { CashCloseSummary } from '@shared/contracts'
-import { describeCashDifference, type CloseCashSessionInput } from '@shared/cash'
+import type { CashCloseSummary, PendingBalance } from '@shared/contracts'
+import {
+  describeCashDifference,
+  describePendingCount,
+  type CloseCashSessionInput,
+} from '@shared/cash'
 import { formatCurrency } from '@shared/format'
 import { MAX_AMOUNT_COP } from '@shared/tariff'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -37,6 +41,8 @@ type CloseCashDialogProps = {
   open: boolean
   /** Lo que debería haber en la caja según los cobros del turno. */
   expectedCop: number
+  /** Pagos pendientes que quedan por cobrar; se informan sin entrar al arqueo. */
+  pendingBalance: PendingBalance
   /** Con el cobro simplificado el turno se cierra sin contar el efectivo. */
   simpleChargeMode: boolean
   error: string | null
@@ -47,6 +53,7 @@ type CloseCashDialogProps = {
 export function CloseCashDialog({
   open,
   expectedCop,
+  pendingBalance,
   simpleChargeMode,
   error,
   onOpenChange,
@@ -143,6 +150,22 @@ export function CloseCashDialog({
               </>
             )}
           </dl>
+
+          {/* Caja aparte: dentro del arqueo parecería que entra a la cuenta. */}
+          {pendingBalance.count === 0 ? null : (
+            <>
+              <dl className="charge-breakdown">
+                <div>
+                  <dt>Quedan {describePendingCount(pendingBalance.count)}</dt>
+                  <dd className="tabular">{formatCurrency(pendingBalance.totalCop)}</dd>
+                </div>
+              </dl>
+              <FieldDescription>
+                Los pagos pendientes siguen por cobrar: no se suman ni se restan del total del
+                turno.
+              </FieldDescription>
+            </>
+          )}
 
           <FieldDescription>
             El cierre es definitivo y no se puede modificar después.

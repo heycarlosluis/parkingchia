@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RatePlan } from '@shared/contracts'
+import { pendingPayment } from '@/test/setup'
 import { DEFAULT_TARIFF_SETTINGS, type VehicleType } from '@shared/tariff'
 import { useCashStore } from '@/store/cash-store'
 import { useParkingStore } from '@/store/parking-store'
@@ -35,7 +36,13 @@ function ratePlan(
 
 describe('Registrar ingreso', () => {
   beforeEach(() => {
-    useParkingStore.setState({ sessions: [], search: '', loading: false, error: null })
+    useParkingStore.setState({
+      sessions: [],
+      pendingPayments: [],
+      search: '',
+      loading: false,
+      error: null,
+    })
     useTariffStore.setState({ settings: DEFAULT_TARIFF_SETTINGS, plans: [], loading: false })
   })
 
@@ -57,6 +64,39 @@ describe('Registrar ingreso', () => {
         expect.objectContaining({ plate: 'ABC123', vehicleType: 'car', notes: null }),
       )
     })
+  })
+
+  it('avisa del pago pendiente de la matrícula y aun así registra el ingreso', async () => {
+    vi.mocked(window.parkingAPI.listPendingPayments).mockResolvedValue({
+      ok: true,
+      data: [pendingPayment, { ...pendingPayment, id: 'pending-2', amountCop: 15_000 }],
+    })
+    try {
+      renderEntries()
+
+      const plate = await screen.findByLabelText('Matrícula')
+      // Otra matrícula no hereda el aviso.
+      await userEvent.type(plate, 'abc123')
+      expect(screen.queryByText(/pagos pendientes/)).not.toBeInTheDocument()
+
+      await userEvent.clear(plate)
+      await userEvent.type(plate, 'deu456')
+      expect(await screen.findByText('Este carro tiene 2 pagos pendientes')).toBeInTheDocument()
+      // Cada deuda se cobra por separado.
+      expect(screen.getByRole('button', { name: /Cobrar \$\s10\.000/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Cobrar \$\s15\.000/ })).toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('button', { name: /Registrar ingreso/ }))
+
+      expect(await screen.findByText('Ingreso registrado')).toBeInTheDocument()
+      expect(window.parkingAPI.registerEntry).toHaveBeenCalledWith(
+        expect.objectContaining({ plate: 'DEU456' }),
+      )
+      // El aviso sigue a la vista junto a la confirmación del nuevo ingreso.
+      expect(screen.getByText('Este carro tiene 2 pagos pendientes')).toBeInTheDocument()
+    } finally {
+      vi.mocked(window.parkingAPI.listPendingPayments).mockResolvedValue({ ok: true, data: [] })
+    }
   })
 
   it('selecciona el tipo de vehículo con cajas en lugar de un selector', async () => {

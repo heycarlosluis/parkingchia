@@ -32,6 +32,24 @@ describe('Historial de salidas', () => {
     ).toBeInTheDocument()
   })
 
+  it('distingue una salida con pago pendiente de una sin cobro', async () => {
+    vi.mocked(window.parkingAPI.listExits).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        records: [{ ...exitRecords[0]!, paymentPending: true, method: null, receiptNumber: null }],
+        totalCount: 1,
+        totalCollectedCop: 0,
+      },
+    })
+    render(<HistoryPage />)
+
+    const table = await screen.findByRole('table')
+    const row = within(table).getByRole('row', { name: /ABC123/ })
+    expect(within(row).getByText('Pago pendiente')).toBeInTheDocument()
+    expect(within(row).getByText(/^\$\s10\.000$/)).toBeInTheDocument()
+    expect(within(row).queryByRole('button', { name: /Reimprimir/ })).not.toBeInTheDocument()
+  })
+
   it('muestra la tarifa aplicada y la hora de ingreso de cada salida', async () => {
     render(<HistoryPage />)
 

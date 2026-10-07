@@ -88,7 +88,12 @@ export function PaymentDialog({
   }
 
   return (
-    <Dialog open onOpenChange={onOpenChange}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!submitting) onOpenChange(open)
+      }}
+    >
       <DialogContent className="rate-plan-dialog">
         <DialogHeader>
           <DialogTitle>Registrar pago de la mensualidad</DialogTitle>
@@ -195,7 +200,12 @@ export function PaymentDialog({
         )}
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={submitting}
+            onClick={() => onOpenChange(false)}
+          >
             Cancelar
           </Button>
           <Button

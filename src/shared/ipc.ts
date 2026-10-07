@@ -13,9 +13,11 @@ export {
   closeSessionSchema,
   listActiveSessionsSchema,
   listExitsSchema,
+  markPaymentPendingSchema,
   quoteSessionSchema,
   registerEntrySchema,
   resolveExitTargetSchema,
+  settlePendingPaymentSchema,
 } from './parking'
 export {
   cancelSubscriptionSchema,

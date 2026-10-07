@@ -14,6 +14,7 @@ import type {
   MonthlyOverview,
   MonthlySubscription,
   ParkingApi,
+  PendingPayment,
   RatePlan,
   TariffConfiguration,
   UpdateState,
@@ -179,6 +180,20 @@ const chargeNow = (): ReturnType<typeof calculateChargeForMinutes> =>
     planPricing,
   )
 
+/** Salida de ejemplo que quedó debiendo; las pruebas la activan en `listPendingPayments`. */
+export const pendingPayment: PendingPayment = {
+  id: 'pending-1',
+  sessionId: 'session-pending',
+  plate: 'DEU456',
+  vehicleType: 'car',
+  ratePlanName: 'Automóvil por hora',
+  enteredAt: '2026-08-18T13:00:00.000Z',
+  exitedAt: '2026-08-18T14:30:00.000Z',
+  charge: calculateChargeForMinutes(90, DEFAULT_TARIFF_SETTINGS, planPricing),
+  amountCop: 10_000,
+  employeeName: 'Laura Torres',
+}
+
 export const exitRecords: ExitRecord[] = [
   {
     sessionId: 'session-closed',
@@ -190,6 +205,7 @@ export const exitRecords: ExitRecord[] = [
     totalMinutes: 90,
     totalCop: 10_000,
     status: 'closed',
+    paymentPending: false,
     method: 'cash',
     receiptNumber: 1,
     charge: calculateChargeForMinutes(90, DEFAULT_TARIFF_SETTINGS, planPricing),
@@ -205,6 +221,7 @@ export const exitRecords: ExitRecord[] = [
     totalMinutes: 4,
     totalCop: 0,
     status: 'cancelled',
+    paymentPending: false,
     method: null,
     receiptNumber: null,
     charge: null,
@@ -219,6 +236,7 @@ const emptyCashState: CashState = {
   voidedCop: 0,
   expectedCop: 0,
   movementCount: 0,
+  pendingBalance: { count: 0, totalCop: 0 },
 }
 
 const cashCloseSummary: CashCloseSummary = {
@@ -233,6 +251,7 @@ const cashCloseSummary: CashCloseSummary = {
   closingAmountCop: 60_000,
   differenceCop: 0,
   movementCount: 1,
+  pendingBalance: { count: 0, totalCop: 0 },
 }
 
 export const employee: Employee = {
@@ -366,7 +385,7 @@ const parkingApi: ParkingApi = {
       printMessage: 'No hay impresoras disponibles en el sistema.',
     }),
   ),
-  resolveExitTarget: vi.fn(async () => ok(activeSession)),
+  resolveExitTarget: vi.fn(async () => ok({ kind: 'session' as const, session: activeSession })),
   listActiveSessions: vi.fn(async (input) =>
     ok(
       input.search === '' || activeSession.plate.includes(input.search.toUpperCase())
@@ -401,6 +420,40 @@ const parkingApi: ParkingApi = {
     })
   }),
   cancelSession: vi.fn(async () => ok([])),
+  markPaymentPending: vi.fn(async (input) => {
+    const charge = chargeNow()
+    return ok({
+      id: 'pending-new',
+      sessionId: input.sessionId,
+      plate: activeSession.plate,
+      vehicleType: activeSession.vehicleType,
+      ratePlanName: activeSession.ratePlanName,
+      enteredAt: activeSession.enteredAt,
+      exitedAt: new Date().toISOString(),
+      charge,
+      amountCop: charge.totalCop,
+      employeeName: 'Laura Torres',
+    })
+  }),
+  listPendingPayments: vi.fn(async () => ok<PendingPayment[]>([])),
+  settlePendingPayment: vi.fn(async (input) =>
+    ok({
+      sessionId: pendingPayment.sessionId,
+      plate: pendingPayment.plate,
+      vehicleType: pendingPayment.vehicleType,
+      ratePlanName: pendingPayment.ratePlanName,
+      enteredAt: pendingPayment.enteredAt,
+      exitedAt: pendingPayment.exitedAt,
+      charge: pendingPayment.charge,
+      method: input.method,
+      receivedCop: input.receivedCop,
+      changeCop: calculateChange(pendingPayment.amountCop, input.receivedCop),
+      receiptNumber: 5,
+      monthlyCoverage: null,
+      printed: false,
+      printMessage: 'No hay impresoras disponibles en el sistema.',
+    }),
+  ),
   reprintEntryTicket: vi.fn(async () => ok({ printed: false, message: 'No hay impresoras.' })),
   reprintReceipt: vi.fn(async () => ok({ printed: false, message: 'No hay impresoras.' })),
   listExits: vi.fn(async (input) => {

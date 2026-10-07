@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
-import type { CashCloseSummary, CashMovement, CashSession, CashState } from '@shared/contracts'
+import type {
+  CashCloseSummary,
+  CashMovement,
+  CashSession,
+  CashState,
+  PendingBalance,
+} from '@shared/contracts'
 import {
   type CloseCashSessionInput,
   type OpenCashSessionInput,
@@ -39,18 +45,27 @@ type ClosedSessionRow = {
   collected_cop: number
   voided_cop: number
   movement_count: number
+  pending_count: number
+  pending_cop: number
 }
 
-const CLOSED_SESSIONS_QUERY = `
+/**
+ * Cierres de caja con su arqueo. El filtro va antes del `GROUP BY`: pegado al
+ * final quedaba dentro de la expresión de agrupación y, con más de un cierre,
+ * devolvía los datos mezclados de otro turno.
+ */
+const closedSessionsQuery = (filter = ''): string => `
   SELECT s.id AS session_id, s.opened_at, s.closed_at, s.opening_amount_cop,
          s.closing_amount_cop, s.expected_amount_cop, e.full_name AS employee_name,
          COALESCE(SUM(CASE WHEN p.status = 'completed' THEN p.amount_cop ELSE 0 END), 0) AS collected_cop,
          COALESCE(SUM(CASE WHEN p.status = 'voided' THEN p.amount_cop ELSE 0 END), 0) AS voided_cop,
-         COUNT(p.id) AS movement_count
+         COUNT(p.id) AS movement_count,
+         COALESCE(s.pending_count, 0) AS pending_count,
+         COALESCE(s.pending_amount_cop, 0) AS pending_cop
   FROM cash_register_sessions s
   LEFT JOIN employees e ON e.id = s.employee_id
   LEFT JOIN payments p ON p.cash_register_session_id = s.id
-  WHERE s.status = 'closed'
+  WHERE s.status = 'closed' ${filter}
   GROUP BY s.id
 `
 
@@ -85,6 +100,7 @@ export class CashService {
         voidedCop: 0,
         expectedCop: 0,
         movementCount: 0,
+        pendingBalance: this.pendingBalance(),
       }
     }
     const totals = this.totalsFor(session.id)
@@ -95,6 +111,7 @@ export class CashService {
       voidedCop: totals.voided,
       expectedCop: session.openingAmountCop + totals.collected,
       movementCount: totals.count,
+      pendingBalance: this.pendingBalance(),
     }
   }
 
@@ -158,16 +175,29 @@ export class CashService {
     const totals = this.totalsFor(session.id)
     const expectedAmountCop = session.openingAmountCop + totals.collected
     const differenceCop = closingAmountCop === null ? null : closingAmountCop - expectedAmountCop
+    // Informativo: lo que quedó por cobrar no forma parte del arqueo. Se guarda
+    // con el cierre para que no cambie cuando esas deudas se paguen después.
+    const pendingBalance = this.pendingBalance()
 
     this.sqlite.transaction(() => {
       this.sqlite
         .prepare(
           `UPDATE cash_register_sessions
            SET closed_at = ?, closing_amount_cop = ?, expected_amount_cop = ?,
+               pending_count = ?, pending_amount_cop = ?,
                status = 'closed', notes = COALESCE(?, notes), updated_at = ?
            WHERE id = ?`,
         )
-        .run(now, closingAmountCop, expectedAmountCop, input.notes, now, session.id)
+        .run(
+          now,
+          closingAmountCop,
+          expectedAmountCop,
+          pendingBalance.count,
+          pendingBalance.totalCop,
+          input.notes,
+          now,
+          session.id,
+        )
       this.writeAudit('cash.session_closed', 'cash_register_session', session.id, now, {
         openingAmountCop: session.openingAmountCop,
         collectedCop: totals.collected,
@@ -175,6 +205,8 @@ export class CashService {
         expectedAmountCop,
         closingAmountCop,
         differenceCop,
+        pendingCount: pendingBalance.count,
+        pendingCop: pendingBalance.totalCop,
       })
     })()
 
@@ -190,6 +222,7 @@ export class CashService {
       closingAmountCop,
       differenceCop,
       movementCount: totals.count,
+      pendingBalance,
     }
   }
 
@@ -233,6 +266,15 @@ export class CashService {
           "UPDATE receipts SET status = 'voided', updated_at = ? WHERE payment_id = ? AND status = 'issued'",
         )
         .run(now, input.paymentId)
+      // Si el cobro saldaba un pago pendiente, la deuda vuelve a quedar por
+      // cobrar: anularlo no puede hacerla desaparecer.
+      this.sqlite
+        .prepare(
+          `UPDATE pending_payments
+           SET status = 'pending', payment_id = NULL, settled_at = NULL, updated_at = ?
+           WHERE payment_id = ?`,
+        )
+        .run(now, input.paymentId)
       this.writeAudit('cash.payment_voided', 'payment', input.paymentId, now, {
         amountCop: payment.amount_cop,
         reason: input.reason,
@@ -261,19 +303,30 @@ export class CashService {
   /** Cierres de caja más recientes, con el arqueo completo para consultarlos o reimprimirlos. */
   listClosedSessions(limit = 20): CashCloseSummary[] {
     const rows = this.sqlite
-      .prepare(`${CLOSED_SESSIONS_QUERY} ORDER BY s.closed_at DESC LIMIT ?`)
+      .prepare(`${closedSessionsQuery()} ORDER BY s.closed_at DESC LIMIT ?`)
       .all(limit) as ClosedSessionRow[]
     return rows.map((row) => this.toCloseSummary(row))
   }
 
   /** Resumen de un cierre concreto, para reimprimir su recibo. */
   getCloseSummary(sessionId: string): CashCloseSummary {
-    const row = this.sqlite.prepare(`${CLOSED_SESSIONS_QUERY} AND s.id = ?`).get(sessionId) as
+    const row = this.sqlite.prepare(closedSessionsQuery('AND s.id = ?')).get(sessionId) as
       ClosedSessionRow | undefined
     if (!row) {
       throw new OperationError('CASH_SESSION_NOT_FOUND', 'Ese cierre de caja ya no existe.')
     }
     return this.toCloseSummary(row)
+  }
+
+  /** Pagos pendientes sin cobrar ahora mismo, de todos los vehículos. */
+  private pendingBalance(): PendingBalance {
+    const row = this.sqlite
+      .prepare(
+        `SELECT COUNT(*) AS count, COALESCE(SUM(amount_cop), 0) AS total
+         FROM pending_payments WHERE status = 'pending'`,
+      )
+      .get() as { count: number; total: number }
+    return { count: row.count, totalCop: row.total }
   }
 
   private getOpenSession(): CashSession | null {
@@ -358,6 +411,7 @@ export class CashService {
       closingAmountCop,
       differenceCop: closingAmountCop === null ? null : closingAmountCop - expectedAmountCop,
       movementCount: row.movement_count,
+      pendingBalance: { count: row.pending_count, totalCop: row.pending_cop },
     }
   }
 

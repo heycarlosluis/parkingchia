@@ -6,7 +6,9 @@ import type {
   ExitHistory,
   ExitRecord,
   ExitRegistration,
+  ExitTarget,
   MonthlyCoverage,
+  PendingPayment,
   SessionQuote,
 } from '@shared/contracts'
 import {
@@ -15,8 +17,10 @@ import {
   type CloseSessionInput,
   type ListActiveSessionsInput,
   type ListExitsInput,
+  type MarkPaymentPendingInput,
   type PaymentMethod,
   type RegisterEntryInput,
+  type SettlePendingPaymentInput,
 } from '@shared/parking'
 import {
   calculateChargeForMinutes,
@@ -110,6 +114,39 @@ export function normalizeReceiptSnapshot(snapshot: ReceiptSnapshot): ReceiptSnap
   }
 }
 
+/**
+ * Cobro congelado al dejar una salida con el pago pendiente.
+ *
+ * Es lo que se cobrará después, pase el tiempo que pase y cambie o no la
+ * tarifa: la deuda es por la permanencia que ya terminó.
+ */
+type PendingPaymentSnapshot = {
+  version: 1
+  plate: string
+  vehicleType: VehicleType
+  ratePlanName: string | null
+  enteredAt: string
+  exitedAt: string
+  charge: ParkingCharge
+  employeeName: string | null
+  notes: string | null
+}
+
+type PendingPaymentRow = {
+  id: string
+  parking_session_id: string
+  amount_cop: number
+  snapshot_json: string
+}
+
+const PENDING_PAYMENT_QUERY = `
+  SELECT pp.id, pp.parking_session_id, pp.amount_cop, pp.snapshot_json
+  FROM pending_payments pp
+  JOIN parking_sessions s ON s.id = pp.parking_session_id
+  JOIN vehicles v ON v.id = s.vehicle_id
+  WHERE pp.status = 'pending'
+`
+
 type ExitRow = {
   id: string
   plate: string
@@ -123,6 +160,7 @@ type ExitRow = {
   method: PaymentMethod | null
   receipt_number: number | null
   snapshot_json: string | null
+  pending_snapshot_json: string | null
 }
 
 /** Convierte una fecha local `AAAA-MM-DD` en el instante UTC en que empieza ese día. */
@@ -330,8 +368,14 @@ export class ParkingService {
     }
   }
 
-  /** Resuelve una salida por QR, Code 128 o matrícula escrita. */
-  resolveExitTarget(code: string): ActiveSession {
+  /**
+   * Resuelve una salida por QR, Code 128 o matrícula escrita.
+   *
+   * Un vehículo que ya salió debiendo no tiene ingreso activo: en lugar de un
+   * «no encontrado» se devuelven sus pagos pendientes, para que el operador vea
+   * la deuda al leer el tiquete viejo o escribir la matrícula.
+   */
+  resolveExitTarget(code: string): ExitTarget {
     const scanned = decodeEntryTicketCode(code)
     if (isEntryTicketCode(code) && scanned === null) {
       throw new OperationError(
@@ -341,15 +385,24 @@ export class ParkingService {
     }
 
     if (scanned?.kind === 'reference') {
-      return this.toActiveSession(
-        this.requireActiveSessionByPrefix(scanned.sessionIdPrefix),
-        new Date().toISOString(),
+      const row = this.findActiveSessionByPrefix(scanned.sessionIdPrefix)
+      if (row) return this.toSessionTarget(row)
+      const pending = this.pendingTargetForSession('s.id LIKE ?', `${scanned.sessionIdPrefix}%`)
+      if (pending) return pending
+      throw new OperationError(
+        'SESSION_NOT_ACTIVE',
+        'Ese tiquete no corresponde a ningún vehículo en el parqueadero. Puede que ya haya salido.',
       )
     }
     if (scanned !== null) {
-      const row = this.requireActiveSession(scanned.sessionId)
+      const row = this.findActiveSession(scanned.sessionId)
+      if (!row) {
+        const pending = this.pendingTargetForSession('s.id = ?', scanned.sessionId)
+        if (pending) return pending
+        return this.toSessionTarget(this.requireActiveSession(scanned.sessionId))
+      }
       if (scanned.kind === 'qr') this.assertTicketMatchesSession(scanned.payload, row)
-      return this.toActiveSession(row, new Date().toISOString())
+      return this.toSessionTarget(row)
     }
 
     const plateResult = plateSchema.safeParse(normalizePlate(code))
@@ -362,13 +415,16 @@ export class ParkingService {
     const row = this.sqlite
       .prepare(`${ACTIVE_SESSION_QUERY} AND v.plate = ?`)
       .get(plateResult.data) as SessionRow | undefined
-    if (!row) {
-      throw new OperationError(
-        'SESSION_NOT_FOUND',
-        `No hay ningún ingreso activo con la matrícula ${plateResult.data}.`,
-      )
+    if (row) return this.toSessionTarget(row)
+
+    const pendingPayments = this.listPendingPaymentsForPlate(plateResult.data)
+    if (pendingPayments.length > 0) {
+      return { kind: 'pending', plate: plateResult.data, pendingPayments }
     }
-    return this.toActiveSession(row, new Date().toISOString())
+    throw new OperationError(
+      'SESSION_NOT_FOUND',
+      `No hay ningún ingreso activo con la matrícula ${plateResult.data}.`,
+    )
   }
 
   listActiveSessions(input: ListActiveSessionsInput): ActiveSession[] {
@@ -446,34 +502,7 @@ export class ParkingService {
         )
 
       if (charge.totalCop > 0) {
-        const paymentId = randomUUID()
-        const cashSessionId = this.cash.getOpenSessionId()
-        this.sqlite
-          .prepare(
-            `INSERT INTO payments
-             (id, parking_session_id, cash_register_session_id, amount_cop, method, status,
-              paid_at, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, 'completed', ?, ?, ?)`,
-          )
-          .run(
-            paymentId,
-            input.sessionId,
-            cashSessionId,
-            charge.totalCop,
-            input.method,
-            exitedAt,
-            exitedAt,
-            exitedAt,
-          )
-
-        const next = this.sqlite
-          .prepare('SELECT COALESCE(MAX(receipt_number), 0) + 1 AS next FROM receipts')
-          .get() as { next: number }
-        receiptNumber = next.next
-
-        const snapshot: ReceiptSnapshot = {
-          version: RECEIPT_SNAPSHOT_VERSION,
-          receiptNumber,
+        receiptNumber = this.issueReceipt(input.sessionId, {
           issuedAt: exitedAt,
           plate: row.plate,
           vehicleType: row.vehicle_type,
@@ -484,25 +513,8 @@ export class ParkingService {
           method: input.method,
           receivedCop,
           changeCop,
-          employeeName: this.cash.getOpenSessionEmployeeName(),
           notes: input.notes,
-        }
-
-        this.sqlite
-          .prepare(
-            `INSERT INTO receipts
-             (id, receipt_number, payment_id, issued_at, status, snapshot_json, created_at, updated_at)
-             VALUES (?, ?, ?, ?, 'issued', ?, ?, ?)`,
-          )
-          .run(
-            randomUUID(),
-            receiptNumber,
-            paymentId,
-            exitedAt,
-            JSON.stringify(snapshot),
-            exitedAt,
-            exitedAt,
-          )
+        }).receiptNumber
       }
 
       this.writeAudit('parking.exit_registered', 'parking_session', input.sessionId, exitedAt, {
@@ -554,6 +566,188 @@ export class ParkingService {
   }
 
   /**
+   * Registra la salida sin cobrarla: la permanencia se detiene aquí y el
+   * importe queda como una deuda del vehículo.
+   *
+   * No mueve dinero, así que no exige caja abierta, igual que las salidas sin
+   * cobro. La matrícula queda libre para volver a ingresar y cada pendiente
+   * se cobra después por separado.
+   */
+  markPaymentPending(input: MarkPaymentPendingInput): PendingPayment {
+    const row = this.requireActiveSession(input.sessionId)
+    const exitedAt = new Date().toISOString()
+    const charge = this.chargeFor(row, exitedAt)
+
+    if (charge.totalCop !== input.expectedTotalCop) {
+      throw new OperationError(
+        'CHARGE_CHANGED',
+        'El tiempo avanzó y el total cambió mientras confirmabas. Revisa el nuevo valor y vuelve a intentarlo.',
+      )
+    }
+    if (charge.totalCop === 0) {
+      throw new OperationError(
+        'NOTHING_TO_COLLECT',
+        'Esta salida no genera cobro, así que no hay pago que dejar pendiente.',
+      )
+    }
+
+    const id = randomUUID()
+    const snapshot: PendingPaymentSnapshot = {
+      version: 1,
+      plate: row.plate,
+      vehicleType: row.vehicle_type,
+      ratePlanName: row.rate_plan_name,
+      enteredAt: row.entered_at,
+      exitedAt,
+      charge,
+      employeeName: this.cash.getOpenSessionEmployeeName(),
+      notes: row.notes,
+    }
+
+    this.sqlite.transaction(() => {
+      this.sqlite
+        .prepare(
+          `UPDATE parking_sessions
+           SET exited_at = ?, status = 'closed', calculated_amount_cop = ?, updated_at = ?
+           WHERE id = ? AND status = 'active'`,
+        )
+        .run(exitedAt, charge.totalCop, exitedAt, input.sessionId)
+      this.sqlite
+        .prepare(
+          `INSERT INTO pending_payments
+           (id, parking_session_id, amount_cop, status, snapshot_json, registered_at,
+            created_at, updated_at)
+           VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          input.sessionId,
+          charge.totalCop,
+          JSON.stringify(snapshot),
+          exitedAt,
+          exitedAt,
+          exitedAt,
+        )
+      this.writeAudit(
+        'parking.payment_pending_registered',
+        'parking_session',
+        input.sessionId,
+        exitedAt,
+        {
+          plate: row.plate,
+          totalCop: charge.totalCop,
+          pendingPaymentId: id,
+        },
+      )
+    })()
+
+    return this.toPendingPayment({
+      id,
+      parking_session_id: input.sessionId,
+      amount_cop: charge.totalCop,
+      snapshot_json: JSON.stringify(snapshot),
+    })
+  }
+
+  /** Pagos pendientes de todos los vehículos, del más reciente al más antiguo. */
+  listPendingPayments(): PendingPayment[] {
+    const rows = this.sqlite
+      .prepare(`${PENDING_PAYMENT_QUERY} ORDER BY pp.registered_at DESC, pp.rowid DESC`)
+      .all() as PendingPaymentRow[]
+    return rows.map((row) => this.toPendingPayment(row))
+  }
+
+  /**
+   * Cobra un pago pendiente y emite su recibo, como una salida normal.
+   *
+   * Se cobra el importe congelado al registrar la salida. El pago entra a la
+   * caja abierta ahora, no a la del turno en que el vehículo salió.
+   */
+  settlePendingPayment(input: SettlePendingPaymentInput): ExitRegistration {
+    const row = this.sqlite
+      .prepare(`${PENDING_PAYMENT_QUERY} AND pp.id = ?`)
+      .get(input.pendingPaymentId) as PendingPaymentRow | undefined
+    if (!row) {
+      throw new OperationError(
+        'PENDING_PAYMENT_NOT_FOUND',
+        'Ese pago pendiente ya se cobró o no existe. Actualiza el listado.',
+      )
+    }
+    if (this.cash.getOpenSessionId() === null) {
+      throw new OperationError('NO_CASH_SESSION', 'Abre la caja antes de cobrar un pago pendiente.')
+    }
+
+    const pending = this.toPendingPayment(row)
+    // Con el cobro simplificado no se registra efectivo recibido ni cambio.
+    const asksForCash = input.method === 'cash' && !this.cash.isSimpleChargeMode()
+    const receivedCop = asksForCash ? input.receivedCop : null
+    if (asksForCash && (receivedCop === null || receivedCop < pending.amountCop)) {
+      throw new OperationError(
+        'INSUFFICIENT_CASH',
+        'Registra el efectivo recibido y que cubra el total a cobrar.',
+      )
+    }
+    const changeCop = calculateChange(pending.amountCop, receivedCop)
+    const paidAt = new Date().toISOString()
+    const notes = (JSON.parse(row.snapshot_json) as PendingPaymentSnapshot).notes
+
+    let receiptNumber = 0
+    this.sqlite.transaction(() => {
+      const issued = this.issueReceipt(pending.sessionId, {
+        issuedAt: paidAt,
+        plate: pending.plate,
+        vehicleType: pending.vehicleType,
+        ratePlanName: pending.ratePlanName,
+        enteredAt: pending.enteredAt,
+        exitedAt: pending.exitedAt,
+        charge: pending.charge,
+        method: input.method,
+        receivedCop,
+        changeCop,
+        notes,
+      })
+      receiptNumber = issued.receiptNumber
+      this.sqlite
+        .prepare(
+          `UPDATE pending_payments
+           SET status = 'paid', payment_id = ?, settled_at = ?, updated_at = ?
+           WHERE id = ? AND status = 'pending'`,
+        )
+        .run(issued.paymentId, paidAt, paidAt, pending.id)
+      this.writeAudit(
+        'parking.pending_payment_settled',
+        'parking_session',
+        pending.sessionId,
+        paidAt,
+        {
+          plate: pending.plate,
+          totalCop: pending.amountCop,
+          method: input.method,
+          receiptNumber,
+          pendingPaymentId: pending.id,
+        },
+      )
+    })()
+
+    return {
+      sessionId: pending.sessionId,
+      plate: pending.plate,
+      vehicleType: pending.vehicleType,
+      ratePlanName: pending.ratePlanName,
+      enteredAt: pending.enteredAt,
+      exitedAt: pending.exitedAt,
+      charge: pending.charge,
+      method: input.method,
+      receivedCop,
+      changeCop,
+      receiptNumber,
+      monthlyCoverage: null,
+      printed: false,
+      printMessage: '',
+    }
+  }
+
+  /**
    * Historial de salidas cerradas y anuladas, de la más reciente a la más antigua.
    *
    * Los totales se calculan sobre todo el filtro, no solo sobre la página.
@@ -581,12 +775,14 @@ export class ParkingService {
         `SELECT s.id, v.plate, v.vehicle_type, r.name AS rate_plan_name,
                 s.entered_at, s.exited_at, s.status, s.calculated_amount_cop,
                 p.method, rc.receipt_number, rc.snapshot_json,
+                pp.snapshot_json AS pending_snapshot_json,
                 mc.full_name AS monthly_customer_name
          FROM parking_sessions s
          JOIN vehicles v ON v.id = s.vehicle_id
          LEFT JOIN rate_plans r ON r.id = s.rate_plan_id
          LEFT JOIN payments p ON p.parking_session_id = s.id AND p.status = 'completed'
          LEFT JOIN receipts rc ON rc.payment_id = p.id AND rc.status = 'issued'
+         LEFT JOIN pending_payments pp ON pp.parking_session_id = s.id AND pp.status = 'pending'
          LEFT JOIN monthly_subscriptions ms ON ms.id = s.subscription_id
          LEFT JOIN monthly_customers mc ON mc.id = ms.customer_id
          WHERE ${where}
@@ -618,6 +814,12 @@ export class ParkingService {
       row.snapshot_json === null
         ? null
         : normalizeReceiptSnapshot(JSON.parse(row.snapshot_json) as ReceiptSnapshot)
+    // Sin recibo todavía, el desglose de una salida pendiente sale de su snapshot.
+    const charge =
+      snapshot?.charge ??
+      (row.pending_snapshot_json === null
+        ? null
+        : (JSON.parse(row.pending_snapshot_json) as PendingPaymentSnapshot).charge)
     const exitedAt = row.exited_at ?? row.entered_at
     return {
       sessionId: row.id,
@@ -626,12 +828,13 @@ export class ParkingService {
       ratePlanName: row.rate_plan_name,
       enteredAt: row.entered_at,
       exitedAt,
-      totalMinutes: snapshot?.charge.totalMinutes ?? elapsedMinutesOrZero(row.entered_at, exitedAt),
+      totalMinutes: charge?.totalMinutes ?? elapsedMinutesOrZero(row.entered_at, exitedAt),
       totalCop: row.calculated_amount_cop ?? 0,
       status: row.status,
+      paymentPending: row.pending_snapshot_json !== null,
       method: row.method,
       receiptNumber: row.receipt_number,
-      charge: snapshot?.charge ?? null,
+      charge,
       monthlyCustomerName: row.monthly_customer_name,
     }
   }
@@ -653,6 +856,110 @@ export class ParkingService {
       )
     }
     return normalizeReceiptSnapshot(JSON.parse(row.snapshot_json) as ReceiptSnapshot)
+  }
+
+  /**
+   * Inserta el pago de una sesión y su recibo consecutivo.
+   *
+   * Debe llamarse dentro de una transacción: el consecutivo se calcula y se
+   * ocupa en el mismo paso. El pago entra a la caja abierta en ese momento.
+   */
+  private issueReceipt(
+    sessionId: string,
+    receipt: Omit<ReceiptSnapshot, 'version' | 'receiptNumber' | 'employeeName'>,
+  ): { paymentId: string; receiptNumber: number } {
+    const paymentId = randomUUID()
+    const paidAt = receipt.issuedAt
+    this.sqlite
+      .prepare(
+        `INSERT INTO payments
+         (id, parking_session_id, cash_register_session_id, amount_cop, method, status,
+          paid_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'completed', ?, ?, ?)`,
+      )
+      .run(
+        paymentId,
+        sessionId,
+        this.cash.getOpenSessionId(),
+        receipt.charge.totalCop,
+        receipt.method,
+        paidAt,
+        paidAt,
+        paidAt,
+      )
+
+    const next = this.sqlite
+      .prepare('SELECT COALESCE(MAX(receipt_number), 0) + 1 AS next FROM receipts')
+      .get() as { next: number }
+    const snapshot: ReceiptSnapshot = {
+      ...receipt,
+      version: RECEIPT_SNAPSHOT_VERSION,
+      receiptNumber: next.next,
+      employeeName: this.cash.getOpenSessionEmployeeName(),
+    }
+    this.sqlite
+      .prepare(
+        `INSERT INTO receipts
+         (id, receipt_number, payment_id, issued_at, status, snapshot_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'issued', ?, ?, ?)`,
+      )
+      .run(randomUUID(), next.next, paymentId, paidAt, JSON.stringify(snapshot), paidAt, paidAt)
+
+    return { paymentId, receiptNumber: next.next }
+  }
+
+  private listPendingPaymentsForPlate(plate: string): PendingPayment[] {
+    const rows = this.sqlite
+      .prepare(
+        `${PENDING_PAYMENT_QUERY} AND v.plate = ? ORDER BY pp.registered_at DESC, pp.rowid DESC`,
+      )
+      .all(plate) as PendingPaymentRow[]
+    return rows.map((row) => this.toPendingPayment(row))
+  }
+
+  /**
+   * Pagos pendientes del vehículo al que pertenece un tiquete ya usado.
+   *
+   * `sessionFilter` es un fragmento fijo del código, nunca texto del operador.
+   */
+  private pendingTargetForSession(
+    sessionFilter: 's.id = ?' | 's.id LIKE ?',
+    value: string,
+  ): ExitTarget | null {
+    const owner = this.sqlite
+      .prepare(
+        `SELECT v.plate FROM pending_payments pp
+         JOIN parking_sessions s ON s.id = pp.parking_session_id
+         JOIN vehicles v ON v.id = s.vehicle_id
+         WHERE pp.status = 'pending' AND ${sessionFilter} LIMIT 1`,
+      )
+      .get(value) as { plate: string } | undefined
+    if (!owner) return null
+    return {
+      kind: 'pending',
+      plate: owner.plate,
+      pendingPayments: this.listPendingPaymentsForPlate(owner.plate),
+    }
+  }
+
+  private toPendingPayment(row: PendingPaymentRow): PendingPayment {
+    const snapshot = JSON.parse(row.snapshot_json) as PendingPaymentSnapshot
+    return {
+      id: row.id,
+      sessionId: row.parking_session_id,
+      plate: snapshot.plate,
+      vehicleType: snapshot.vehicleType,
+      ratePlanName: snapshot.ratePlanName,
+      enteredAt: snapshot.enteredAt,
+      exitedAt: snapshot.exitedAt,
+      charge: snapshot.charge,
+      amountCop: row.amount_cop,
+      employeeName: snapshot.employeeName,
+    }
+  }
+
+  private toSessionTarget(row: SessionRow): ExitTarget {
+    return { kind: 'session', session: this.toActiveSession(row, new Date().toISOString()) }
   }
 
   /**
@@ -779,9 +1086,13 @@ export class ParkingService {
     }
   }
 
-  private requireActiveSession(sessionId: string): SessionRow {
-    const row = this.sqlite.prepare(`${ACTIVE_SESSION_QUERY} AND s.id = ?`).get(sessionId) as
+  private findActiveSession(sessionId: string): SessionRow | undefined {
+    return this.sqlite.prepare(`${ACTIVE_SESSION_QUERY} AND s.id = ?`).get(sessionId) as
       SessionRow | undefined
+  }
+
+  private requireActiveSession(sessionId: string): SessionRow {
+    const row = this.findActiveSession(sessionId)
     if (!row) {
       throw new OperationError(
         'SESSION_NOT_ACTIVE',
@@ -797,24 +1108,17 @@ export class ParkingService {
    * Los 48 bits del prefijo hacen improbable una coincidencia; si ocurriera,
    * se pide la matrícula en lugar de escoger una sesión al azar.
    */
-  private requireActiveSessionByPrefix(prefix: string): SessionRow {
+  private findActiveSessionByPrefix(prefix: string): SessionRow | undefined {
     const rows = this.sqlite
       .prepare(`${ACTIVE_SESSION_QUERY} AND s.id LIKE ? LIMIT 2`)
       .all(`${prefix}%`) as SessionRow[]
-    const [row] = rows
-    if (!row) {
-      throw new OperationError(
-        'SESSION_NOT_ACTIVE',
-        'Ese tiquete no corresponde a ningún vehículo en el parqueadero. Puede que ya haya salido.',
-      )
-    }
     if (rows.length > 1) {
       throw new OperationError(
         'ENTRY_TICKET_AMBIGUOUS',
         'El código coincide con más de un ingreso. Escribe la matrícula para continuar.',
       )
     }
-    return row
+    return rows[0]
   }
 
   private toActiveSession(row: SessionRow, atUtc: string): ActiveSession {

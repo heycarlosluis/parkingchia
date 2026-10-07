@@ -4,6 +4,7 @@ import {
   calculateChange,
   closeSessionSchema,
   describeElapsed,
+  describePendingPayments,
   exitStatusOf,
   QUICK_CASH_AMOUNTS_COP,
   resolveExitTargetSchema,
@@ -73,7 +74,12 @@ describe('describeElapsed', () => {
 })
 
 describe('exitStatusOf', () => {
-  const closed = { status: 'closed' as const, monthlyCustomerName: null, receiptNumber: 7 }
+  const closed = {
+    status: 'closed' as const,
+    paymentPending: false,
+    monthlyCustomerName: null,
+    receiptNumber: 7,
+  }
 
   it('distingue una salida cobrada de una que no generó recibo', () => {
     expect(exitStatusOf(closed)).toBe('charged')
@@ -88,8 +94,24 @@ describe('exitStatusOf', () => {
 
   it('la anulación manda sobre cualquier otro rastro', () => {
     expect(
-      exitStatusOf({ status: 'cancelled', monthlyCustomerName: 'Ana', receiptNumber: 7 }),
+      exitStatusOf({
+        status: 'cancelled',
+        paymentPending: false,
+        monthlyCustomerName: 'Ana',
+        receiptNumber: 7,
+      }),
     ).toBe('cancelled')
+  })
+
+  it('una salida sin cobrar queda pendiente y no como sin cobro', () => {
+    expect(exitStatusOf({ ...closed, receiptNumber: null, paymentPending: true })).toBe('pending')
+  })
+})
+
+describe('aviso de pago pendiente', () => {
+  it('concuerda en número con la cantidad de pendientes', () => {
+    expect(describePendingPayments(1)).toBe('Este carro tiene un pago pendiente')
+    expect(describePendingPayments(3)).toBe('Este carro tiene 3 pagos pendientes')
   })
 })
 

@@ -24,6 +24,7 @@ const EMPTY_HISTORY: ExitHistory = { records: [], totalCount: 0, totalCollectedC
 
 const STATUS_VARIANTS: Record<ExitStatus, BadgeProps['variant']> = {
   charged: 'success',
+  pending: 'warning',
   monthly: 'secondary',
   free: 'warning',
   cancelled: 'danger',
@@ -86,7 +87,7 @@ export function HistoryPage(): React.JSX.Element {
     <div className="page-stack">
       <PageHeading
         title="Historial de salidas"
-        description="Consulta las salidas cobradas, las que no generaron cobro y los ingresos anulados."
+        description="Consulta las salidas cobradas, las que quedaron con pago pendiente, las que no generaron cobro y los ingresos anulados."
         action={
           <Badge variant="success">{formatCurrency(history.totalCollectedCop)} cobrados</Badge>
         }

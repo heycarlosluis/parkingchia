@@ -1,12 +1,19 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { pendingPayment } from '@/test/setup'
 import { useParkingStore } from '@/store/parking-store'
 import { ActiveSessionsPage } from './active-sessions-page'
 
 describe('Parqueo activo', () => {
   beforeEach(() => {
-    useParkingStore.setState({ sessions: [], search: '', loading: true, error: null })
+    useParkingStore.setState({
+      sessions: [],
+      pendingPayments: [],
+      search: '',
+      loading: true,
+      error: null,
+    })
   })
 
   it('lista los vehículos activos con su permanencia y cobro estimado', async () => {
@@ -95,6 +102,56 @@ describe('Parqueo activo', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Cerrar aviso' }))
     expect(screen.queryByText(/Salida registrada/)).not.toBeInTheDocument()
+  })
+
+  it('deja una salida con pago pendiente desde el cobro', async () => {
+    render(<ActiveSessionsPage />)
+    await screen.findByRole('table')
+    await userEvent.click(screen.getByRole('button', { name: /Salida/ }))
+
+    const dialog = await screen.findByRole('dialog')
+    await within(dialog).findByText('Total a cobrar')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Pago pendiente' }))
+
+    expect(await screen.findByText(/Pago pendiente registrado · ABC123/)).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(window.parkingAPI.markPaymentPending).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      expectedTotalCop: 10_000,
+    })
+  })
+
+  it('lista los pagos pendientes en un bloque propio y los cobra', async () => {
+    vi.mocked(window.parkingAPI.listPendingPayments).mockResolvedValueOnce({
+      ok: true,
+      data: [pendingPayment],
+    })
+    render(<ActiveSessionsPage />)
+
+    const table = await screen.findByRole('table', { name: /salieron sin pagar/ })
+    expect(screen.getByText(/1 pendiente · \$\s10\.000/)).toBeInTheDocument()
+    const row = within(table).getByRole('row', { name: /DEU456/ })
+    expect(within(row).getByText('1 h 30 min')).toBeInTheDocument()
+
+    await userEvent.click(within(row).getByRole('button', { name: /Cobrar/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Cobrar pago pendiente' })
+    await userEvent.type(within(dialog).getByLabelText('Efectivo recibido'), '20000')
+    await userEvent.click(within(dialog).getByRole('button', { name: /Cobrar \$\s10\.000/ }))
+
+    expect(await screen.findByText(/Pago pendiente cobrado · DEU456/)).toBeInTheDocument()
+    expect(screen.getByText(/Recibo N\.º 5/)).toBeInTheDocument()
+    expect(screen.getByText(/Cambio a entregar: \$\s10\.000/)).toBeInTheDocument()
+    // El listado se vuelve a consultar y el bloque desaparece al quedar sin pendientes.
+    await waitFor(() => {
+      expect(screen.queryByRole('table', { name: /salieron sin pagar/ })).not.toBeInTheDocument()
+    })
+  })
+
+  it('no dibuja el bloque de pagos pendientes cuando no hay ninguno', async () => {
+    render(<ActiveSessionsPage />)
+    await screen.findByRole('table')
+
+    expect(screen.queryByText('Pagos pendientes')).not.toBeInTheDocument()
   })
 
   it('reimprime el tiquete de un vehículo que sigue en el parqueadero', async () => {

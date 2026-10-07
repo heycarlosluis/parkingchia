@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useMonthlyStore } from '@/store/monthly-store'
 import { MonthlyPage } from './monthly-page'
 
+const getOverviewDefault = vi.mocked(window.parkingAPI.getMonthlyOverview).getMockImplementation()!
+
 function renderPage(initialEntry = '/mensualidades'): void {
   render(
     <MemoryRouter initialEntries={[initialEntry]}>
@@ -15,6 +17,9 @@ function renderPage(initialEntry = '/mensualidades'): void {
 
 describe('Mensualidades', () => {
   beforeEach(() => {
+    vi.mocked(window.parkingAPI.getMonthlyOverview).mockImplementation(getOverviewDefault)
+    vi.mocked(window.parkingAPI.deleteMonthlyCustomer).mockClear()
+    vi.mocked(window.parkingAPI.deleteMonthlyPlan).mockClear()
     useMonthlyStore.setState({
       subscriptions: [],
       customers: [],
@@ -29,9 +34,101 @@ describe('Mensualidades', () => {
       search: '',
       status: 'all',
       loading: true,
+      mutating: false,
       error: null,
       message: '',
     })
+  })
+
+  it.each([
+    {
+      tab: 'clientes',
+      confirm: 'Eliminar cliente',
+      api: 'deleteMonthlyCustomer' as const,
+      id: 'customer-1',
+      list: 'customers' as const,
+    },
+    {
+      tab: 'planes',
+      confirm: 'Eliminar plan',
+      api: 'deleteMonthlyPlan' as const,
+      id: 'monthly-plan-car',
+      list: 'plans' as const,
+    },
+  ])(
+    'elimina desde $tab conservando el historial y exige confirmación',
+    async ({ tab, confirm, api, id, list }) => {
+      const initial = await window.parkingAPI.getMonthlyOverview({ search: '', status: 'all' })
+      if (!initial.ok) throw new Error('Falta el escenario de mensualidades')
+      vi.mocked(window.parkingAPI[api]).mockImplementationOnce(async () => {
+        vi.mocked(window.parkingAPI.getMonthlyOverview).mockResolvedValue({
+          ok: true,
+          data: { ...initial.data, [list]: [] },
+        })
+        return { ok: true, data: undefined }
+      })
+      renderPage(`/mensualidades?tab=${tab}`)
+      await screen.findByRole('table')
+      await userEvent.click(screen.getByRole('button', { name: 'Eliminar' }))
+      const dialog = await screen.findByRole('alertdialog')
+      expect(window.parkingAPI[api]).not.toHaveBeenCalled()
+      expect(within(dialog).getByText(/conservan/)).toBeInTheDocument()
+      await userEvent.click(within(dialog).getByRole('button', { name: confirm }))
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+      expect(window.parkingAPI[api]).toHaveBeenCalledWith({ id })
+      expect(useMonthlyStore.getState()[list]).toEqual([])
+      await userEvent.click(screen.getByRole('tab', { name: 'Mensualidades' }))
+      const table = await screen.findByRole('table')
+      expect(within(table).getByText('MEN001')).toBeInTheDocument()
+      expect(within(table).queryByRole('button', { name: 'Renovar' })).not.toBeInTheDocument()
+      expect(within(table).getByRole('button', { name: 'Cobrar' })).toBeInTheDocument()
+    },
+  )
+
+  it('muestra el error de eliminación dentro de la confirmación y permite volver', async () => {
+    vi.mocked(window.parkingAPI.deleteMonthlyPlan).mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'OPERATION_FAILED', message: 'No fue posible eliminar el plan.' },
+    })
+    renderPage('/mensualidades?tab=planes')
+    await screen.findByRole('table')
+    await userEvent.click(screen.getByRole('button', { name: 'Eliminar' }))
+    const dialog = await screen.findByRole('alertdialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Eliminar plan' }))
+    expect(await within(dialog).findByText('No fue posible eliminar el plan.')).toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Volver' }))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  })
+
+  it('al reabrir el formulario vuelve a proponer el costo del mismo plan', async () => {
+    renderPage()
+    await screen.findByRole('table')
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await userEvent.click(screen.getByRole('button', { name: /Nueva mensualidad/ }))
+      const dialog = await screen.findByRole('dialog')
+      await userEvent.click(within(dialog).getByLabelText('Plan mensual'))
+      await userEvent.click(await screen.findByRole('option', { name: /Mensualidad automóvil/ }))
+      expect(within(dialog).getByLabelText('Costo de la mensualidad')).toHaveValue(150_000)
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }))
+    }
+  })
+
+  it('impide renovar con un costo vacío y mantiene el error dentro del diálogo', async () => {
+    vi.mocked(window.parkingAPI.renewSubscription).mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'SUBSCRIPTION_OVERLAPS', message: 'El periodo ya está renovado.' },
+    })
+    renderPage()
+    await screen.findByRole('table')
+    await userEvent.click(screen.getByRole('button', { name: 'Renovar' }))
+    const dialog = await screen.findByRole('alertdialog')
+    const amount = within(dialog).getByLabelText('Costo del nuevo periodo')
+    const confirm = within(dialog).getByRole('button', { name: 'Renovar mensualidad' })
+    await userEvent.clear(amount)
+    expect(confirm).toBeDisabled()
+    await userEvent.type(amount, '150000')
+    await userEvent.click(confirm)
+    expect(await within(dialog).findByText('El periodo ya está renovado.')).toBeInTheDocument()
   })
 
   it('resume la operación mensual y lista las mensualidades vigentes', async () => {

@@ -218,6 +218,32 @@ export type ExitRegistration = {
   printMessage: string
 }
 
+/** Salida registrada sin cobrar: el vehículo se fue y debe el importe. */
+export type PendingPayment = {
+  id: string
+  sessionId: string
+  plate: string
+  vehicleType: VehicleType
+  ratePlanName: string | null
+  enteredAt: string
+  /** Instante en que se dejó pendiente; la permanencia quedó detenida ahí. */
+  exitedAt: string
+  /** Cobro congelado al dejarlo pendiente: no cambia con el tiempo ni con la tarifa. */
+  charge: ParkingCharge
+  amountCop: number
+  /** Empleado del turno que registró la salida; `null` si no había caja abierta. */
+  employeeName: string | null
+}
+
+/**
+ * Lo que encontró Registrar salida para un tiquete o una matrícula: el ingreso
+ * activo que se va a cobrar o, si el vehículo ya salió debiendo, sus pagos
+ * pendientes.
+ */
+export type ExitTarget =
+  | { kind: 'session'; session: ActiveSession }
+  | { kind: 'pending'; plate: string; pendingPayments: PendingPayment[] }
+
 export type ExitRecord = {
   sessionId: string
   plate: string
@@ -228,9 +254,11 @@ export type ExitRecord = {
   totalMinutes: number
   totalCop: number
   status: 'closed' | 'cancelled'
+  /** La salida quedó con el pago pendiente y todavía no se ha cobrado. */
+  paymentPending: boolean
   method: PaymentMethod | null
   receiptNumber: number | null
-  /** Desglose guardado al emitir el recibo; `null` cuando la salida no generó cobro. */
+  /** Desglose guardado al emitir el recibo o al dejar el pago pendiente; `null` sin cobro. */
   charge: ParkingCharge | null
   /** Nombre del cliente mensual cuando la salida quedó cubierta; `null` en el resto. */
   monthlyCustomerName: string | null
@@ -371,6 +399,17 @@ export type CashMovement = {
   reference: string | null
 }
 
+/**
+ * Lo que deben las salidas que quedaron con el pago pendiente.
+ *
+ * Se informa junto a la caja, pero es dinero que todavía no entró: nunca se
+ * suma ni se resta de lo recaudado, de lo esperado ni de la diferencia.
+ */
+export type PendingBalance = {
+  count: number
+  totalCop: number
+}
+
 export type CashState = {
   /** Caja abierta ahora mismo; `null` cuando el turno no ha iniciado. */
   session: CashSession | null
@@ -379,6 +418,8 @@ export type CashState = {
   voidedCop: number
   expectedCop: number
   movementCount: number
+  /** Pagos pendientes sin cobrar ahora mismo; informativo, fuera de los totales. */
+  pendingBalance: PendingBalance
 }
 
 export type CashCloseSummary = {
@@ -395,6 +436,8 @@ export type CashCloseSummary = {
   /** `closingAmountCop - expectedAmountCop`: positivo sobra, negativo falta; `null` sin conteo. */
   differenceCop: number | null
   movementCount: number
+  /** Pagos pendientes que seguían sin cobrar al cerrar; informativo, fuera de los totales. */
+  pendingBalance: PendingBalance
 }
 
 export interface ParkingApi {
@@ -428,7 +471,7 @@ export interface ParkingApi {
     ratePlanId: string
     notes: string | null
   }) => Promise<ApiResult<EntryRegistration>>
-  resolveExitTarget: (input: { code: string }) => Promise<ApiResult<ActiveSession>>
+  resolveExitTarget: (input: { code: string }) => Promise<ApiResult<ExitTarget>>
   listActiveSessions: (input: { search: string }) => Promise<ApiResult<ActiveSession[]>>
   quoteSessionExit: (input: { sessionId: string }) => Promise<ApiResult<SessionQuote>>
   closeSession: (input: {
@@ -442,6 +485,16 @@ export interface ParkingApi {
     sessionId: string
     reason: string
   }) => Promise<ApiResult<ActiveSession[]>>
+  markPaymentPending: (input: {
+    sessionId: string
+    expectedTotalCop: number
+  }) => Promise<ApiResult<PendingPayment>>
+  listPendingPayments: () => Promise<ApiResult<PendingPayment[]>>
+  settlePendingPayment: (input: {
+    pendingPaymentId: string
+    method: PaymentMethod
+    receivedCop: number | null
+  }) => Promise<ApiResult<ExitRegistration>>
   reprintEntryTicket: (input: { sessionId: string }) => Promise<ApiResult<PrintResult>>
   reprintReceipt: (input: { sessionId: string }) => Promise<ApiResult<PrintResult>>
   listExits: (input: {

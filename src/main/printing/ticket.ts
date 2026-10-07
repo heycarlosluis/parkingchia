@@ -6,7 +6,7 @@ import type {
   ParkingProfile,
 } from '@shared/contracts'
 import { formatCurrency, formatDateTime } from '@shared/format'
-import { describeCashDifference } from '@shared/cash'
+import { describeCashDifference, describePendingCount } from '@shared/cash'
 import { PRINTABLE_WIDTH_MM } from '@shared/ipc'
 import { formatNit } from '@shared/nit'
 import { describeElapsed, PAYMENT_METHOD_LABELS } from '@shared/parking'
@@ -355,6 +355,8 @@ export function createExitReceiptHtml(
       ? ''
       : `${row('Recibido', escapeHtml(formatCurrency(receipt.receivedCop)))}
       ${row('Cambio', escapeHtml(formatCurrency(receipt.changeCop ?? 0)))}`
+  // Un pago pendiente se cobra después de la salida: el recibo dice cuándo.
+  const paidLater = receipt.issuedAt !== receipt.exitedAt
 
   const body = `
     ${plateBlock(receipt.plate, receipt.vehicleType)}
@@ -371,6 +373,7 @@ export function createExitReceiptHtml(
     <dl>
       ${row('Pago', escapeHtml(PAYMENT_METHOD_LABELS[receipt.method]))}
       ${cashRows}
+      ${paidLater ? row('Pagado', dateTimeHtml(receipt.issuedAt)) : ''}
       ${receipt.employeeName === null ? '' : row('Atendió', escapeHtml(receipt.employeeName))}
     </dl>
     ${notesBlock(receipt.notes)}
@@ -461,6 +464,16 @@ export function createCashCloseReceiptHtml(
       ${row('Diferencia', escapeHtml(describeCashDifference(summary.differenceCop)))}
     </dl>`
 
+  // Fuera del bloque de totales: es dinero por cobrar, no parte del arqueo.
+  const pending =
+    summary.pendingBalance.count === 0
+      ? ''
+      : `${RULE}
+    <dl>
+      ${row(describePendingCount(summary.pendingBalance.count), escapeHtml(formatCurrency(summary.pendingBalance.totalCop)))}
+    </dl>
+    <p class="note">Por cobrar: no se suma ni se resta del total del turno.</p>`
+
   const body = `
     <dl>
       ${row('Apertura', dateTimeHtml(summary.openedAt))}
@@ -470,6 +483,7 @@ export function createCashCloseReceiptHtml(
     </dl>
     ${RULE}
     ${totals}
+    ${pending}
     ${RULE}
     <p class="footer">Conserve este comprobante del turno.</p>`
   return documentShell(layout, profile, { title: 'Cierre de caja' }, body)

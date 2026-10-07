@@ -1,6 +1,6 @@
 import { CarFront, LogOut, Printer, RefreshCw, Search, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import type { ActiveSession, ExitRegistration } from '@shared/contracts'
+import type { ActiveSession, ExitRegistration, PendingPayment } from '@shared/contracts'
 import { elapsedMinutesOrZero, formatCurrency, formatDateTime } from '@shared/format'
 import { describeElapsed, PAYMENT_METHOD_LABELS } from '@shared/parking'
 import { calculateChargeForMinutes, VEHICLE_TYPE_LABELS } from '@shared/tariff'
@@ -23,14 +23,25 @@ import { Field, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { PageHeading } from '@/components/page-heading'
 import { ExitDialog } from '@/features/active-sessions/exit-dialog'
+import { PendingPaymentsCard } from '@/features/pending-payments/pending-payments-card'
+import { SettlePendingDialog } from '@/features/pending-payments/settle-pending-dialog'
 import { useParkingStore } from '@/store/parking-store'
 import { useTariffStore } from '@/store/tariff-store'
+
+/**
+ * Resultado de la última operación: una salida cobrada, un pago pendiente que
+ * se acaba de cobrar o una salida que quedó debiendo.
+ */
+type Notice =
+  | { kind: 'exit' | 'settled'; exit: ExitRegistration }
+  | { kind: 'pending'; pending: PendingPayment }
 
 /** Cada cuánto se recalculan las permanencias y los estimados en pantalla. */
 const TICK_MILLISECONDS = 30_000
 
 export function ActiveSessionsPage(): React.JSX.Element {
   const sessions = useParkingStore((store) => store.sessions)
+  const pendingPayments = useParkingStore((store) => store.pendingPayments)
   const search = useParkingStore((store) => store.search)
   const loading = useParkingStore((store) => store.loading)
   const error = useParkingStore((store) => store.error)
@@ -47,7 +58,8 @@ export function ActiveSessionsPage(): React.JSX.Element {
   const [exiting, setExiting] = useState<ActiveSession | null>(null)
   const [cancelling, setCancelling] = useState<ActiveSession | null>(null)
   const [cancelReason, setCancelReason] = useState('')
-  const [lastExit, setLastExit] = useState<ExitRegistration | null>(null)
+  const [collecting, setCollecting] = useState<PendingPayment | null>(null)
+  const [notice, setNotice] = useState<Notice | null>(null)
   const [reprintMessage, setReprintMessage] = useState('')
   const [ticketMessage, setTicketMessage] = useState('')
   const [printingTicketId, setPrintingTicketId] = useState<string | null>(null)
@@ -85,6 +97,12 @@ export function ActiveSessionsPage(): React.JSX.Element {
         return { session, minutes, charge }
       }),
     [sessions, now, plansById, settings],
+  )
+
+  // La búsqueda de la matrícula filtra también el bloque de pagos pendientes.
+  const visiblePending = useMemo(
+    () => pendingPayments.filter((pending) => pending.plate.includes(search)),
+    [pendingPayments, search],
   )
 
   const reprintReceipt = async (sessionId: string): Promise<void> => {
@@ -126,32 +144,48 @@ export function ActiveSessionsPage(): React.JSX.Element {
         </Alert>
       ) : null}
 
-      {lastExit ? (
+      {notice === null ? null : notice.kind === 'pending' ? (
+        <Alert variant="warning">
+          <AlertTitle>
+            Pago pendiente registrado · {notice.pending.plate} ·{' '}
+            {formatCurrency(notice.pending.amountCop)}
+          </AlertTitle>
+          <AlertDescription>
+            El vehículo salió sin pagar. El cobro queda en Pagos pendientes hasta que se registre.
+          </AlertDescription>
+          <AlertActions>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setNotice(null)}>
+              Cerrar aviso
+            </Button>
+          </AlertActions>
+        </Alert>
+      ) : (
         <Alert variant="success">
           <AlertTitle>
-            Salida registrada · {lastExit.plate} · {formatCurrency(lastExit.charge.totalCop)}
+            {notice.kind === 'settled' ? 'Pago pendiente cobrado' : 'Salida registrada'} ·{' '}
+            {notice.exit.plate} · {formatCurrency(notice.exit.charge.totalCop)}
           </AlertTitle>
           <AlertDescription>
             <span>
-              {lastExit.receiptNumber === null
-                ? lastExit.monthlyCoverage
-                  ? `Cubierta por la mensualidad de ${lastExit.monthlyCoverage.customerName}.`
+              {notice.exit.receiptNumber === null
+                ? notice.exit.monthlyCoverage
+                  ? `Cubierta por la mensualidad de ${notice.exit.monthlyCoverage.customerName}.`
                   : 'Dentro del tiempo de gracia, sin cobro ni recibo.'
-                : `Recibo N.º ${lastExit.receiptNumber} · ${PAYMENT_METHOD_LABELS[lastExit.method]}`}
-              {lastExit.changeCop === null
+                : `Recibo N.º ${notice.exit.receiptNumber} · ${PAYMENT_METHOD_LABELS[notice.exit.method]}`}
+              {notice.exit.changeCop === null
                 ? ''
-                : ` · Cambio a entregar: ${formatCurrency(lastExit.changeCop)}`}
+                : ` · Cambio a entregar: ${formatCurrency(notice.exit.changeCop)}`}
             </span>
             {/* El aviso ya es una región viva: anunciar aquí duplicaría la lectura. */}
             <span className="reprint-status">{reprintMessage}</span>
           </AlertDescription>
           <AlertActions>
-            {lastExit.receiptNumber === null ? null : (
+            {notice.exit.receiptNumber === null ? null : (
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => void reprintReceipt(lastExit.sessionId)}
+                onClick={() => void reprintReceipt(notice.exit.sessionId)}
               >
                 <Printer data-icon="inline-start" />
                 Reimprimir recibo
@@ -162,7 +196,7 @@ export function ActiveSessionsPage(): React.JSX.Element {
               variant="ghost"
               size="sm"
               onClick={() => {
-                setLastExit(null)
+                setNotice(null)
                 setReprintMessage('')
               }}
             >
@@ -170,7 +204,7 @@ export function ActiveSessionsPage(): React.JSX.Element {
             </Button>
           </AlertActions>
         </Alert>
-      ) : null}
+      )}
 
       <Card>
         <CardHeader className="sessions-toolbar">
@@ -319,6 +353,16 @@ export function ActiveSessionsPage(): React.JSX.Element {
         </CardContent>
       </Card>
 
+      {visiblePending.length > 0 ? (
+        <PendingPaymentsCard
+          payments={visiblePending}
+          onCollect={(pending) => {
+            clearError()
+            setCollecting(pending)
+          }}
+        />
+      ) : null}
+
       {exiting ? (
         <ExitDialog
           key={exiting.id}
@@ -328,7 +372,27 @@ export function ActiveSessionsPage(): React.JSX.Element {
           }}
           onClosed={(exit) => {
             setExiting(null)
-            setLastExit(exit)
+            setNotice({ kind: 'exit', exit })
+            setReprintMessage('')
+          }}
+          onPending={(pending) => {
+            setExiting(null)
+            setNotice({ kind: 'pending', pending })
+            setReprintMessage('')
+          }}
+        />
+      ) : null}
+
+      {collecting ? (
+        <SettlePendingDialog
+          key={collecting.id}
+          pending={collecting}
+          onOpenChange={(open) => {
+            if (!open) setCollecting(null)
+          }}
+          onSettled={(exit) => {
+            setCollecting(null)
+            setNotice({ kind: 'settled', exit })
             setReprintMessage('')
           }}
         />

@@ -24,6 +24,7 @@ import { useMonthlyStore } from '@/store/monthly-store'
 export function MonthlyPlansCard(): React.JSX.Element {
   const plans = useMonthlyStore((store) => store.plans)
   const loading = useMonthlyStore((store) => store.loading)
+  const mutating = useMonthlyStore((store) => store.mutating)
   const error = useMonthlyStore((store) => store.error)
   const createPlan = useMonthlyStore((store) => store.createPlan)
   const updatePlan = useMonthlyStore((store) => store.updatePlan)
@@ -48,7 +49,7 @@ export function MonthlyPlansCard(): React.JSX.Element {
 
   return (
     <>
-      {error ? (
+      {error && !dialogOpen && !removing ? (
         <Alert variant="destructive">
           <AlertTitle>La operación no se completó</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
@@ -161,20 +162,28 @@ export function MonthlyPlansCard(): React.JSX.Element {
       <AlertDialog
         open={removing !== null}
         onOpenChange={(open) => {
-          if (!open) setRemoving(null)
+          if (!open && !mutating) setRemoving(null)
         }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar el plan {removing?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Un plan que ya se usó en una mensualidad no se puede eliminar; en ese caso desactívalo
-              para dejar de ofrecerlo.
+              El plan dejará de aparecer en Planes y no podrá usarse para crear o renovar
+              mensualidades. Las mensualidades existentes conservan su cobertura, costo, saldos y
+              recibos.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {error ? (
+            <Alert variant="destructive">
+              <AlertTitle>No fue posible eliminar el plan</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
           <AlertDialogFooter>
-            <AlertDialogCancel>Volver</AlertDialogCancel>
+            <AlertDialogCancel disabled={mutating}>Volver</AlertDialogCancel>
             <AlertDialogAction
+              disabled={mutating}
               onClick={(event) => {
                 event.preventDefault()
                 void confirmRemove()

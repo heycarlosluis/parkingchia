@@ -49,7 +49,15 @@ La salida ocurre en una sola transacción: actualiza la sesión a `closed` con `
 
 Cuando la permanencia no supera el tiempo de gracia el total es cero, así que la sesión se cierra sin pago ni recibo: `payments` exige `amount_cop > 0`. Anular un ingreso deja la sesión en `cancelled` con importe cero y registra el motivo en `audit_logs`.
 
-Cada pago de parqueo o de mensualidad se asocia, al registrarse, a la caja abierta en ese momento mediante `payments.cash_register_session_id`. Si no hay caja abierta, el pago se registra igual y ese campo queda en `NULL`.
+Una salida puede cerrarse con el pago pendiente (D-044). La sesión queda `closed` con `exited_at` y `calculated_amount_cop`, sin fila en `payments`, y se inserta una fila en `pending_payments` con el importe, el estado `pending` y un snapshot inmutable del cobro (matrícula, tarifa, ingreso, salida, desglose y empleado). El índice único `pending_payments_session_unique` limita a un pendiente por sesión, pero un vehículo puede acumular varios porque cada visita es una sesión distinta. Cobrarlo inserta el pago y el recibo dentro de una transacción y pasa la fila a `paid` con su `payment_id`; la restricción `pending_payments_settlement_consistent` impide un pendiente pagado sin pago. Anular ese pago desde Caja devuelve la fila a `pending`. La migración `0008` solo crea esta tabla y sus índices.
+
+Al cerrar la caja se guarda en `cash_register_sessions.pending_count` y `pending_amount_cop` cuántos pagos pendientes seguían sin cobrar y por cuánto (D-045, migración `0009`). Es una foto informativa del cierre: no interviene en `expected_amount_cop` ni en la diferencia. Las columnas quedan en `NULL` mientras la caja está abierta y en los cierres anteriores a la migración, que se leen como cero.
+
+Cada pago de parqueo o de mensualidad se asocia, al registrarse, a la caja abierta en ese momento mediante `payments.cash_register_session_id`. La operación actual exige una caja abierta para cobrar parqueo o mensualidades (D-021); el campo en `NULL` se conserva únicamente en pagos históricos.
+
+## Eliminación de clientes y planes mensuales
+
+La migración `0010` añade `deleted_at` anulable a `monthly_customers` y `rate_plans`, sin recrear tablas ni borrar filas. Eliminar desde Mensualidades registra la fecha UTC, marca la entidad como inactiva y la retira de los catálogos y de los selectores. Las consultas de suscripciones, cobertura, caja e historial mantienen sus referencias, y los recibos conservan su snapshot. No se permite editar ni crear o renovar con una entidad eliminada; cobrar saldos y cancelar una mensualidad existente sigue disponible. El documento de un cliente eliminado puede usarse al registrarlo de nuevo, con un identificador distinto (D-046).
 
 ## Propiedad y copias
 

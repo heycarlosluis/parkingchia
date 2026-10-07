@@ -57,6 +57,27 @@
       "when": 1789670455336,
       "tag": "0007_serious_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1791340880631,
+      "tag": "0008_vengeful_phil_sheldon",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1791341808208,
+      "tag": "0009_keen_puppet_master",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1791342554318,
+      "tag": "0010_grey_sumo",
+      "breakpoints": true
     }
   ]
 }

@@ -6,6 +6,8 @@ Aplicación de escritorio offline-first para administrar la operación de un par
 
 La primera ejecución presenta un onboarding para guardar el nombre, dirección y teléfono del parqueadero. La protección con un PIN local de 8 dígitos es opcional y puede administrarse después desde Configuración. La aplicación abre una interfaz navegable con Dashboard, ingresos, salida por matrícula o lector de códigos, parqueo activo, mensualidades, caja, historial, reportes y configuración. Tarifas, cobro, recibos, cierre de caja, SQLite, IPC, impresión térmica, copias de seguridad y actualizaciones tienen implementaciones reales. Reportes continúa como base de interfaz pendiente de lógica comercial.
 
+Los cambios de mensualidades del árbol de trabajo aún no están publicados: permiten eliminar clientes y planes con confirmación, retirándolos de los listados sin borrar mensualidades, cobertura, saldos ni recibos. Para terminar la cobertura se cancela la mensualidad por separado. El saldo por cobrar incluye periodos vencidos no cancelados.
+
 ## Stack
 
 - Node.js 22 LTS y npm.

@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { LoaderCircle } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { z } from 'zod'
 import type { MonthlyCustomer, RatePlan, SubscriptionDraft } from '@shared/contracts'
@@ -118,21 +118,9 @@ export function SubscriptionDialog({
     if (open) reset(emptyForm())
   }, [open, reset])
 
-  const ratePlanId = useWatch({ control, name: 'ratePlanId' })
   const startDate = useWatch({ control, name: 'startDate' })
   const months = useWatch({ control, name: 'months' })
   const endDate = useWatch({ control, name: 'endDate' })
-
-  /** El plan define el costo sugerido y el tipo de vehículo, sin bloquearlos. */
-  const appliedPlan = useRef('')
-  useEffect(() => {
-    if (!ratePlanId || appliedPlan.current === ratePlanId) return
-    const plan = activePlans.find((candidate) => candidate.id === ratePlanId)
-    if (!plan) return
-    appliedPlan.current = ratePlanId
-    setValue('amountCop', plan.amountCop, { shouldValidate: true })
-    setValue('vehicleType', plan.vehicleType)
-  }, [ratePlanId, activePlans, setValue])
 
   /** La fecha final se recalcula al mover el inicio o la duración. */
   useEffect(() => {
@@ -157,7 +145,12 @@ export function SubscriptionDialog({
   const missingRequirements = activeCustomers.length === 0 || activePlans.length === 0
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!formState.isSubmitting) onOpenChange(nextOpen)
+      }}
+    >
       <DialogContent className="rate-plan-dialog">
         <DialogHeader>
           <DialogTitle>Nueva mensualidad</DialogTitle>
@@ -220,7 +213,17 @@ export function SubscriptionDialog({
                   control={control}
                   name="ratePlanId"
                   render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select
+                      value={field.value}
+                      onValueChange={(value) => {
+                        field.onChange(value)
+                        const plan = activePlans.find((candidate) => candidate.id === value)
+                        if (plan) {
+                          setValue('amountCop', plan.amountCop, { shouldValidate: true })
+                          setValue('vehicleType', plan.vehicleType)
+                        }
+                      }}
+                    >
                       <SelectTrigger id="subscription-plan" className="min-h-11">
                         <SelectValue placeholder="Selecciona el plan" />
                       </SelectTrigger>
@@ -372,7 +375,12 @@ export function SubscriptionDialog({
             </FieldGroup>
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={formState.isSubmitting}
+                onClick={() => onOpenChange(false)}
+              >
                 Cancelar
               </Button>
               <Button type="submit" disabled={formState.isSubmitting}>

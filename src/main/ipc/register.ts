@@ -24,6 +24,7 @@ import {
   listActiveSessionsSchema,
   listExitsSchema,
   listMonthlySchema,
+  markPaymentPendingSchema,
   openCashSessionSchema,
   parkingProfileSchema,
   quoteSessionSchema,
@@ -33,6 +34,7 @@ import {
   removePinSchema,
   renewSubscriptionSchema,
   setPinSchema,
+  settlePendingPaymentSchema,
   simulateChargeSchema,
   subscriptionReceiptSchema,
   unlockPinSchema,
@@ -200,6 +202,25 @@ export function registerIpcHandlers(services: Services): void {
   )
   ipcMain.handle(IPC_CHANNELS.PARKING_CANCEL, (_event, rawInput: unknown) =>
     withAccess(() => services.parking.cancelSession(parseOrReject(cancelSessionSchema, rawInput))),
+  )
+  ipcMain.handle(IPC_CHANNELS.PARKING_PENDING_MARK, (_event, rawInput: unknown) =>
+    withAccess(() =>
+      services.parking.markPaymentPending(parseOrReject(markPaymentPendingSchema, rawInput)),
+    ),
+  )
+  ipcMain.handle(IPC_CHANNELS.PARKING_PENDING_LIST, () =>
+    withAccess(() => services.parking.listPendingPayments()),
+  )
+  ipcMain.handle(IPC_CHANNELS.PARKING_PENDING_SETTLE, (_event, rawInput: unknown) =>
+    withAccess(async () => {
+      const exit = services.parking.settlePendingPayment(
+        parseOrReject(settlePendingPaymentSchema, rawInput),
+      )
+      const print = await services.printing.printExitReceipt(
+        services.parking.findReceiptSnapshot(exit.sessionId),
+      )
+      return { ...exit, printed: print.printed, printMessage: print.message }
+    }),
   )
   ipcMain.handle(IPC_CHANNELS.PARKING_ENTRY_REPRINT, (_event, rawInput: unknown) =>
     withAccess(() =>

@@ -21,6 +21,7 @@ const closedSummary: CashCloseSummary = {
   closingAmountCop: 60_000,
   differenceCop: 0,
   movementCount: 1,
+  pendingBalance: { count: 0, totalCop: 0 },
 }
 
 const emptyState: CashState = {
@@ -30,6 +31,7 @@ const emptyState: CashState = {
   voidedCop: 0,
   expectedCop: 0,
   movementCount: 0,
+  pendingBalance: { count: 0, totalCop: 0 },
 }
 
 const openState: CashState = {
@@ -63,6 +65,7 @@ const openState: CashState = {
   voidedCop: 0,
   expectedCop: 60_000,
   movementCount: 1,
+  pendingBalance: { count: 0, totalCop: 0 },
 }
 
 function renderPage(): void {
@@ -82,6 +85,7 @@ describe('Caja', () => {
       voidedCop: 0,
       expectedCop: 0,
       movementCount: 0,
+      pendingBalance: { count: 0, totalCop: 0 },
       closedSessions: [],
       loading: false,
       error: null,
@@ -173,6 +177,52 @@ describe('Caja', () => {
         notes: null,
       })
     })
+  })
+
+  it('al cerrar informa los pagos pendientes sin tocar el esperado ni la diferencia', async () => {
+    vi.mocked(window.parkingAPI.getCashState).mockResolvedValue(
+      ok({ ...openState, pendingBalance: { count: 2, totalCop: 25_000 } }),
+    )
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('button', { name: /Cerrar caja/ }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Quedan 2 pagos pendientes')).toBeInTheDocument()
+    expect(within(dialog).getByText(/^\$\s25\.000$/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/no se suman ni se restan del total/)).toBeInTheDocument()
+    // El arqueo sigue siendo el de los cobros del turno: 60.000 esperados y cuadra.
+    expect(within(dialog).getByText(/^\$\s60\.000$/)).toBeInTheDocument()
+    expect(within(dialog).getByText('Cuadra')).toBeInTheDocument()
+  })
+
+  it('no menciona pagos pendientes en el cierre cuando no queda ninguno', async () => {
+    vi.mocked(window.parkingAPI.getCashState).mockResolvedValue(ok(openState))
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('button', { name: /Cerrar caja/ }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).queryByText(/pagos? pendientes?/)).not.toBeInTheDocument()
+  })
+
+  it('el aviso del cierre y los cierres anteriores muestran lo que quedó pendiente', async () => {
+    const withPending = { ...closedSummary, pendingBalance: { count: 1, totalCop: 12_000 } }
+    vi.mocked(window.parkingAPI.listCashSessions).mockResolvedValue(ok([withPending]))
+    useCashStore.setState({ lastClose: withPending, session: null, loading: false })
+    renderPage()
+
+    expect(
+      await screen.findByText(/Quedan 1 pago pendiente por \$\s12\.000, que no se suman/),
+    ).toBeInTheDocument()
+
+    const table = await screen.findByRole('table', { name: /Cierres de caja anteriores/ })
+    const row = within(table).getAllByRole('row')[1]!
+    expect(within(row).getByText(/^\$\s12\.000$/)).toBeInTheDocument()
+    expect(within(row).getByText('1 pago pendiente')).toBeInTheDocument()
+    // Lo recaudado y lo esperado del turno no cambian por la deuda.
+    expect(within(row).getByText(/^\$\s10\.000$/)).toBeInTheDocument()
+    expect(within(row).getAllByText(/^\$\s60\.000$/)).toHaveLength(2)
   })
 
   it('muestra el error cuando la consulta falla', async () => {

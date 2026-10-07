@@ -73,6 +73,7 @@ export const ratePlans = sqliteTable(
       ],
     }).notNull(),
     billingUnit: text('billing_unit', { enum: ['minute', 'hour', 'day', 'month'] }).notNull(),
+    deletedAt: text('deleted_at'),
     amountCop: integer('amount_cop').notNull(),
     minimumChargeCop: integer('minimum_charge_cop').notNull().default(0),
     plenaCop: integer('plena_cop'),
@@ -104,6 +105,7 @@ export const monthlyCustomers = sqliteTable(
   {
     id: text('id').primaryKey(),
     fullName: text('full_name').notNull(),
+    deletedAt: text('deleted_at'),
     documentNumber: text('document_number'),
     phone: text('phone'),
     email: text('email'),
@@ -222,6 +224,13 @@ export const cashRegisterSessions = sqliteTable(
     openingAmountCop: integer('opening_amount_cop').notNull(),
     closingAmountCop: integer('closing_amount_cop'),
     expectedAmountCop: integer('expected_amount_cop'),
+    /**
+     * Pagos pendientes que seguían sin cobrar al cerrar: cuántos y por cuánto.
+     * Es una foto informativa del cierre, ajena al arqueo; `NULL` en los turnos
+     * abiertos y en los cerrados antes de que existieran los pagos pendientes.
+     */
+    pendingCount: integer('pending_count'),
+    pendingAmountCop: integer('pending_amount_cop'),
     status: text('status', { enum: ['open', 'closed'] })
       .notNull()
       .default('open'),
@@ -269,6 +278,43 @@ export const payments = sqliteTable(
     ),
     check('payments_method_valid', sql`${table.method} in ('cash', 'card', 'transfer', 'other')`),
     check('payments_status_valid', sql`${table.status} in ('completed', 'voided', 'refunded')`),
+  ],
+)
+
+/**
+ * Salidas registradas sin cobrar: el vehículo se fue y debe el importe.
+ *
+ * Cada fila es una deuda independiente, aunque el mismo vehículo acumule
+ * varias, y se salda por separado con su propio pago y recibo. El snapshot
+ * congela el cobro en el instante de la salida.
+ */
+export const pendingPayments = sqliteTable(
+  'pending_payments',
+  {
+    id: text('id').primaryKey(),
+    parkingSessionId: text('parking_session_id')
+      .notNull()
+      .references(() => parkingSessions.id, { onDelete: 'restrict' }),
+    amountCop: integer('amount_cop').notNull(),
+    status: text('status', { enum: ['pending', 'paid'] })
+      .notNull()
+      .default('pending'),
+    /** Pago que saldó la deuda; `NULL` mientras siga pendiente. */
+    paymentId: text('payment_id').references(() => payments.id, { onDelete: 'restrict' }),
+    snapshotJson: text('snapshot_json').notNull(),
+    registeredAt: text('registered_at').notNull(),
+    settledAt: text('settled_at'),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('pending_payments_session_unique').on(table.parkingSessionId),
+    index('pending_payments_status_idx').on(table.status, table.registeredAt),
+    check('pending_payments_amount_positive', sql`${table.amountCop} > 0`),
+    check('pending_payments_status_valid', sql`${table.status} in ('pending', 'paid')`),
+    check(
+      'pending_payments_settlement_consistent',
+      sql`(${table.status} = 'paid') = (${table.paymentId} is not null)`,
+    ),
   ],
 )
 

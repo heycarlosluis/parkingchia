@@ -169,6 +169,7 @@ export class MonthlyService {
                 COUNT(s.id) AS subscription_count
          FROM monthly_customers c
          LEFT JOIN monthly_subscriptions s ON s.customer_id = c.id
+         WHERE c.deleted_at IS NULL
          GROUP BY c.id
          ORDER BY c.status = 'inactive', c.full_name COLLATE NOCASE`,
       )
@@ -241,16 +242,14 @@ export class MonthlyService {
 
   deleteCustomer(id: string): void {
     const customer = this.requireCustomer(id)
-    if (customer.subscriptionCount > 0) {
-      throw new OperationError(
-        'CUSTOMER_IN_USE',
-        'Este cliente ya tiene mensualidades registradas. Márcalo como inactivo en lugar de eliminarlo.',
-      )
-    }
-
     const now = new Date().toISOString()
     this.sqlite.transaction(() => {
-      this.sqlite.prepare('DELETE FROM monthly_customers WHERE id = ?').run(id)
+      // Retirarlo del catálogo nunca borra la cobertura, los saldos ni los comprobantes.
+      this.sqlite
+        .prepare(
+          "UPDATE monthly_customers SET deleted_at = ?, status = 'inactive', updated_at = ? WHERE id = ?",
+        )
+        .run(now, now, id)
       this.writeAudit('monthly.customer_deleted', 'monthly_customer', id, now, {
         fullName: customer.fullName,
       })
@@ -264,7 +263,7 @@ export class MonthlyService {
     const rows = this.sqlite
       .prepare(
         `SELECT * FROM rate_plans
-         WHERE billing_unit = 'month'
+         WHERE billing_unit = 'month' AND deleted_at IS NULL
          ORDER BY status = 'inactive', vehicle_type, name COLLATE NOCASE`,
       )
       .all() as PlanRow[]
@@ -316,19 +315,13 @@ export class MonthlyService {
 
   deletePlan(id: string): void {
     const plan = this.requirePlan(id)
-    const references = this.sqlite
-      .prepare('SELECT count(*) AS total FROM monthly_subscriptions WHERE rate_plan_id = ?')
-      .get(id) as { total: number }
-    if (references.total > 0) {
-      throw new OperationError(
-        'MONTHLY_PLAN_IN_USE',
-        'Este plan ya se usó en una mensualidad. Desactívalo en lugar de eliminarlo.',
-      )
-    }
-
     const now = new Date().toISOString()
     this.sqlite.transaction(() => {
-      this.sqlite.prepare("DELETE FROM rate_plans WHERE id = ? AND billing_unit = 'month'").run(id)
+      this.sqlite
+        .prepare(
+          "UPDATE rate_plans SET deleted_at = ?, status = 'inactive', updated_at = ? WHERE id = ? AND billing_unit = 'month'",
+        )
+        .run(now, now, id)
       this.writeAudit('monthly.plan_deleted', 'rate_plan', id, now, { name: plan.name })
     })()
   }
@@ -733,7 +726,7 @@ export class MonthlyService {
              WHERE p.subscription_id = s.id AND p.status = 'completed'
            ), 0) AS pending
            FROM monthly_subscriptions s
-           WHERE s.status IN ('active', 'pending')
+           WHERE s.status <> 'cancelled'
          )`,
       )
       .get() as { total: number }
@@ -756,9 +749,19 @@ export class MonthlyService {
 
   /** Reutiliza el vehículo de la matrícula o lo crea; es el mismo que usa el parqueo. */
   private resolveVehicle(plate: string, vehicleType: VehicleType, now: string): string {
-    const existing = this.sqlite.prepare('SELECT id FROM vehicles WHERE plate = ?').get(plate) as
-      { id: string } | undefined
+    const existing = this.sqlite
+      .prepare('SELECT id, vehicle_type FROM vehicles WHERE plate = ?')
+      .get(plate) as { id: string; vehicle_type: VehicleType } | undefined
     if (existing) {
+      const activeSession = this.sqlite
+        .prepare("SELECT id FROM parking_sessions WHERE vehicle_id = ? AND status = 'active'")
+        .get(existing.id)
+      if (activeSession && existing.vehicle_type !== vehicleType) {
+        throw new OperationError(
+          'VEHICLE_IN_USE',
+          'El vehículo tiene un ingreso activo. Conserva su tipo de vehículo o registra su salida antes de cambiarlo.',
+        )
+      }
       this.sqlite
         .prepare('UPDATE vehicles SET vehicle_type = ?, status = ?, updated_at = ? WHERE id = ?')
         .run(vehicleType, 'active', now, existing.id)
@@ -806,7 +809,7 @@ export class MonthlyService {
     const row = this.sqlite
       .prepare(
         `SELECT id FROM monthly_customers
-         WHERE document_number = ? AND (? IS NULL OR id <> ?) LIMIT 1`,
+         WHERE document_number = ? AND deleted_at IS NULL AND (? IS NULL OR id <> ?) LIMIT 1`,
       )
       .get(documentNumber, excludeId, excludeId) as { id: string } | undefined
     if (row) {
@@ -825,7 +828,7 @@ export class MonthlyService {
                 COUNT(s.id) AS subscription_count
          FROM monthly_customers c
          LEFT JOIN monthly_subscriptions s ON s.customer_id = c.id
-         WHERE c.id = ?
+         WHERE c.id = ? AND c.deleted_at IS NULL
          GROUP BY c.id`,
       )
       .get(id) as CustomerRow | undefined
@@ -837,7 +840,9 @@ export class MonthlyService {
 
   private requirePlan(id: string): RatePlan {
     const row = this.sqlite
-      .prepare("SELECT * FROM rate_plans WHERE id = ? AND billing_unit = 'month'")
+      .prepare(
+        "SELECT * FROM rate_plans WHERE id = ? AND billing_unit = 'month' AND deleted_at IS NULL",
+      )
       .get(id) as PlanRow | undefined
     if (!row) {
       throw new OperationError('MONTHLY_PLAN_NOT_FOUND', 'Ese plan mensual ya no existe.')

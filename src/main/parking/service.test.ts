@@ -34,6 +34,13 @@ const entry = (plate = 'ABC123') => ({
   notes: null,
 })
 
+/** Sesión activa que resuelve un código; falla si lo que hay es un pago pendiente. */
+function resolveSessionId(code: string): string {
+  const target = parking.resolveExitTarget(code)
+  if (target.kind !== 'session') throw new Error('Se esperaba un ingreso activo')
+  return target.session.id
+}
+
 /** Retrasa el ingreso de una sesión para simular permanencia sin esperar. */
 function ageSession(sessionId: string, minutes: number): void {
   const enteredAt = new Date(Date.now() - minutes * 60_000).toISOString()
@@ -136,20 +143,20 @@ describe('registro de ingreso', () => {
       notes: registration.notes,
     }
 
-    expect(parking.resolveExitTarget(encodeEntryTicketQr(payload)).id).toBe(registration.sessionId)
-    expect(parking.resolveExitTarget(encodeEntryTicketBarcode(registration.sessionId)).id).toBe(
+    expect(resolveSessionId(encodeEntryTicketQr(payload))).toBe(registration.sessionId)
+    expect(resolveSessionId(encodeEntryTicketBarcode(registration.sessionId))).toBe(
       registration.sessionId,
     )
-    expect(parking.resolveExitTarget('abc 123').id).toBe(registration.sessionId)
+    expect(resolveSessionId('abc 123')).toBe(registration.sessionId)
   })
 
   it('resuelve el ingreso con el código numérico que imprimen el QR y el Code 128', () => {
     const registration = parking.registerEntry(entry())
     const reference = encodeEntryTicketReference(registration.sessionId)
 
-    expect(parking.resolveExitTarget(reference).id).toBe(registration.sessionId)
+    expect(resolveSessionId(reference)).toBe(registration.sessionId)
     // El operador puede teclearlo con los espacios del papel.
-    expect(parking.resolveExitTarget(reference.replace(/(\d{4})(?=\d)/g, '$1 ')).id).toBe(
+    expect(resolveSessionId(reference.replace(/(\d{4})(?=\d)/g, '$1 '))).toBe(
       registration.sessionId,
     )
 
@@ -641,6 +648,27 @@ describe('exención por mensualidad', () => {
     })
   }
 
+  it('conserva la salida sin cobro y el historial al eliminar al cliente y su plan mensual', () => {
+    subscribe('MEN001')
+    const subscription = monthly.getOverview({ search: '', status: 'all' }).subscriptions[0]!
+    monthly.deleteCustomer(subscription.customerId)
+    monthly.deletePlan(subscription.ratePlanId)
+    const registered = parking.registerEntry(entry('MEN001'))
+    ageSession(registered.sessionId, 90)
+    expect(parking.quoteExit(registered.sessionId).charge.totalCop).toBe(0)
+    const exit = parking.closeSession({
+      sessionId: registered.sessionId,
+      expectedTotalCop: 0,
+      method: 'cash',
+      receivedCop: null,
+      notes: null,
+    })
+    expect(exit.monthlyCoverage?.subscriptionId).toBe(subscription.id)
+    const history = parking.listExits({ search: 'MEN001', from: '', to: '', limit: 50 })
+    expect(history.records[0]?.monthlyCustomerName).toBe('Cliente mensual')
+    expect(history.totalCollectedCop).toBe(0)
+  })
+
   it('cotiza en cero y muestra la mensualidad en el parqueo activo', () => {
     subscribe('MEN001')
     const registered = parking.registerEntry(entry('MEN001'))
@@ -705,6 +733,284 @@ describe('exención por mensualidad', () => {
     const quote = parking.quoteExit(registered.sessionId)
     expect(quote.session.monthlyCoverage).toBeNull()
     expect(quote.charge.totalCop).toBe(10_000)
+  })
+})
+
+describe('pago pendiente', () => {
+  /** Ingresa un vehículo, lo deja salir debiendo y devuelve el pendiente. */
+  const leavePending = (plate = 'ABC123', minutes = 90) => {
+    const registration = parking.registerEntry(entry(plate))
+    ageSession(registration.sessionId, minutes)
+    const total = parking.quoteExit(registration.sessionId).charge.totalCop
+    return parking.markPaymentPending({
+      sessionId: registration.sessionId,
+      expectedTotalCop: total,
+    })
+  }
+
+  it('detiene la permanencia, cierra la sesión y no genera pago ni recibo', () => {
+    const pending = leavePending()
+
+    expect(pending).toMatchObject({
+      plate: 'ABC123',
+      amountCop: 10_000,
+      employeeName: 'Operador de prueba',
+    })
+    expect(pending.charge.totalMinutes).toBe(90)
+    expect(parking.listActiveSessions({ search: '' })).toEqual([])
+    expect(parking.listPendingPayments()).toEqual([pending])
+
+    const sqlite = manager.getNativeConnection()
+    const session = sqlite
+      .prepare('SELECT status, exited_at, calculated_amount_cop FROM parking_sessions WHERE id = ?')
+      .get(pending.sessionId) as {
+      status: string
+      exited_at: string
+      calculated_amount_cop: number
+    }
+    expect(session).toEqual({
+      status: 'closed',
+      exited_at: pending.exitedAt,
+      calculated_amount_cop: 10_000,
+    })
+    const payments = sqlite.prepare('SELECT count(*) AS total FROM payments').get() as {
+      total: number
+    }
+    expect(payments.total).toBe(0)
+    expect(cash.getState().collectedCop).toBe(0)
+    expect(() => parking.findReceiptSnapshot(pending.sessionId)).toThrow(
+      expect.objectContaining({ code: 'RECEIPT_NOT_FOUND' }),
+    )
+  })
+
+  it('el importe no cambia aunque pase el tiempo o cambie la tarifa', () => {
+    const pending = leavePending()
+    manager
+      .getNativeConnection()
+      .prepare('UPDATE rate_plans SET amount_cop = 90000 WHERE id = ?')
+      .run(ratePlanId)
+
+    expect(parking.listPendingPayments()[0]).toMatchObject({
+      id: pending.id,
+      amountCop: 10_000,
+      ratePlanName: 'Automóvil por hora',
+    })
+  })
+
+  it('rechaza un total distinto al confirmado y una salida sin cobro', () => {
+    const registration = parking.registerEntry(entry())
+    // Dentro de la gracia no hay nada que deber.
+    expect(() =>
+      parking.markPaymentPending({ sessionId: registration.sessionId, expectedTotalCop: 0 }),
+    ).toThrow(expect.objectContaining({ code: 'NOTHING_TO_COLLECT' }))
+
+    ageSession(registration.sessionId, 90)
+    expect(() =>
+      parking.markPaymentPending({ sessionId: registration.sessionId, expectedTotalCop: 5000 }),
+    ).toThrow(expect.objectContaining({ code: 'CHARGE_CHANGED' }))
+    expect(parking.listActiveSessions({ search: '' })).toHaveLength(1)
+    expect(parking.listPendingPayments()).toEqual([])
+  })
+
+  it('no exige caja abierta, igual que una salida sin cobro', () => {
+    const registration = parking.registerEntry(entry())
+    ageSession(registration.sessionId, 90)
+    cash.closeSession({ closingAmountCop: 0, notes: null })
+
+    const pending = parking.markPaymentPending({
+      sessionId: registration.sessionId,
+      expectedTotalCop: 10_000,
+    })
+    expect(pending).toMatchObject({ amountCop: 10_000, employeeName: null })
+  })
+
+  it('permite un nuevo ingreso y acumula pendientes independientes', () => {
+    const first = leavePending('ABC123', 90)
+    const second = leavePending('ABC123', 150)
+    const other = leavePending('XYZ789', 30)
+
+    expect(second.sessionId).not.toBe(first.sessionId)
+    expect(parking.listPendingPayments().map((pending) => pending.id)).toEqual([
+      other.id,
+      second.id,
+      first.id,
+    ])
+
+    // Un tercer ingreso sigue activo mientras las dos deudas anteriores esperan.
+    const third = parking.registerEntry(entry('ABC123'))
+    expect(resolveSessionId('ABC123')).toBe(third.sessionId)
+
+    const paid = parking.settlePendingPayment({
+      pendingPaymentId: first.id,
+      method: 'cash',
+      receivedCop: 10_000,
+    })
+    expect(paid).toMatchObject({ sessionId: first.sessionId, receiptNumber: 1, changeCop: 0 })
+    // Cobrar uno no toca ni el otro pendiente ni el ingreso activo.
+    expect(parking.listPendingPayments().map((pending) => pending.id)).toEqual([
+      other.id,
+      second.id,
+    ])
+    expect(parking.listActiveSessions({ search: '' })).toHaveLength(1)
+  })
+
+  it('avisa del pendiente al escribir la matrícula o leer el tiquete viejo', () => {
+    const pending = leavePending()
+
+    for (const code of [
+      'abc 123',
+      encodeEntryTicketReference(pending.sessionId),
+      encodeEntryTicketBarcode(pending.sessionId),
+    ]) {
+      expect(parking.resolveExitTarget(code)).toEqual({
+        kind: 'pending',
+        plate: 'ABC123',
+        pendingPayments: [pending],
+      })
+    }
+
+    // Cobrado el pendiente, el tiquete viejo vuelve a ser uno ya usado.
+    parking.settlePendingPayment({
+      pendingPaymentId: pending.id,
+      method: 'card',
+      receivedCop: null,
+    })
+    expect(() => parking.resolveExitTarget(encodeEntryTicketReference(pending.sessionId))).toThrow(
+      'Ese tiquete no corresponde a ningún vehículo en el parqueadero',
+    )
+    expect(() => parking.resolveExitTarget('ABC123')).toThrow(
+      expect.objectContaining({ code: 'SESSION_NOT_FOUND' }),
+    )
+  })
+
+  it('cobra el pendiente con pago, recibo y entrada a la caja abierta', () => {
+    const pending = leavePending()
+
+    const exit = parking.settlePendingPayment({
+      pendingPaymentId: pending.id,
+      method: 'cash',
+      receivedCop: 20_000,
+    })
+
+    expect(exit).toMatchObject({
+      sessionId: pending.sessionId,
+      plate: 'ABC123',
+      exitedAt: pending.exitedAt,
+      receiptNumber: 1,
+      receivedCop: 20_000,
+      changeCop: 10_000,
+    })
+    expect(parking.listPendingPayments()).toEqual([])
+    expect(cash.getState().collectedCop).toBe(10_000)
+
+    const snapshot = parking.findReceiptSnapshot(pending.sessionId)
+    expect(snapshot).toMatchObject({
+      receiptNumber: 1,
+      enteredAt: pending.enteredAt,
+      exitedAt: pending.exitedAt,
+      employeeName: 'Operador de prueba',
+    })
+    expect(snapshot.charge).toEqual(pending.charge)
+
+    expect(() =>
+      parking.settlePendingPayment({
+        pendingPaymentId: pending.id,
+        method: 'cash',
+        receivedCop: 20_000,
+      }),
+    ).toThrow(expect.objectContaining({ code: 'PENDING_PAYMENT_NOT_FOUND' }))
+  })
+
+  it('rechaza cobrar el pendiente sin caja o con efectivo insuficiente', () => {
+    const pending = leavePending()
+
+    expect(() =>
+      parking.settlePendingPayment({
+        pendingPaymentId: pending.id,
+        method: 'cash',
+        receivedCop: 5000,
+      }),
+    ).toThrow(expect.objectContaining({ code: 'INSUFFICIENT_CASH' }))
+    expect(() =>
+      parking.settlePendingPayment({
+        pendingPaymentId: pending.id,
+        method: 'cash',
+        receivedCop: null,
+      }),
+    ).toThrow(expect.objectContaining({ code: 'INSUFFICIENT_CASH' }))
+
+    cash.closeSession({ closingAmountCop: 0, notes: null })
+    expect(() =>
+      parking.settlePendingPayment({
+        pendingPaymentId: pending.id,
+        method: 'card',
+        receivedCop: null,
+      }),
+    ).toThrow(expect.objectContaining({ code: 'NO_CASH_SESSION' }))
+    expect(parking.listPendingPayments()).toHaveLength(1)
+  })
+
+  it('con el cobro simplificado cobra el pendiente sin efectivo recibido', () => {
+    const pending = leavePending()
+    new SettingsService(manager.getNativeConnection()).update({ simpleChargeMode: true })
+
+    const exit = parking.settlePendingPayment({
+      pendingPaymentId: pending.id,
+      method: 'cash',
+      receivedCop: null,
+    })
+    expect(exit).toMatchObject({ receivedCop: null, changeCop: null, receiptNumber: 1 })
+  })
+
+  it('el historial lo marca pendiente hasta que se cobra', () => {
+    const pending = leavePending()
+
+    const before = parking.listExits({ search: '', from: '', to: '', limit: 10 })
+    expect(before.records[0]).toMatchObject({
+      sessionId: pending.sessionId,
+      paymentPending: true,
+      totalCop: 10_000,
+      totalMinutes: 90,
+      receiptNumber: null,
+    })
+    expect(before.records[0]?.charge).toEqual(pending.charge)
+    expect(before.totalCollectedCop).toBe(0)
+
+    parking.settlePendingPayment({
+      pendingPaymentId: pending.id,
+      method: 'cash',
+      receivedCop: 10_000,
+    })
+    const after = parking.listExits({ search: '', from: '', to: '', limit: 10 })
+    expect(after.records[0]).toMatchObject({ paymentPending: false, receiptNumber: 1 })
+    expect(after.totalCollectedCop).toBe(10_000)
+  })
+
+  it('anular el cobro de un pendiente lo deja otra vez por cobrar', () => {
+    const pending = leavePending()
+    parking.settlePendingPayment({
+      pendingPaymentId: pending.id,
+      method: 'cash',
+      receivedCop: 10_000,
+    })
+    const paymentId = cash.getState().movements[0]!.paymentId
+
+    cash.voidPayment({ paymentId, reason: 'Se cobró con el medio equivocado' })
+
+    expect(parking.listPendingPayments()).toEqual([pending])
+    expect(cash.getState().collectedCop).toBe(0)
+
+    // Se vuelve a cobrar con un recibo nuevo; el anulado conserva su número.
+    const again = parking.settlePendingPayment({
+      pendingPaymentId: pending.id,
+      method: 'card',
+      receivedCop: null,
+    })
+    expect(again.receiptNumber).toBe(2)
+    expect(parking.findReceiptSnapshot(pending.sessionId)).toMatchObject({
+      receiptNumber: 2,
+      method: 'card',
+    })
   })
 })
 

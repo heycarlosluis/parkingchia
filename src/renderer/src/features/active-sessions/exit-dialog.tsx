@@ -1,16 +1,13 @@
-import { LoaderCircle, LogOut } from 'lucide-react'
+import { Hourglass, LoaderCircle, LogOut } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import type { ActiveSession, ExitRegistration, SessionQuote } from '@shared/contracts'
+import type {
+  ActiveSession,
+  ExitRegistration,
+  PendingPayment,
+  SessionQuote,
+} from '@shared/contracts'
 import { formatCurrency, formatDateTime } from '@shared/format'
-import {
-  addReceivedCash,
-  calculateChange,
-  describeElapsed,
-  PAYMENT_METHOD_LABELS,
-  PAYMENT_METHODS,
-  QUICK_CASH_AMOUNTS_COP,
-  type PaymentMethod,
-} from '@shared/parking'
+import { describeElapsed } from '@shared/parking'
 import { describeCoverage } from '@shared/monthly'
 import { describeBilledTime, VEHICLE_TYPE_LABELS } from '@shared/tariff'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -23,54 +20,38 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { useChargeModeStore } from '@/store/charge-mode-store'
+import { PaymentFields } from '@/features/active-sessions/payment-fields'
+import { useCashPayment } from '@/features/active-sessions/use-cash-payment'
+import { PendingPaymentsNotice } from '@/features/pending-payments/pending-payments-notice'
 import { useParkingStore } from '@/store/parking-store'
-
-/** Los botones muestran solo la cifra; el nombre accesible incluye la moneda. */
-const QUICK_AMOUNT_FORMAT = new Intl.NumberFormat('es-CO')
 
 type ExitDialogProps = {
   /** El diálogo se monta por sesión: el llamador lo renderiza con `key={session.id}`. */
   session: ActiveSession
   onOpenChange: (open: boolean) => void
   onClosed: (exit: ExitRegistration) => void
+  /** El vehículo salió sin pagar y el cobro quedó como pago pendiente. */
+  onPending: (pending: PendingPayment) => void
 }
 
 export function ExitDialog({
   session,
   onOpenChange,
   onClosed,
+  onPending,
 }: ExitDialogProps): React.JSX.Element {
   const closeSession = useParkingStore((store) => store.closeSession)
+  const markPaymentPending = useParkingStore((store) => store.markPaymentPending)
   const error = useParkingStore((store) => store.error)
-  const simpleChargeMode = useChargeModeStore((store) => store.simpleChargeMode)
-  const initializeChargeMode = useChargeModeStore((store) => store.initialize)
   const [quote, setQuote] = useState<SessionQuote | null>(null)
-  const [method, setMethod] = useState<PaymentMethod>('cash')
-  const [received, setReceived] = useState<number>(Number.NaN)
   const [quoteError, setQuoteError] = useState('')
   const [quoting, setQuoting] = useState(true)
   const [submitting, setSubmitting] = useState(false)
 
   const [reloadToken, setReloadToken] = useState(0)
-  const receivedRef = useRef<HTMLInputElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
 
   const sessionId = session.id
-
-  useEffect(() => {
-    void initializeChargeMode()
-  }, [initializeChargeMode])
 
   useEffect(() => {
     let cancelled = false
@@ -93,16 +74,8 @@ export function ExitDialog({
   }
 
   const total = quote?.charge.totalCop ?? 0
-  const receivedValue = Number.isFinite(received) ? received : null
-  // Con el cobro simplificado no se registra efectivo recibido ni cambio.
-  const cashIsCounted = method === 'cash' && !simpleChargeMode
-  const change = cashIsCounted ? calculateChange(total, receivedValue) : null
-  // Sin nada que cobrar no se pide efectivo, así que tampoco puede faltar: es la
-  // misma condición que aplica `closeSession` en el proceso principal. Sin el
-  // `total > 0`, una salida cubierta por mensualidad o dentro de la tolerancia
-  // dejaba el botón deshabilitado para siempre, sin campo donde corregirlo.
-  const missingCash =
-    total > 0 && cashIsCounted && (receivedValue === null || receivedValue < total)
+  const payment = useCashPayment(total)
+  const { missingCash, receivedRef } = payment
 
   const confirm = async (): Promise<void> => {
     if (!quote) return
@@ -110,8 +83,8 @@ export function ExitDialog({
     const result = await closeSession({
       sessionId,
       expectedTotalCop: quote.charge.totalCop,
-      method,
-      receivedCop: cashIsCounted ? receivedValue : null,
+      method: payment.method,
+      receivedCop: payment.receivedCop,
       notes: null,
     })
     setSubmitting(false)
@@ -119,28 +92,35 @@ export function ExitDialog({
     else requote()
   }
 
+  /** Registra la salida sin cobrar: el total cotizado queda como deuda del vehículo. */
+  const leavePending = async (): Promise<void> => {
+    if (!quote) return
+    setSubmitting(true)
+    const result = await markPaymentPending({
+      sessionId,
+      expectedTotalCop: quote.charge.totalCop,
+    })
+    setSubmitting(false)
+    if (result) onPending(result)
+    else requote()
+  }
+
   const charge = quote?.charge ?? null
   const coverage = quote?.session.monthlyCoverage ?? null
   const hasCharge = !quoting && charge !== null && charge.totalCop > 0
-  const asksForCash = hasCharge && cashIsCounted
+  const asksForCash = hasCharge && payment.cashIsCounted
 
   // El campo aparece cuando llega la cotización: el foco espera a que exista
   // para que el operador escriba el efectivo sin tocar el ratón.
   useEffect(() => {
     if (asksForCash) receivedRef.current?.focus()
-  }, [asksForCash])
+  }, [asksForCash, receivedRef])
 
   // Sin efectivo que escribir, el foco va al cobro: Enter confirma la salida.
-  const confirmsDirectly = hasCharge && simpleChargeMode
+  const confirmsDirectly = hasCharge && payment.simpleChargeMode
   useEffect(() => {
     if (confirmsDirectly) confirmRef.current?.focus()
   }, [confirmsDirectly])
-
-  /** Registra el efectivo y devuelve el foco al campo para seguir con el teclado. */
-  const applyCash = (value: number | null): void => {
-    setReceived(value ?? Number.NaN)
-    receivedRef.current?.focus()
-  }
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
@@ -165,6 +145,9 @@ export function ExitDialog({
             <AlertDescription>{quoteError}</AlertDescription>
           </Alert>
         ) : null}
+
+        {/* Deudas de salidas anteriores: se cobran aparte, no se suman a esta. */}
+        <PendingPaymentsNotice plate={session.plate} readOnly />
 
         {quoting ? (
           <>
@@ -213,93 +196,7 @@ export function ExitDialog({
 
             <div className="exit-dialog-payment">
               {charge.totalCop > 0 ? (
-                <>
-                  <Field>
-                    <FieldLabel htmlFor="exit-method">Medio de pago</FieldLabel>
-                    <Select
-                      value={method}
-                      onValueChange={(value) => setMethod(value as PaymentMethod)}
-                    >
-                      <SelectTrigger id="exit-method" className="min-h-11">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {PAYMENT_METHODS.map((value) => (
-                            <SelectItem key={value} value={value}>
-                              {PAYMENT_METHOD_LABELS[value]}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-
-                  {simpleChargeMode ? (
-                    <p className="field-hint">
-                      Cobro simplificado: se registra el total, sin efectivo recibido ni cambio.
-                    </p>
-                  ) : null}
-                  {cashIsCounted ? (
-                    <Field data-invalid={missingCash}>
-                      <FieldLabel htmlFor="exit-received">Efectivo recibido</FieldLabel>
-                      <Input
-                        ref={receivedRef}
-                        id="exit-received"
-                        className="min-h-11"
-                        type="number"
-                        inputMode="numeric"
-                        min={0}
-                        step={100}
-                        value={Number.isFinite(received) ? received : ''}
-                        onChange={(event) => setReceived(event.target.valueAsNumber)}
-                        aria-invalid={missingCash}
-                      />
-                      <FieldDescription>
-                        {receivedValue === null
-                          ? 'El efectivo recibido es obligatorio para cobrar en efectivo.'
-                          : missingCash
-                            ? 'El efectivo recibido es menor que el total a cobrar.'
-                            : `Cambio a entregar: ${formatCurrency(change ?? 0)}`}
-                      </FieldDescription>
-                    </Field>
-                  ) : null}
-                  {cashIsCounted ? (
-                    // Fuera del campo: mientras está vacío se marca inválido y todo su
-                    // contenido se pinta en rojo, incluidos estos botones.
-                    <div className="quick-cash" role="group" aria-label="Montos rápidos">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        className="quick-cash-exact"
-                        onClick={() => applyCash(total)}
-                      >
-                        Monto exacto · <span className="tabular">{formatCurrency(total)}</span>
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="quick-cash-clear"
-                        onClick={() => applyCash(null)}
-                        disabled={receivedValue === null}
-                      >
-                        Borrar
-                      </Button>
-                      {QUICK_CASH_AMOUNTS_COP.map((amount) => (
-                        <Button
-                          key={amount}
-                          type="button"
-                          variant="outline"
-                          className="tabular"
-                          aria-label={`Sumar ${formatCurrency(amount)}`}
-                          onClick={() => applyCash(addReceivedCash(receivedValue, amount))}
-                        >
-                          +{QUICK_AMOUNT_FORMAT.format(amount)}
-                        </Button>
-                      ))}
-                    </div>
-                  ) : null}
-                </>
+                <PaymentFields idPrefix="exit" total={total} payment={payment} />
               ) : coverage ? (
                 <p className="field-hint">
                   Cubierto por la mensualidad de {coverage.customerName}, vigente del{' '}
@@ -318,14 +215,7 @@ export function ExitDialog({
 
         {/* Fijo al fondo: con los montos rápidos el diálogo puede desplazarse y «Cobrar» debe verse siempre. */}
         <DialogFooter className="exit-dialog-footer">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-          {quoteError ? (
-            <Button type="button" variant="outline" onClick={requote}>
-              Reintentar
-            </Button>
-          ) : null}
+          {/* Cobrar va primero: es lo habitual y lo que sigue al efectivo con el tabulador. */}
           <Button
             ref={confirmRef}
             type="button"
@@ -342,6 +232,30 @@ export function ExitDialog({
                 ? 'Registrar salida de mensualidad'
                 : 'Registrar salida sin cobro'
               : `Cobrar ${formatCurrency(total)}`}
+          </Button>
+          {hasCharge ? (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void leavePending()}
+              disabled={submitting}
+            >
+              <Hourglass data-icon="inline-start" />
+              Pago pendiente
+            </Button>
+          ) : null}
+          {quoteError ? (
+            <Button type="button" variant="outline" onClick={requote}>
+              Reintentar
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            className="exit-dialog-cancel"
+            onClick={() => onOpenChange(false)}
+          >
+            Cancelar
           </Button>
         </DialogFooter>
       </DialogContent>

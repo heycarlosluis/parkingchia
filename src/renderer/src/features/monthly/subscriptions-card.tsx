@@ -17,6 +17,7 @@ import {
   isExpiringSoon,
   MAX_SUBSCRIPTION_MONTHS,
   MIN_SUBSCRIPTION_MONTHS,
+  renewSubscriptionSchema,
   PAYMENT_STATE_LABELS,
   SUBSCRIPTION_STATUS_LABELS,
   SUBSCRIPTION_STATUSES,
@@ -74,6 +75,7 @@ export function SubscriptionsCard(): React.JSX.Element {
   const search = useMonthlyStore((store) => store.search)
   const status = useMonthlyStore((store) => store.status)
   const loading = useMonthlyStore((store) => store.loading)
+  const mutating = useMonthlyStore((store) => store.mutating)
   const error = useMonthlyStore((store) => store.error)
   const setSearch = useMonthlyStore((store) => store.setSearch)
   const setStatus = useMonthlyStore((store) => store.setStatus)
@@ -126,10 +128,17 @@ export function SubscriptionsCard(): React.JSX.Element {
   }
 
   const hasFilters = search !== '' || status !== 'all'
+  const validRenewal =
+    renewing !== null &&
+    renewSubscriptionSchema.safeParse({
+      id: renewing.id,
+      months: renewMonths,
+      amountCop: renewAmount,
+    }).success
 
   return (
     <>
-      {error ? (
+      {error && !creating && !charging && !renewing && !cancelling ? (
         <Alert variant="destructive">
           <AlertTitle>La operación no se completó</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
@@ -343,13 +352,23 @@ export function SubscriptionsCard(): React.JSX.Element {
                               Cobrar
                             </Button>
                           ) : null}
-                          {subscription.status !== 'cancelled' ? (
+                          {subscription.status !== 'cancelled' &&
+                          customers.some(
+                            (customer) =>
+                              customer.id === subscription.customerId &&
+                              customer.status === 'active',
+                          ) &&
+                          plans.some(
+                            (plan) =>
+                              plan.id === subscription.ratePlanId && plan.status === 'active',
+                          ) ? (
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
                               onClick={() => {
                                 clearFeedback()
+                                setRenewMonths(1)
                                 setRenewAmount(subscription.amountCop)
                                 setRenewing(subscription)
                               }}
@@ -427,7 +446,7 @@ export function SubscriptionsCard(): React.JSX.Element {
       <AlertDialog
         open={renewing !== null}
         onOpenChange={(open) => {
-          if (!open) setRenewing(null)
+          if (!open && !mutating) setRenewing(null)
         }}
       >
         <AlertDialogContent>
@@ -470,11 +489,22 @@ export function SubscriptionsCard(): React.JSX.Element {
               value={Number.isFinite(renewAmount) ? renewAmount : ''}
               onChange={(event) => setRenewAmount(event.target.valueAsNumber)}
             />
-            <FieldDescription>Se propone el costo del periodo anterior.</FieldDescription>
+            <FieldDescription>
+              {validRenewal
+                ? 'Se propone el costo total del periodo anterior; revisa el valor según la duración acordada.'
+                : 'Ingresa un costo total válido en pesos enteros.'}
+            </FieldDescription>
           </Field>
+          {error ? (
+            <Alert variant="destructive">
+              <AlertTitle>No fue posible renovar la mensualidad</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
           <AlertDialogFooter>
-            <AlertDialogCancel>Volver</AlertDialogCancel>
+            <AlertDialogCancel disabled={mutating}>Volver</AlertDialogCancel>
             <AlertDialogAction
+              disabled={mutating || !validRenewal}
               onClick={(event) => {
                 event.preventDefault()
                 void confirmRenew()
@@ -489,7 +519,7 @@ export function SubscriptionsCard(): React.JSX.Element {
       <AlertDialog
         open={cancelling !== null}
         onOpenChange={(open) => {
-          if (!open) {
+          if (!open && !mutating) {
             setCancelling(null)
             setCancelReason('')
           }
@@ -512,12 +542,19 @@ export function SubscriptionsCard(): React.JSX.Element {
               placeholder="El cliente cambió de vehículo"
               value={cancelReason}
               onChange={(event) => setCancelReason(event.target.value)}
+              maxLength={200}
             />
           </Field>
+          {error ? (
+            <Alert variant="destructive">
+              <AlertTitle>No fue posible cancelar la mensualidad</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
           <AlertDialogFooter>
-            <AlertDialogCancel>Volver</AlertDialogCancel>
+            <AlertDialogCancel disabled={mutating}>Volver</AlertDialogCancel>
             <AlertDialogAction
-              disabled={cancelReason.trim().length < 4}
+              disabled={mutating || cancelReason.trim().length < 4}
               onClick={(event) => {
                 event.preventDefault()
                 void confirmCancel()

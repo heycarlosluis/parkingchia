@@ -52,22 +52,26 @@ export const resolveExitTargetSchema = z
 
 export const quoteSessionSchema = z.object({ sessionId: sessionIdSchema }).strict()
 
+/** Total mostrado al operador; protege contra confirmar un valor distinto al que vio. */
+const expectedTotalCopSchema = z
+  .number()
+  .int('El total debe ser un valor entero en pesos')
+  .min(0, 'El total no puede ser negativo')
+  .max(MAX_AMOUNT_COP, 'El total supera el máximo permitido')
+
+const receivedCopSchema = z
+  .number()
+  .int('El efectivo recibido debe ser un valor entero en pesos')
+  .min(0, 'El efectivo recibido no puede ser negativo')
+  .max(MAX_AMOUNT_COP, 'El efectivo recibido supera el máximo permitido')
+  .nullable()
+
 export const closeSessionSchema = z
   .object({
     sessionId: sessionIdSchema,
-    /** Total mostrado al operador; protege contra cobrar un valor distinto al confirmado. */
-    expectedTotalCop: z
-      .number()
-      .int('El total debe ser un valor entero en pesos')
-      .min(0, 'El total no puede ser negativo')
-      .max(MAX_AMOUNT_COP, 'El total supera el máximo permitido'),
+    expectedTotalCop: expectedTotalCopSchema,
     method: z.enum(PAYMENT_METHODS),
-    receivedCop: z
-      .number()
-      .int('El efectivo recibido debe ser un valor entero en pesos')
-      .min(0, 'El efectivo recibido no puede ser negativo')
-      .max(MAX_AMOUNT_COP, 'El efectivo recibido supera el máximo permitido')
-      .nullable(),
+    receivedCop: receivedCopSchema,
     notes: optionalNotes,
   })
   .strict()
@@ -84,13 +88,34 @@ export const closeSessionSchema = z
     },
   )
 
+/** Deja la salida registrada con el cobro congelado y sin pago. */
+export const markPaymentPendingSchema = z
+  .object({
+    sessionId: sessionIdSchema,
+    expectedTotalCop: expectedTotalCopSchema,
+  })
+  .strict()
+
+/**
+ * Cobra un pago pendiente. El importe no viaja: quedó congelado al registrar
+ * la salida y el proceso principal valida contra él el efectivo recibido.
+ */
+export const settlePendingPaymentSchema = z
+  .object({
+    pendingPaymentId: sessionIdSchema,
+    method: z.enum(PAYMENT_METHODS),
+    receivedCop: receivedCopSchema,
+  })
+  .strict()
+
 export const MAX_HISTORY_PAGE_SIZE = 100
 
 /** Cómo terminó una salida, ya resuelto para presentarlo en una sola columna. */
-export type ExitStatus = 'charged' | 'monthly' | 'free' | 'cancelled'
+export type ExitStatus = 'charged' | 'pending' | 'monthly' | 'free' | 'cancelled'
 
 export const EXIT_STATUS_LABELS: Record<ExitStatus, string> = {
   charged: 'Cobrada',
+  pending: 'Pago pendiente',
   monthly: 'Mensualidad',
   free: 'Sin cobro',
   cancelled: 'Anulada',
@@ -99,18 +124,21 @@ export const EXIT_STATUS_LABELS: Record<ExitStatus, string> = {
 /**
  * Estado de una salida a partir de lo que quedó registrado.
  *
- * El orden importa: un ingreso anulado nunca llegó a cobrarse, y una sesión
- * cubierta por una mensualidad cierra sin recibo igual que una dentro de la
- * tolerancia, así que la cobertura se comprueba antes que la ausencia de
- * recibo. Recibe la forma mínima y no el registro completo para no depender
+ * El orden importa: un ingreso anulado nunca llegó a cobrarse, una salida con
+ * pago pendiente tampoco tiene recibo pero sí un importe por cobrar, y una
+ * sesión cubierta por una mensualidad cierra sin recibo igual que una dentro
+ * de la tolerancia, así que la cobertura se comprueba antes que la ausencia
+ * de recibo. Recibe la forma mínima y no el registro completo para no depender
  * de `contracts`, que a su vez depende de este archivo.
  */
 export function exitStatusOf(record: {
   status: 'closed' | 'cancelled'
+  paymentPending: boolean
   monthlyCustomerName: string | null
   receiptNumber: number | null
 }): ExitStatus {
   if (record.status === 'cancelled') return 'cancelled'
+  if (record.paymentPending) return 'pending'
   if (record.monthlyCustomerName !== null) return 'monthly'
   return record.receiptNumber === null ? 'free' : 'charged'
 }
@@ -144,6 +172,8 @@ export type RegisterEntryInput = z.infer<typeof registerEntrySchema>
 export type ListActiveSessionsInput = z.infer<typeof listActiveSessionsSchema>
 export type QuoteSessionInput = z.infer<typeof quoteSessionSchema>
 export type CloseSessionInput = z.infer<typeof closeSessionSchema>
+export type MarkPaymentPendingInput = z.infer<typeof markPaymentPendingSchema>
+export type SettlePendingPaymentInput = z.infer<typeof settlePendingPaymentSchema>
 export type CancelSessionInput = z.infer<typeof cancelSessionSchema>
 export type ListExitsInput = z.infer<typeof listExitsSchema>
 
@@ -165,6 +195,13 @@ export function addReceivedCash(currentCop: number | null, amountCop: number): n
 export function calculateChange(totalCop: number, receivedCop: number | null): number | null {
   if (receivedCop === null) return null
   return receivedCop - totalCop
+}
+
+/** Aviso que ve el operador cuando una matrícula tiene salidas sin pagar. */
+export function describePendingPayments(count: number): string {
+  return count === 1
+    ? 'Este carro tiene un pago pendiente'
+    : `Este carro tiene ${count} pagos pendientes`
 }
 
 /** Texto corto y legible para una permanencia expresada en minutos. */

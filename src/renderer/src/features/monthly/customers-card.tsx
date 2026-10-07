@@ -23,6 +23,7 @@ import { useMonthlyStore } from '@/store/monthly-store'
 export function CustomersCard(): React.JSX.Element {
   const customers = useMonthlyStore((store) => store.customers)
   const loading = useMonthlyStore((store) => store.loading)
+  const mutating = useMonthlyStore((store) => store.mutating)
   const error = useMonthlyStore((store) => store.error)
   const createCustomer = useMonthlyStore((store) => store.createCustomer)
   const updateCustomer = useMonthlyStore((store) => store.updateCustomer)
@@ -47,7 +48,7 @@ export function CustomersCard(): React.JSX.Element {
 
   return (
     <>
-      {error ? (
+      {error && !dialogOpen && !removing ? (
         <Alert variant="destructive">
           <AlertTitle>La operación no se completó</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
@@ -136,20 +137,18 @@ export function CustomersCard(): React.JSX.Element {
                             <Pencil data-icon="inline-start" />
                             Editar
                           </Button>
-                          {customer.subscriptionCount === 0 ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                clearFeedback()
-                                setRemoving(customer)
-                              }}
-                            >
-                              <Trash2 data-icon="inline-start" />
-                              Eliminar
-                            </Button>
-                          ) : null}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              clearFeedback()
+                              setRemoving(customer)
+                            }}
+                          >
+                            <Trash2 data-icon="inline-start" />
+                            Eliminar
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -174,20 +173,28 @@ export function CustomersCard(): React.JSX.Element {
       <AlertDialog
         open={removing !== null}
         onOpenChange={(open) => {
-          if (!open) setRemoving(null)
+          if (!open && !mutating) setRemoving(null)
         }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar a {removing?.fullName}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Solo se eliminan clientes sin mensualidades registradas. Esta acción no se puede
-              deshacer.
+              El cliente dejará de aparecer en Clientes y no podrá usarse para crear o renovar
+              mensualidades. Sus mensualidades, cobertura, saldos y recibos se conservan. Para
+              terminar una cobertura debes cancelar la mensualidad por separado.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {error ? (
+            <Alert variant="destructive">
+              <AlertTitle>No fue posible eliminar el cliente</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
           <AlertDialogFooter>
-            <AlertDialogCancel>Volver</AlertDialogCancel>
+            <AlertDialogCancel disabled={mutating}>Volver</AlertDialogCancel>
             <AlertDialogAction
+              disabled={mutating}
               onClick={(event) => {
                 event.preventDefault()
                 void confirmRemove()

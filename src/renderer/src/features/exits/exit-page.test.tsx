@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { activeSession } from '@/test/setup'
+import { activeSession, pendingPayment } from '@/test/setup'
 import { useCashStore } from '@/store/cash-store'
 import { useChargeModeStore } from '@/store/charge-mode-store'
 import { useParkingStore } from '@/store/parking-store'
@@ -40,7 +40,13 @@ const zeroCharge = {
 
 describe('Registrar salida', () => {
   beforeEach(() => {
-    useParkingStore.setState({ sessions: [], search: '', loading: false, error: null })
+    useParkingStore.setState({
+      sessions: [],
+      pendingPayments: [],
+      search: '',
+      loading: false,
+      error: null,
+    })
   })
 
   it('busca la matrícula y abre el cobro con los datos de ese vehículo', async () => {
@@ -188,7 +194,7 @@ describe('Registrar salida', () => {
     const covered = { ...activeSession, monthlyCoverage: coverage }
     vi.mocked(window.parkingAPI.resolveExitTarget).mockResolvedValueOnce({
       ok: true,
-      data: covered,
+      data: { kind: 'session', session: covered },
     })
     vi.mocked(window.parkingAPI.quoteSessionExit).mockResolvedValueOnce({
       ok: true,
@@ -235,6 +241,83 @@ describe('Registrar salida', () => {
       name: /Registrar salida sin cobro/,
     })
     expect(confirm).toBeEnabled()
+  })
+
+  it('deja el pago pendiente sin cobrar y lo confirma en pantalla', async () => {
+    vi.mocked(window.parkingAPI.closeSession).mockClear()
+    renderExits()
+
+    await userEvent.type(await screen.findByLabelText('Tiquete o matrícula'), 'ABC123')
+    await userEvent.click(screen.getByRole('button', { name: /Registrar salida/ }))
+
+    const dialog = await screen.findByRole('dialog')
+    await within(dialog).findByText('Total a cobrar')
+    // No exige efectivo: el vehículo sale debiendo el total cotizado.
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Pago pendiente' }))
+
+    expect(await screen.findByText('Pago pendiente registrado')).toBeInTheDocument()
+    expect(screen.getByText('Total pendiente')).toBeInTheDocument()
+    expect(window.parkingAPI.markPaymentPending).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      expectedTotalCop: 10_000,
+    })
+    expect(window.parkingAPI.closeSession).not.toHaveBeenCalled()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Registrar otra salida/ })).toHaveFocus()
+    })
+  })
+
+  it('no ofrece el pago pendiente cuando la salida no genera cobro', async () => {
+    vi.mocked(window.parkingAPI.quoteSessionExit).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        session: activeSession,
+        charge: { ...zeroCharge, withinGrace: true, totalMinutes: 5 },
+        quotedAt: new Date().toISOString(),
+      },
+    })
+    renderExits()
+
+    await userEvent.type(await screen.findByLabelText('Tiquete o matrícula'), 'ABC123')
+    await userEvent.click(screen.getByRole('button', { name: /Registrar salida/ }))
+
+    const dialog = await screen.findByRole('dialog')
+    await within(dialog).findByRole('button', { name: /Registrar salida sin cobro/ })
+    expect(within(dialog).queryByRole('button', { name: 'Pago pendiente' })).not.toBeInTheDocument()
+  })
+
+  it('avisa del pago pendiente al leer un vehículo que ya salió debiendo y lo cobra', async () => {
+    vi.mocked(window.parkingAPI.resolveExitTarget).mockResolvedValueOnce({
+      ok: true,
+      data: { kind: 'pending', plate: 'DEU456', pendingPayments: [pendingPayment] },
+    })
+    vi.mocked(window.parkingAPI.listPendingPayments)
+      .mockResolvedValueOnce({ ok: true, data: [] })
+      .mockResolvedValueOnce({ ok: true, data: [pendingPayment] })
+    renderExits()
+
+    await userEvent.type(await screen.findByLabelText('Tiquete o matrícula'), 'deu456')
+    await userEvent.click(screen.getByRole('button', { name: /Registrar salida/ }))
+
+    expect(await screen.findByText('Este carro tiene un pago pendiente')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Cobrar \$\s10\.000/ }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Cobrar pago pendiente' })
+    expect(within(dialog).getByText('DEU456')).toBeInTheDocument()
+    const charge = within(dialog).getByRole('button', { name: /Cobrar \$\s10\.000/ })
+    expect(charge).toBeDisabled()
+    await userEvent.click(within(dialog).getByRole('button', { name: /Monto exacto/ }))
+    await userEvent.click(charge)
+
+    expect(await screen.findByText(/Pago pendiente cobrado · DEU456/)).toBeInTheDocument()
+    expect(screen.getByText(/Recibo N\.º 5 · Efectivo/)).toBeInTheDocument()
+    expect(window.parkingAPI.settlePendingPayment).toHaveBeenCalledWith({
+      pendingPaymentId: 'pending-1',
+      method: 'cash',
+      receivedCop: 10_000,
+    })
+    // Cobrado, deja de figurar como pendiente.
+    expect(screen.queryByText('Este carro tiene un pago pendiente')).not.toBeInTheDocument()
   })
 
   it('avisa que sin caja abierta no se puede cobrar', async () => {

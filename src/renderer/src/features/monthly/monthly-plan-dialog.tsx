@@ -91,7 +91,12 @@ export function MonthlyPlanDialog({
   })
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!formState.isSubmitting) onOpenChange(nextOpen)
+      }}
+    >
       <DialogContent className="rate-plan-dialog">
         <DialogHeader>
           <DialogTitle>{plan ? 'Editar plan mensual' : 'Nuevo plan mensual'}</DialogTitle>
@@ -183,7 +188,12 @@ export function MonthlyPlanDialog({
           </FieldGroup>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={formState.isSubmitting}
+              onClick={() => onOpenChange(false)}
+            >
               Cancelar
             </Button>
             <Button type="submit" disabled={formState.isSubmitting}>

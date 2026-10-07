@@ -61,6 +61,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { PageHeading } from '@/components/page-heading'
+import { PendingPaymentsNotice } from '@/features/pending-payments/pending-payments-notice'
 import { useCashStore } from '@/store/cash-store'
 import { useParkingStore } from '@/store/parking-store'
 import { useTariffStore } from '@/store/tariff-store'
@@ -98,6 +99,7 @@ export function EntriesPage(): React.JSX.Element {
   const registerEntry = useParkingStore((store) => store.registerEntry)
   const error = useParkingStore((store) => store.error)
   const clearError = useParkingStore((store) => store.clearError)
+  const refreshPending = useParkingStore((store) => store.refreshPending)
   const cashSession = useCashStore((store) => store.session)
   const cashLoading = useCashStore((store) => store.loading)
   const [registration, setRegistration] = useState<EntryRegistration | null>(null)
@@ -119,7 +121,8 @@ export function EntriesPage(): React.JSX.Element {
 
   useEffect(() => {
     void initializeTariffs()
-  }, [initializeTariffs])
+    void refreshPending()
+  }, [initializeTariffs, refreshPending])
 
   const activePlans = useMemo(() => plans.filter((plan) => plan.status === 'active'), [plans])
   const vehicleType = useWatch({ control, name: 'vehicleType' })
@@ -143,6 +146,8 @@ export function EntriesPage(): React.JSX.Element {
   }, [plate])
 
   const plateIsValid = isValidPlate(normalizePlate(plate ?? ''))
+  // Una deuda anterior no impide el ingreso: se avisa antes y después de registrarlo.
+  const pendingPlate = registration?.plate ?? (plateIsValid ? normalizePlate(plate ?? '') : '')
   const billingUnitLabel = settings.billingUnit === 'hour' ? 'hora' : 'minuto'
 
   // Solo se ofrece un tipo de vehículo cuando alguna tarifa activa lo cubre: sin
@@ -270,6 +275,10 @@ export function EntriesPage(): React.JSX.Element {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
+
+      {pendingPlate === '' ? null : (
+        <PendingPaymentsNotice key={pendingPlate} plate={pendingPlate} />
+      )}
 
       {registration ? (
         <Card className="quick-card">

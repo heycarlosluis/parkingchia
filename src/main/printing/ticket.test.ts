@@ -129,6 +129,16 @@ describe('recibo de salida', () => {
     expect(html).not.toContain('Nota:')
   })
 
+  it('indica cuándo se pagó si el cobro llegó después de la salida', () => {
+    expect(createExitReceiptHtml('80mm', profile, receipt)).not.toContain('Pagado')
+
+    const settled = createExitReceiptHtml('80mm', profile, {
+      ...receipt,
+      issuedAt: '2026-08-20T14:00:00.000Z',
+    })
+    expect(settled).toContain('Pagado')
+  })
+
   it('marca el duplicado del recibo', () => {
     expect(createExitReceiptHtml('80mm', profile, receipt)).not.toContain('REIMPRESIÓN')
 
@@ -173,6 +183,7 @@ describe('legibilidad en papel térmico', () => {
         closingAmountCop: 150_000,
         differenceCop: 0,
         movementCount: 4,
+        pendingBalance: { count: 0, totalCop: 0 },
       }),
     ]
     for (const html of documents) {
@@ -321,6 +332,7 @@ describe('cierre de caja', () => {
     voidedCop: 5_000,
     expectedAmountCop: 50_000,
     movementCount: 4,
+    pendingBalance: { count: 0, totalCop: 0 },
   }
 
   it('imprime el conteo y la diferencia de un cierre con arqueo', () => {
@@ -332,6 +344,21 @@ describe('cierre de caja', () => {
     expect(html).toContain('<span class="total-label">Efectivo contado</span>')
     expect(html).toContain('Diferencia')
     expect(html).toContain('Falta')
+  })
+
+  it('informa los pagos pendientes aparte, sin alterar los totales', () => {
+    const closed = { ...summary, closingAmountCop: null, differenceCop: null }
+    expect(createCashCloseReceiptHtml('80mm', profile, closed)).not.toContain('pendiente')
+
+    const html = createCashCloseReceiptHtml('80mm', profile, {
+      ...closed,
+      pendingBalance: { count: 2, totalCop: 25_000 },
+    })
+    expect(html).toContain('2 pagos pendientes')
+    expect(html).toContain('no se suma ni se resta del total del turno')
+    // El importe recuadrado sigue siendo lo acumulado en el turno.
+    expect(html).toMatch(/Total del turno<\/span><span class="total-amount">\$\s50\.000</)
+    expect(html.indexOf('Total del turno')).toBeLessThan(html.indexOf('2 pagos pendientes'))
   })
 
   it('imprime el total del turno cuando se cerró sin conteo', () => {

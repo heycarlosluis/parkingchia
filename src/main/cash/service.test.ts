@@ -152,6 +152,135 @@ describe('arqueo en vivo', () => {
   })
 })
 
+describe('pagos pendientes en la caja', () => {
+  /** Inserta una salida que quedó debiendo. */
+  function seedPending(amountCop: number, plate: string): string {
+    const db = manager.getNativeConnection()
+    const registeredAt = new Date().toISOString()
+    const vehicleId = randomUUID()
+    const sessionId = randomUUID()
+    const pendingId = randomUUID()
+    db.prepare(
+      `INSERT INTO vehicles (id, plate, vehicle_type, status, created_at, updated_at)
+       VALUES (?, ?, 'car', 'active', ?, ?)`,
+    ).run(vehicleId, plate, registeredAt, registeredAt)
+    db.prepare(
+      `INSERT INTO parking_sessions
+       (id, vehicle_id, entered_at, exited_at, status, calculated_amount_cop, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'closed', ?, ?, ?)`,
+    ).run(sessionId, vehicleId, registeredAt, registeredAt, amountCop, registeredAt, registeredAt)
+    db.prepare(
+      `INSERT INTO pending_payments
+       (id, parking_session_id, amount_cop, status, snapshot_json, registered_at, created_at,
+        updated_at)
+       VALUES (?, ?, ?, 'pending', '{}', ?, ?, ?)`,
+    ).run(pendingId, sessionId, amountCop, registeredAt, registeredAt, registeredAt)
+    return pendingId
+  }
+
+  /** Marca un pendiente como cobrado dentro de la caja abierta. */
+  function settlePending(pendingId: string): void {
+    const db = manager.getNativeConnection()
+    const settledAt = new Date().toISOString()
+    const pending = db
+      .prepare('SELECT parking_session_id, amount_cop FROM pending_payments WHERE id = ?')
+      .get(pendingId) as { parking_session_id: string; amount_cop: number }
+    const paymentId = randomUUID()
+    db.prepare(
+      `INSERT INTO payments
+       (id, parking_session_id, cash_register_session_id, amount_cop, method, status, paid_at,
+        created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'cash', 'completed', ?, ?, ?)`,
+    ).run(
+      paymentId,
+      pending.parking_session_id,
+      cash.getOpenSessionId(),
+      pending.amount_cop,
+      settledAt,
+      settledAt,
+      settledAt,
+    )
+    db.prepare(
+      `UPDATE pending_payments SET status = 'paid', payment_id = ?, settled_at = ? WHERE id = ?`,
+    ).run(paymentId, settledAt, pendingId)
+  }
+
+  it('informa el saldo pendiente sin sumarlo ni restarlo del arqueo', () => {
+    openSession()
+    seedParkingPayment(cash.getOpenSessionId()!, 10_000, 'ABC123')
+    seedPending(7_000, 'DEU001')
+    seedPending(8_000, 'DEU002')
+
+    const state = cash.getState()
+    expect(state.pendingBalance).toEqual({ count: 2, totalCop: 15_000 })
+    expect(state.collectedCop).toBe(10_000)
+    expect(state.expectedCop).toBe(opening + 10_000)
+
+    const summary = cash.closeSession({ closingAmountCop: opening + 10_000, notes: null })
+    expect(summary).toMatchObject({
+      collectedCop: 10_000,
+      expectedAmountCop: opening + 10_000,
+      differenceCop: 0,
+      pendingBalance: { count: 2, totalCop: 15_000 },
+    })
+    // Sin caja abierta el saldo se sigue informando.
+    expect(cash.getState().pendingBalance).toEqual({ count: 2, totalCop: 15_000 })
+  })
+
+  it('un pendiente cobrado en el turno entra a lo recaudado y deja de figurar como saldo', () => {
+    openSession()
+    const paid = seedPending(7_000, 'DEU001')
+    seedPending(8_000, 'DEU002')
+    settlePending(paid)
+
+    const summary = cash.closeSession({ closingAmountCop: opening + 7_000, notes: null })
+    expect(summary.collectedCop).toBe(7_000)
+    expect(summary.pendingBalance).toEqual({ count: 1, totalCop: 8_000 })
+  })
+
+  it('el saldo de un cierre pasado no cambia cuando la deuda se cobra después', () => {
+    openSession()
+    const pendingId = seedPending(7_000, 'DEU001')
+    const first = cash.closeSession({ closingAmountCop: opening, notes: null })
+    expect(first.pendingBalance).toEqual({ count: 1, totalCop: 7_000 })
+
+    // Se paga en el turno siguiente, y después aparece una deuda nueva.
+    openSession()
+    settlePending(pendingId)
+    const second = cash.closeSession({ closingAmountCop: opening + 7_000, notes: null })
+    seedPending(9_000, 'DEU003')
+
+    expect(second.pendingBalance).toEqual({ count: 0, totalCop: 0 })
+    // Cada cierre conserva sus propios datos aunque haya varios guardados.
+    expect(cash.getCloseSummary(first.sessionId)).toMatchObject({
+      sessionId: first.sessionId,
+      collectedCop: 0,
+      pendingBalance: { count: 1, totalCop: 7_000 },
+    })
+    expect(cash.getCloseSummary(second.sessionId)).toMatchObject({
+      sessionId: second.sessionId,
+      collectedCop: 7_000,
+      pendingBalance: { count: 0, totalCop: 0 },
+    })
+    expect(
+      cash.listClosedSessions().find((session) => session.sessionId === first.sessionId),
+    ).toMatchObject({ collectedCop: 0, pendingBalance: { count: 1, totalCop: 7_000 } })
+    expect(cash.getState().pendingBalance).toEqual({ count: 1, totalCop: 9_000 })
+  })
+
+  it('deja el saldo pendiente en la auditoría del cierre', () => {
+    openSession()
+    seedPending(7_000, 'DEU001')
+    cash.closeSession({ closingAmountCop: opening, notes: null })
+
+    const audit = manager
+      .getNativeConnection()
+      .prepare("SELECT details_json FROM audit_logs WHERE action = 'cash.session_closed'")
+      .get() as { details_json: string }
+    expect(JSON.parse(audit.details_json)).toMatchObject({ pendingCount: 1, pendingCop: 7_000 })
+  })
+})
+
 describe('anulación de cobros', () => {
   it('anula un cobro con motivo y lo descuenta del arqueo', () => {
     openSession()

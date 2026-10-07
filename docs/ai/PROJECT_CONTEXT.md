@@ -72,6 +72,7 @@ El modelo de datos comprende:
 - `cash_register_sessions`
 - `audit_logs`
 - `employees` (añadida por la migración `0005`)
+- `pending_payments` (añadida por la migración `0008`)
 
 Principios del modelo:
 
@@ -80,13 +81,13 @@ Principios del modelo:
 - Una sesión activa por vehículo y una sola caja abierta.
 - Importes enteros COP y timestamps ISO 8601 UTC.
 - Estados explícitos y restricciones `CHECK`.
-- Relaciones con claves foráneas y borrado restrictivo.
+- Relaciones con claves foráneas y borrado restrictivo. Clientes y planes mensuales se eliminan de los catálogos mediante `deleted_at`, conservando mensualidades, cobertura, deudas y comprobantes.
 - Recibos con número positivo único y snapshot inmutable de emisión.
 - Auditoría append-only para acciones críticas.
 
 La política de cobro (unidad por hora o minuto, tolerancia sobre la fracción, plena, moneda COP, IVA y redondeo) se guarda en `app_settings` con el prefijo `tariff.`; el cálculo vive como función pura en `src/shared/tariff.ts`.
 
-El ciclo de parqueo es transaccional: el ingreso abre una sesión y la salida registra pago, recibo y cierre en una sola transacción. El recibo conserva un snapshot inmutable con el desglose del cobro, de modo que reimprimirlo no depende de la tarifa vigente.
+El ciclo de parqueo es transaccional: el ingreso abre una sesión y la salida registra pago, recibo y cierre en una sola transacción. Una salida también puede cerrarse con el pago pendiente: el importe queda congelado como una deuda independiente que se cobra después. El recibo conserva un snapshot inmutable con el desglose del cobro, de modo que reimprimirlo no depende de la tarifa vigente.
 
 Consulta `docs/database.md` y `src/main/database/schema.ts` antes de cambiar el modelo.
 
@@ -101,6 +102,7 @@ Consulta `docs/database.md` y `src/main/database/schema.ts` antes de cambiar el 
 - Simular el cobro de una permanencia con la configuración guardada.
 - Registrar el ingreso de un vehículo e imprimir su tiquete.
 - Listar y buscar sesiones activas, cotizar una salida, cobrarla con recibo o anular un ingreso.
+- Dejar una salida con el pago pendiente, listar los pagos pendientes y cobrar cada uno con su recibo.
 - Reimprimir el recibo de una salida ya cobrada.
 - Consultar el historial de salidas por matrícula y rango de fechas.
 - Administrar mensualidades: clientes, planes mensuales, suscripciones, renovaciones, cancelaciones y pagos por abono, reimprimir el comprobante de un pago y consultar la cobertura vigente de una matrícula.

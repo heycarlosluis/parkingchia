@@ -1,10 +1,18 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Barcode, CheckCircle2, LoaderCircle, LogOut, Printer, ScanLine } from 'lucide-react'
+import {
+  Barcode,
+  CheckCircle2,
+  Hourglass,
+  LoaderCircle,
+  LogOut,
+  Printer,
+  ScanLine,
+} from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { Link, useLocation } from 'react-router-dom'
 import type { z } from 'zod'
-import type { ActiveSession, ExitRegistration } from '@shared/contracts'
+import type { ActiveSession, ExitRegistration, PendingPayment } from '@shared/contracts'
 import {
   isEntryTicketCode,
   MAX_ENTRY_SCAN_LENGTH,
@@ -21,6 +29,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter } from '@/components/ui/card'
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { ExitDialog } from '@/features/active-sessions/exit-dialog'
+import { PendingPaymentsNotice } from '@/features/pending-payments/pending-payments-notice'
 import { useCashStore } from '@/store/cash-store'
 import { useParkingStore } from '@/store/parking-store'
 
@@ -34,8 +43,12 @@ export function ExitPage(): React.JSX.Element {
   const cashSession = useCashStore((store) => store.session)
   const cashLoading = useCashStore((store) => store.loading)
   const clearParkingError = useParkingStore((store) => store.clearError)
+  const refreshPending = useParkingStore((store) => store.refreshPending)
   const [session, setSession] = useState<ActiveSession | null>(null)
   const [lastExit, setLastExit] = useState<ExitRegistration | null>(null)
+  const [lastPending, setLastPending] = useState<PendingPayment | null>(null)
+  // Matrícula que ya salió debiendo: no hay ingreso que cobrar, sino pagos pendientes.
+  const [pendingPlate, setPendingPlate] = useState<string | null>(null)
   const [lookupError, setLookupError] = useState('')
   const [searching, setSearching] = useState(false)
   const [reprinting, setReprinting] = useState(false)
@@ -54,8 +67,12 @@ export function ExitPage(): React.JSX.Element {
 
   // Cerrada la salida, Enter debe encadenar con la siguiente sin tocar el ratón.
   useEffect(() => {
-    if (lastExit) continueRef.current?.focus()
-  }, [lastExit])
+    if (lastExit || lastPending) continueRef.current?.focus()
+  }, [lastExit, lastPending])
+
+  useEffect(() => {
+    void refreshPending()
+  }, [refreshPending])
 
   const lookup = async (code: string): Promise<void> => {
     setLookupError('')
@@ -66,9 +83,15 @@ export function ExitPage(): React.JSX.Element {
       setLookupError(result.error.message)
       return
     }
+    if (result.data.kind === 'pending') {
+      await refreshPending()
+      setPendingPlate(result.data.plate)
+      return
+    }
+    setPendingPlate(null)
     // El diálogo muestra el error del store: un fallo anterior no es de esta salida.
     clearParkingError()
-    setSession(result.data)
+    setSession(result.data.session)
   }
 
   const submit = handleSubmit((values) => lookup(values.code))
@@ -85,6 +108,8 @@ export function ExitPage(): React.JSX.Element {
 
   const startAnother = (): void => {
     setLastExit(null)
+    setLastPending(null)
+    setPendingPlate(null)
     setLookupError('')
     setReprintMessage('')
     reset({ code: '' })
@@ -100,6 +125,7 @@ export function ExitPage(): React.JSX.Element {
   }
 
   const printStatus = reprintMessage === '' ? (lastExit?.printMessage ?? '') : reprintMessage
+  const done = lastExit !== null || lastPending !== null
 
   return (
     <div className="page-stack quick-page">
@@ -108,7 +134,7 @@ export function ExitPage(): React.JSX.Element {
         <p>Escanea el tiquete o escribe la matrícula para preparar el cobro.</p>
       </header>
 
-      {!lastExit ? (
+      {!done ? (
         <div className="scanner-ready" role="status">
           <span className="scanner-ready-icon" aria-hidden="true">
             <ScanLine />
@@ -146,7 +172,48 @@ export function ExitPage(): React.JSX.Element {
         </Alert>
       ) : null}
 
-      {lastExit ? (
+      {pendingPlate && !done ? (
+        <PendingPaymentsNotice key={pendingPlate} plate={pendingPlate} />
+      ) : null}
+
+      {lastPending ? (
+        <Card className="quick-card">
+          <CardContent className="quick-done">
+            <p className="quick-done-title" data-tone="warning">
+              <Hourglass aria-hidden="true" /> Pago pendiente registrado
+            </p>
+            <p className="quick-done-plate">{lastPending.plate}</p>
+            <dl className="charge-breakdown">
+              <div>
+                <dt>Vehículo</dt>
+                <dd>{VEHICLE_TYPE_LABELS[lastPending.vehicleType]}</dd>
+              </div>
+              <div>
+                <dt>Permanencia</dt>
+                <dd className="tabular">{describeElapsed(lastPending.charge.totalMinutes)}</dd>
+              </div>
+              <div>
+                <dt>Fecha y hora de salida</dt>
+                <dd className="tabular">{formatDateTime(lastPending.exitedAt)}</dd>
+              </div>
+              <div className="charge-total">
+                <dt>Total pendiente</dt>
+                <dd className="tabular">{formatCurrency(lastPending.amountCop)}</dd>
+              </div>
+            </dl>
+            <p className="field-hint">
+              El vehículo salió sin pagar. Si vuelve a ingresar, la aplicación avisará que tiene un
+              pago pendiente.
+            </p>
+          </CardContent>
+          <CardFooter className="quick-actions">
+            <Button ref={continueRef} type="button" size="lg" onClick={startAnother}>
+              <LogOut data-icon="inline-start" />
+              Registrar otra salida
+            </Button>
+          </CardFooter>
+        </Card>
+      ) : lastExit ? (
         <Card className="quick-card">
           <CardContent className="quick-done">
             <p className="quick-done-title">
@@ -264,6 +331,7 @@ export function ExitPage(): React.JSX.Element {
                       // Igual que en Registrar ingreso: solo letras y dígitos, salvo un tiquete escaneado.
                       onChange={(event) => {
                         setLookupError('')
+                        setPendingPlate(null)
                         field.onChange(sanitizeExitCodeInput(event.target.value))
                       }}
                     />
@@ -304,6 +372,10 @@ export function ExitPage(): React.JSX.Element {
             setSession(null)
             setLastExit(exit)
             setReprintMessage('')
+          }}
+          onPending={(pending) => {
+            setSession(null)
+            setLastPending(pending)
           }}
         />
       ) : null}

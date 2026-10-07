@@ -99,11 +99,44 @@ describe('clientes mensuales', () => {
     )
   })
 
-  it('no elimina un cliente que ya tiene mensualidades', () => {
-    service.createSubscription(subscriptionDraft())
-    expect(() => service.deleteCustomer(customerId)).toThrow(
-      expect.objectContaining({ code: 'CUSTOMER_IN_USE' }),
+  it('retira un cliente con historial y conserva cobertura, abonos y recibos', () => {
+    const subscription = service.createSubscription(subscriptionDraft())
+    service.registerPayment({
+      subscriptionId: subscription.id,
+      amountCop: 50_000,
+      method: 'transfer',
+      receivedCop: null,
+      reference: null,
+    })
+    const snapshot = service.findReceiptSnapshot(subscription.id)
+    service.deleteCustomer(customerId)
+    expect(service.listCustomers()).toHaveLength(0)
+    expect(service.getOverview(filters).subscriptions[0]).toMatchObject({
+      id: subscription.id,
+      balanceCop: 100_000,
+      status: 'active',
+    })
+    expect(service.findCoverageByPlate('MEN001')).toMatchObject({ subscriptionId: subscription.id })
+    expect(service.findReceiptSnapshot(subscription.id)).toEqual(snapshot)
+    expect(() =>
+      service.renewSubscription({ id: subscription.id, months: 1, amountCop: null }),
+    ).toThrow(expect.objectContaining({ code: 'CUSTOMER_NOT_FOUND' }))
+    expect(() => service.updateCustomer({ ...customerDraft, id: customerId })).toThrow(
+      expect.objectContaining({ code: 'CUSTOMER_NOT_FOUND' }),
     )
+    expect(() => service.deleteCustomer(customerId)).toThrow(
+      expect.objectContaining({ code: 'CUSTOMER_NOT_FOUND' }),
+    )
+    expect(service.createCustomer(customerDraft).id).not.toBe(customerId)
+    service.registerPayment({
+      subscriptionId: subscription.id,
+      amountCop: 100_000,
+      method: 'transfer',
+      receivedCop: null,
+      reference: null,
+    })
+    expect(service.getOverview(filters).subscriptions[0]?.balanceCop).toBe(0)
+    expect(manager.getNativeConnection().pragma('foreign_key_check')).toEqual([])
   })
 
   it('elimina un cliente sin historial y deja rastro de auditoría', () => {
@@ -130,11 +163,34 @@ describe('planes mensuales', () => {
     expect(plans[0]).toMatchObject({ billingUnit: 'month', amountCop: 150_000 })
   })
 
-  it('no elimina un plan que ya se usó', () => {
-    service.createSubscription(subscriptionDraft())
-    expect(() => service.deletePlan(planId)).toThrow(
-      expect.objectContaining({ code: 'MONTHLY_PLAN_IN_USE' }),
+  it('retira un plan usado sin perder la mensualidad ni permitir renovaciones con él', () => {
+    const subscription = service.createSubscription(subscriptionDraft())
+    service.deletePlan(planId)
+    expect(service.listPlans()).toHaveLength(0)
+    expect(service.getOverview(filters).subscriptions[0]).toMatchObject({
+      id: subscription.id,
+      planName: 'Mensualidad automóvil',
+      amountCop: 150_000,
+    })
+    expect(service.findCoverageByPlate('MEN001')).toMatchObject({ subscriptionId: subscription.id })
+    expect(() =>
+      service.renewSubscription({ id: subscription.id, months: 1, amountCop: null }),
+    ).toThrow(expect.objectContaining({ code: 'MONTHLY_PLAN_NOT_FOUND' }))
+    expect(() => service.createSubscription(subscriptionDraft({ plate: 'OTR123' }))).toThrow(
+      expect.objectContaining({ code: 'MONTHLY_PLAN_NOT_FOUND' }),
     )
+    service.registerPayment({
+      subscriptionId: subscription.id,
+      amountCop: 150_000,
+      method: 'transfer',
+      receivedCop: null,
+      reference: null,
+    })
+    expect(service.findReceiptSnapshot(subscription.id).planName).toBe('Mensualidad automóvil')
+    expect(() => service.deletePlan(planId)).toThrow(
+      expect.objectContaining({ code: 'MONTHLY_PLAN_NOT_FOUND' }),
+    )
+    expect(manager.getNativeConnection().pragma('foreign_key_check')).toEqual([])
   })
 
   it('no crea una mensualidad con un plan inactivo', () => {
@@ -152,6 +208,30 @@ describe('planes mensuales', () => {
 })
 
 describe('mensualidades', () => {
+  it('no cambia el tipo de un vehículo con ingreso activo ni deja escrituras parciales', () => {
+    const subscription = service.createSubscription(subscriptionDraft())
+    const sqlite = manager.getNativeConnection()
+    const now = new Date().toISOString()
+    sqlite
+      .prepare(
+        "INSERT INTO parking_sessions (id, vehicle_id, entered_at, status, created_at, updated_at) VALUES ('active', ?, ?, 'active', ?, ?)",
+      )
+      .run(subscription.vehicleId, now, now, now)
+    const startDate = shiftLocalDate(coverageEndDate(today, 1), 1)
+    expect(() =>
+      service.createSubscription(
+        subscriptionDraft({
+          vehicleType: 'motorcycle',
+          startDate,
+          endDate: coverageEndDate(startDate, 1),
+        }),
+      ),
+    ).toThrow(expect.objectContaining({ code: 'VEHICLE_IN_USE' }))
+    expect(
+      sqlite.prepare('SELECT vehicle_type FROM vehicles WHERE id = ?').get(subscription.vehicleId),
+    ).toEqual({ vehicle_type: 'car' })
+    expect(service.getOverview(filters).subscriptions).toHaveLength(1)
+  })
   it('crea la mensualidad con vigencia de días completos y vehículo reutilizable', () => {
     const subscription = service.createSubscription(subscriptionDraft())
 
@@ -264,6 +344,40 @@ describe('mensualidades', () => {
 })
 
 describe('pagos de mensualidad', () => {
+  it('anular un abono desde Caja recupera el saldo y permite cobrarlo de nuevo', () => {
+    const subscription = service.createSubscription(subscriptionDraft())
+    service.registerPayment({
+      subscriptionId: subscription.id,
+      amountCop: 50_000,
+      method: 'cash',
+      receivedCop: 50_000,
+      reference: null,
+    })
+    const movement = cash.getState().movements[0]!
+    service.deleteCustomer(customerId)
+    service.deletePlan(planId)
+    cash.voidPayment({ paymentId: movement.paymentId, reason: 'Medio de pago equivocado' })
+    expect(service.getOverview(filters).subscriptions[0]).toMatchObject({
+      paidCop: 0,
+      balanceCop: 150_000,
+    })
+    expect(service.getOverview(filters).summary.pendingCollectionCop).toBe(150_000)
+    expect(() => service.findReceiptSnapshot(subscription.id)).toThrow(
+      expect.objectContaining({ code: 'RECEIPT_NOT_FOUND' }),
+    )
+    const payment = service.registerPayment({
+      subscriptionId: subscription.id,
+      amountCop: 50_000,
+      method: 'transfer',
+      receivedCop: null,
+      reference: 'Corrección',
+    })
+    expect(payment.receiptNumber).toBe(2)
+    expect(cash.getState().collectedCop).toBe(50_000)
+    expect(service.getOverview(filters).subscriptions[0]?.balanceCop).toBe(100_000)
+    service.cancelSubscription({ id: subscription.id, reason: 'Cliente retirado' })
+    expect(service.findCoverageByPlate('MEN001')).toBeNull()
+  })
   it('registra un abono parcial y luego el saldo, con recibos consecutivos', () => {
     const subscription = service.createSubscription(subscriptionDraft())
 
@@ -399,6 +513,25 @@ describe('pagos de mensualidad', () => {
 })
 
 describe('cobertura y resumen', () => {
+  it('mantiene la deuda vencida en el resumen y la reduce al cobrarla', () => {
+    const startDate = shiftLocalDate(today, -60)
+    const subscription = service.createSubscription(
+      subscriptionDraft({ startDate, endDate: shiftLocalDate(today, -1) }),
+    )
+    expect(service.getOverview(filters).summary).toMatchObject({
+      activeCount: 0,
+      expiredCount: 1,
+      pendingCollectionCop: 150_000,
+    })
+    service.registerPayment({
+      subscriptionId: subscription.id,
+      amountCop: 50_000,
+      method: 'transfer',
+      receivedCop: null,
+      reference: null,
+    })
+    expect(service.getOverview(filters).summary.pendingCollectionCop).toBe(100_000)
+  })
   it('la cobertura respeta el intervalo semiabierto del periodo', () => {
     const subscription = service.createSubscription(subscriptionDraft())
     const beforeStart = new Date(Date.parse(subscription.startsAt) - 1).toISOString()

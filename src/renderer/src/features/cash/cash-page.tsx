@@ -16,6 +16,7 @@ import {
   CASH_MOVEMENT_SOURCE_LABELS,
   CASH_PAYMENT_STATUS_LABELS,
   describeCashDifference,
+  describePendingCount,
 } from '@shared/cash'
 import { PAYMENT_METHOD_LABELS } from '@shared/parking'
 import {
@@ -63,6 +64,7 @@ export function CashPage(): React.JSX.Element {
   const collectedCop = useCashStore((store) => store.collectedCop)
   const voidedCop = useCashStore((store) => store.voidedCop)
   const expectedCop = useCashStore((store) => store.expectedCop)
+  const pendingBalance = useCashStore((store) => store.pendingBalance)
   const loading = useCashStore((store) => store.loading)
   const error = useCashStore((store) => store.error)
   const message = useCashStore((store) => store.message)
@@ -161,6 +163,13 @@ export function CashPage(): React.JSX.Element {
                   }`
                 : ''}
             </span>
+            {closeSummary.pendingBalance.count === 0 ? null : (
+              <p>
+                Quedan {describePendingCount(closeSummary.pendingBalance.count)} por{' '}
+                {formatCurrency(closeSummary.pendingBalance.totalCop)}, que no se suman ni se restan
+                del total.
+              </p>
+            )}
             {/* El aviso ya es una región viva: anunciar aquí duplicaría la lectura. */}
             <span className="reprint-status">{reprintMessage}</span>
           </AlertDescription>
@@ -385,7 +394,8 @@ export function CashPage(): React.JSX.Element {
             <div className="table-scroll">
               <table className="data-table">
                 <caption className="sr-only">
-                  Cierres de caja anteriores con empleado, recaudado, esperado y diferencia.
+                  Cierres de caja anteriores con empleado, recaudado, esperado, diferencia y pagos
+                  pendientes que quedaban.
                 </caption>
                 <thead>
                   <tr>
@@ -403,6 +413,9 @@ export function CashPage(): React.JSX.Element {
                       Contado
                     </th>
                     <th scope="col">Diferencia</th>
+                    <th scope="col" className="numeric">
+                      Pendiente
+                    </th>
                     <th scope="col" className="actions">
                       <span className="sr-only">Acciones</span>
                     </th>
@@ -437,6 +450,18 @@ export function CashPage(): React.JSX.Element {
                           {describeCashDifference(summary.differenceCop)}
                         </Badge>
                       </td>
+                      <td className="numeric tabular">
+                        {summary.pendingBalance.count === 0 ? (
+                          <span aria-hidden="true">—</span>
+                        ) : (
+                          <span className="cell-stack">
+                            <span>{formatCurrency(summary.pendingBalance.totalCop)}</span>
+                            <span className="cell-note">
+                              {describePendingCount(summary.pendingBalance.count)}
+                            </span>
+                          </span>
+                        )}
+                      </td>
                       <td className="actions">
                         <Button
                           type="button"
@@ -468,6 +493,7 @@ export function CashPage(): React.JSX.Element {
       <CloseCashDialog
         open={closing}
         expectedCop={expectedCop}
+        pendingBalance={pendingBalance}
         simpleChargeMode={simpleChargeMode}
         error={error}
         onOpenChange={setClosing}

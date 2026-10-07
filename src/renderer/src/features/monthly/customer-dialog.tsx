@@ -107,7 +107,12 @@ export function CustomerDialog({
   })
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!formState.isSubmitting) onOpenChange(nextOpen)
+      }}
+    >
       <DialogContent className="rate-plan-dialog">
         <DialogHeader>
           <DialogTitle>{customer ? 'Editar cliente' : 'Nuevo cliente mensual'}</DialogTitle>
@@ -210,7 +215,12 @@ export function CustomerDialog({
           </FieldGroup>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={formState.isSubmitting}
+              onClick={() => onOpenChange(false)}
+            >
               Cancelar
             </Button>
             <Button type="submit" disabled={formState.isSubmitting}>

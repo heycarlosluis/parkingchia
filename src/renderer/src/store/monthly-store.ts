@@ -40,6 +40,7 @@ type MonthlyStore = {
   search: string
   status: SubscriptionFilter
   loading: boolean
+  mutating: boolean
   error: string | null
   message: string
   initialize: () => Promise<void>
@@ -64,6 +65,7 @@ type MonthlyStore = {
 }
 
 export const useMonthlyStore = create<MonthlyStore>((set, get) => {
+  let latestLoad = 0
   const apply = (overview: MonthlyOverview): void => {
     set({
       subscriptions: overview.subscriptions,
@@ -76,12 +78,23 @@ export const useMonthlyStore = create<MonthlyStore>((set, get) => {
   }
 
   const load = async (): Promise<void> => {
-    const result = await window.parkingAPI.getMonthlyOverview({
-      search: get().search,
-      status: get().status,
-    })
-    if (result.ok) apply(result.data)
-    else set({ loading: false, error: result.error.message })
+    const request = ++latestLoad
+    try {
+      const result = await window.parkingAPI.getMonthlyOverview({
+        search: get().search,
+        status: get().status,
+      })
+      if (request !== latestLoad) return
+      if (result.ok) apply(result.data)
+      else set({ loading: false, error: result.error.message })
+    } catch {
+      if (request === latestLoad)
+        set({
+          loading: false,
+          error:
+            'No fue posible actualizar las mensualidades. Pulsa Actualizar para volver a consultar.',
+        })
+    }
   }
 
   /** Ejecuta una operación y vuelve a leer el módulo con los filtros vigentes. */
@@ -89,15 +102,26 @@ export const useMonthlyStore = create<MonthlyStore>((set, get) => {
     operation: () => Promise<ApiResult<T>>,
     message: string,
   ): Promise<T | null> => {
-    set({ error: null, message: '' })
-    const result = await operation()
-    if (!result.ok) {
-      set({ error: result.error.message })
+    if (get().mutating) return null
+    set({ mutating: true, error: null, message: '' })
+    try {
+      const result = await operation()
+      if (!result.ok) {
+        set({ error: result.error.message })
+        return null
+      }
+      await load()
+      set({ message })
+      return result.data
+    } catch {
+      set({
+        error:
+          'No fue posible completar la operación. Consulta las mensualidades antes de volver a intentarlo.',
+      })
       return null
+    } finally {
+      set({ mutating: false })
     }
-    await load()
-    set({ message })
-    return result.data
   }
 
   const runBoolean = async <T>(
@@ -113,6 +137,7 @@ export const useMonthlyStore = create<MonthlyStore>((set, get) => {
     search: '',
     status: 'all',
     loading: true,
+    mutating: false,
     error: null,
     message: '',
     initialize: async () => {
