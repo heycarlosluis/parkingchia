@@ -7,11 +7,11 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 ## Línea base
 
 - Rama de referencia: `main`.
-- Versión del corte: `0.1.0-alpha.10` (preparada; publicación pendiente).
-- Versión publicada más reciente: `0.1.0-alpha.9`.
-- Tag publicado más reciente: `v0.1.0-alpha.9`.
+- Versión del corte: `0.1.0-alpha.10`.
+- Versión publicada más reciente: `0.1.0-alpha.10`.
+- Tag publicado más reciente: `v0.1.0-alpha.10`.
 - CI de la versión publicada: aprobado.
-- Release multiplataforma publicada: `0.1.0-alpha.9`, como pre-release.
+- Release multiplataforma publicada: `0.1.0-alpha.10`, como pre-release.
 - Artefactos publicados: NSIS Windows x64; DMG y ZIP macOS x64/arm64; metadatos YAML y blockmaps.
 
 ## Implementado y funcional
@@ -66,7 +66,7 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 - Un cobro solo se anula dentro de la caja abierta que lo contiene; un cobro emitido sin caja abierta o en una caja ya cerrada no se anula desde Caja.
 - Anular un cobro de parqueo no reabre la sesión ya cerrada: solo descuenta el importe del arqueo y deja el recibo anulado. Reabrir o volver a cobrar es una corrección manual del operador.
 - No hay noción de cupos ni de aforo del parqueadero.
-- Un pago pendiente solo sale del listado cobrándolo: no existe una acción para condonarlo o anularlo, ni un comprobante impreso al dejarlo pendiente.
+- Un pago pendiente solo sale del listado cobrándolo: no existe una acción para condonarlo o anularlo, ni impresión automática al dejarlo pendiente; sí existe reimpresión manual desde Parqueo activo.
 - El plan `day` del modelo no tiene pantalla ni servicio; queda reservado para un eventual cobro por día distinto de la plena.
 
 ## Validaciones conocidas de la línea base
@@ -78,16 +78,17 @@ npm ci
 npm run format:check
 npm run typecheck
 npm run lint
-npm run test:run       32 archivos, 354 pruebas
+npm run test:run       33 archivos, 375 pruebas
 npm run db:generate
 npm run db:migrate
 npm run db:seed
 npm run build
 npm run dev
-npm run dist:mac
+npm run dist:mac       GitHub Actions
+npm run dist:win       GitHub Actions
 ```
 
-El workflow de release verificó además `npm run dist:win` en Windows y `npm run dist:mac` en macOS.
+CI aprobó el commit de la versión. El workflow de release verificó `npm run dist:win` en Windows y `npm run dist:mac` en macOS; la publicación y todos sus jobs finalizaron correctamente. La comprobación local de DMG falló por `hdiutil` y está documentada al final de este archivo.
 
 ## Limitaciones y riesgos conocidos
 
@@ -172,6 +173,8 @@ Pasaron `format:check`, `typecheck`, `lint`, 33 archivos con 367 pruebas, `build
 
 El 2026-10-06 se añadió «Reimprimir tiquete» a cada fila de Pagos pendientes (D-047). El proceso principal recupera la deuda seleccionada y conserva importe, fechas, tarifa y código originales; el papel indica el saldo pendiente y la marca de reimpresión, sin registrar un cobro ni emitir un recibo. Se rechazan deudas ya cobradas y se bloquean clics repetidos durante la impresión. Pasaron `format:check`, `typecheck`, `lint`, 33 archivos con 375 pruebas y `build`. Una verificación nativa con Electron generó PDFs de una página para 80 mm (72 mm imprimibles) y 58 mm (48 mm imprimibles), tanto sin margen como con 4 mm por lado. La impresión física sigue pendiente.
 
-`0.1.0-alpha.10` está preparada para publicar la reimpresión de tiquetes pendientes y los cambios D-044 a D-046. Incluye las migraciones aditivas `0008`, `0009` y `0010`; conserva los datos y crea un respaldo antes de migrar. Los builds oficiales de Windows y macOS se verificarán mediante GitHub Actions al enviar el tag.
+`0.1.0-alpha.10` se preparó para publicar la reimpresión de tiquetes pendientes y los cambios D-044 a D-046. Incluye las migraciones aditivas `0008`, `0009` y `0010`; conserva los datos y crea un respaldo antes de migrar. Los builds oficiales de Windows y macOS se verificaron mediante GitHub Actions después de enviar el tag.
 
 En la preparación de `0.1.0-alpha.10` volvieron a pasar formato, tipos, lint, las 375 pruebas y la compilación; `db:generate` no produjo cambios y `db:migrate` completó las once migraciones sobre una base temporal. El empaquetado local creó ambas aplicaciones macOS con las migraciones y SQLite nativo incluidos, pero la creación de DMG falló por `hdiutil: Resource temporarily unavailable` en este sistema. La validación del DMG queda a cargo del runner macOS del workflow oficial; no se considera aprobado el comando local completo.
+
+`0.1.0-alpha.10` se publicó el 2026-10-06 (2026-10-07 UTC) en [GitHub Releases](https://github.com/heycarlosluis/parkingchia/releases/tag/v0.1.0-alpha.10). [CI](https://github.com/heycarlosluis/parkingchia/actions/runs/37567187627) y los cuatro jobs de [Release](https://github.com/heycarlosluis/parkingchia/actions/runs/37567190787) terminaron correctamente. Se comprobaron el instalador NSIS de Windows x64, los DMG y ZIP de macOS x64/arm64, sus blockmaps y los YAML de actualización: ambos metadatos declaran la versión correcta y referencian archivos publicados con los tamaños correspondientes. Los dos ZIP locales pasaron la comprobación de integridad. La release sigue siendo alpha y los instaladores continúan sin firma; la impresión física y la actualización completa en un equipo instalado siguen pendientes de validación en el hardware del propietario.
