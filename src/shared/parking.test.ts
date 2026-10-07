@@ -8,8 +8,26 @@ import {
   exitStatusOf,
   QUICK_CASH_AMOUNTS_COP,
   resolveExitTargetSchema,
+  reprintPendingPaymentTicketSchema,
 } from './parking'
 import { MAX_AMOUNT_COP } from './tariff'
+
+describe('reimpresión de un pago pendiente', () => {
+  it('acepta solo el identificador del pendiente y rechaza datos de impresión del renderer', () => {
+    expect(reprintPendingPaymentTicketSchema.parse({ pendingPaymentId: ' pending-1 ' })).toEqual({
+      pendingPaymentId: 'pending-1',
+    })
+    for (const input of [
+      {},
+      { pendingPaymentId: '' },
+      { pendingPaymentId: 'x'.repeat(65) },
+      { pendingPaymentId: 123 },
+      { pendingPaymentId: 'pending-1', amountCop: 1 },
+    ]) {
+      expect(reprintPendingPaymentTicketSchema.safeParse(input).success).toBe(false)
+    }
+  })
+})
 
 describe('esquema de lectura del tiquete', () => {
   it('acepta una matrícula o un código y rechaza entradas vacías o excesivas', () => {

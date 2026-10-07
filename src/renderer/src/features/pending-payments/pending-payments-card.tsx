@@ -1,9 +1,11 @@
-import { HandCoins, Hourglass } from 'lucide-react'
+import { HandCoins, Hourglass, LoaderCircle, Printer } from 'lucide-react'
+import { useRef, useState } from 'react'
 import type { PendingPayment } from '@shared/contracts'
 import { formatCurrency, formatDate, formatDateTime, formatTime } from '@shared/format'
 import { describeElapsed } from '@shared/parking'
 import { describeBilledTime, VEHICLE_TYPE_LABELS } from '@shared/tariff'
 import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
@@ -18,6 +20,33 @@ export function PendingPaymentsCard({
   onCollect,
 }: PendingPaymentsCardProps): React.JSX.Element {
   const totalCop = payments.reduce((total, pending) => total + pending.amountCop, 0)
+  const printLock = useRef(false)
+  const [printingId, setPrintingId] = useState<string | null>(null)
+  const [feedback, setFeedback] = useState<{ error: boolean; message: string } | null>(null)
+
+  const reprint = async (pending: PendingPayment): Promise<void> => {
+    if (printLock.current) return
+    printLock.current = true
+    setPrintingId(pending.id)
+    setFeedback(null)
+    try {
+      const result = await window.parkingAPI.reprintPendingPaymentTicket({
+        pendingPaymentId: pending.id,
+      })
+      setFeedback({
+        error: !result.ok,
+        message: `${pending.plate}: ${result.ok ? result.data.message : result.error.message}`,
+      })
+    } catch {
+      setFeedback({
+        error: true,
+        message: 'No fue posible reimprimir el tiquete. Vuelve a intentarlo.',
+      })
+    } finally {
+      printLock.current = false
+      setPrintingId(null)
+    }
+  }
 
   return (
     <Card>
@@ -31,6 +60,14 @@ export function PendingPaymentsCard({
         </Badge>
       </CardHeader>
       <CardContent>
+        {feedback ? (
+          <Alert variant={feedback.error ? 'destructive' : 'default'}>
+            <AlertTitle>
+              {feedback.error ? 'No se reimprimió el tiquete' : 'Impresión del tiquete'}
+            </AlertTitle>
+            <AlertDescription>{feedback.message}</AlertDescription>
+          </Alert>
+        ) : null}
         <div className="table-scroll">
           <table className="data-table">
             <caption className="sr-only">
@@ -85,10 +122,27 @@ export function PendingPaymentsCard({
                     {formatCurrency(pending.amountCop)}
                   </td>
                   <td className="actions">
-                    <Button type="button" size="sm" onClick={() => onCollect(pending)}>
-                      <HandCoins data-icon="inline-start" />
-                      Cobrar
-                    </Button>
+                    <div className="row-actions">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={printingId !== null}
+                        aria-label={`Reimprimir tiquete de ${pending.plate}, salida ${formatDateTime(pending.exitedAt)}`}
+                        onClick={() => void reprint(pending)}
+                      >
+                        {printingId === pending.id ? (
+                          <LoaderCircle className="animate-spin" data-icon="inline-start" />
+                        ) : (
+                          <Printer data-icon="inline-start" />
+                        )}
+                        Reimprimir tiquete
+                      </Button>
+                      <Button type="button" size="sm" onClick={() => onCollect(pending)}>
+                        <HandCoins data-icon="inline-start" />
+                        Cobrar
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -4,6 +4,7 @@ import type {
   EntryRegistration,
   PaperWidth,
   ParkingProfile,
+  PendingPayment,
 } from '@shared/contracts'
 import { formatCurrency, formatDateTime } from '@shared/format'
 import { describeCashDifference, describePendingCount } from '@shared/cash'
@@ -277,14 +278,10 @@ export function createTestTicketHtml(layout: LayoutInput, profile: ParkingProfil
   return documentShell(layout, profile, { title: 'Ticket de prueba', meta: ticketNumber }, body)
 }
 
-export function createEntryTicketHtml(
-  layout: LayoutInput,
-  profile: ParkingProfile | null,
-  entry: EntryRegistration,
-  options: TicketRenderOptions = {},
-): string {
+/** El mismo código identifica el ingreso activo o su deuda pendiente. */
+function ticketScanBlock(layout: LayoutInput, sessionId: string, instruction: string): string {
   // QR y Code 128 llevan el mismo código numérico: cualquiera de los dos abre la salida.
-  const reference = encodeEntryTicketReference(entry.sessionId)
+  const reference = encodeEntryTicketReference(sessionId)
   const sizes = SYMBOL_SIZES[toLayout(layout).paperWidth]
   // Corrección Q (25 %): tolera manchas y roces del papel térmico. `eclevel` es
   // una opción de BWIPP que los tipos de bwip-js no declaran.
@@ -312,6 +309,20 @@ export function createEntryTicketHtml(
     sizes.barcodeModuleDots,
     sizes.barcodeHeightMm,
   )
+  return `<section class="scan-block" aria-label="Códigos del tiquete">
+      <p class="scan-title">${escapeHtml(instruction)}</p>
+      <div class="qr">${qrSvg}</div>
+      <div class="barcode">${barcodeSvg}</div>
+      <p class="ticket-reference">${escapeHtml(formatEntryTicketReference(reference))}</p>
+    </section>`
+}
+
+export function createEntryTicketHtml(
+  layout: LayoutInput,
+  profile: ParkingProfile | null,
+  entry: EntryRegistration,
+  options: TicketRenderOptions = {},
+): string {
   const body = `
     ${plateBlock(entry.plate, entry.vehicleType)}
     ${RULE}
@@ -324,16 +335,36 @@ export function createEntryTicketHtml(
     </dl>
     ${notesBlock(entry.notes)}
     ${RULE}
-    <section class="scan-block" aria-label="Códigos del tiquete">
-      <p class="scan-title">Escanee para registrar la salida</p>
-      <div class="qr">${qrSvg}</div>
-      <div class="barcode">${barcodeSvg}</div>
-      <p class="ticket-reference">${escapeHtml(formatEntryTicketReference(reference))}</p>
-    </section>
+    ${ticketScanBlock(layout, entry.sessionId, 'Escanee para registrar la salida')}
     ${RULE}
     <p class="footer">Conserve este tiquete.<br />Se exige para retirar el vehículo.</p>
     ${LIABILITY_NOTE}`
   return documentShell(layout, profile, { title: 'Tiquete de ingreso' }, body, options)
+}
+
+export function createPendingPaymentTicketHtml(
+  layout: LayoutInput,
+  profile: ParkingProfile | null,
+  pending: PendingPayment,
+  options: TicketRenderOptions = {},
+): string {
+  const body = `
+    ${plateBlock(pending.plate, pending.vehicleType)}
+    ${RULE}
+    <dl>
+      ${row('Ingreso', dateTimeHtml(pending.enteredAt))}
+      ${row('Salida', dateTimeHtml(pending.exitedAt))}
+      ${row('Permanencia', escapeHtml(describeElapsed(pending.charge.totalMinutes)))}
+      ${row('Tarifa', escapeHtml(pending.ratePlanName ?? 'Sin tarifa'))}
+      ${pending.employeeName === null ? '' : row('Atendió', escapeHtml(pending.employeeName))}
+    </dl>
+    ${RULE}
+    ${totalBlock('Saldo pendiente', pending.amountCop)}
+    <p class="footer">El vehículo ya salió.<br />Este tiquete no acredita un pago.</p>
+    ${RULE}
+    ${ticketScanBlock(layout, pending.sessionId, 'Escanee para consultar el pago pendiente')}
+    ${LIABILITY_NOTE}`
+  return documentShell(layout, profile, { title: 'Tiquete de pago pendiente' }, body, options)
 }
 
 export function createExitReceiptHtml(

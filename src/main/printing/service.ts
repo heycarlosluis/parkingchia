@@ -4,6 +4,7 @@ import type {
   CashCloseSummary,
   EntryRegistration,
   ParkingProfile,
+  PendingPayment,
   PrinterInfo,
   PrintResult,
 } from '@shared/contracts'
@@ -19,6 +20,7 @@ import {
   createEntryTicketHtml,
   createExitReceiptHtml,
   createMonthlyReceiptHtml,
+  createPendingPaymentTicketHtml,
   createTestTicketHtml,
   PRINTABLE_WIDTH_MM,
   type PrintLayout,
@@ -30,6 +32,10 @@ export interface TicketPrinter {
   printTestTicket(): Promise<PrintResult>
   printCalibrationGuide(): Promise<PrintResult>
   printEntryTicket(entry: EntryRegistration, options?: TicketRenderOptions): Promise<PrintResult>
+  printPendingPaymentTicket(
+    pending: PendingPayment,
+    options?: TicketRenderOptions,
+  ): Promise<PrintResult>
   printExitReceipt(receipt: ReceiptSnapshot, options?: TicketRenderOptions): Promise<PrintResult>
   printMonthlyReceipt(
     receipt: MonthlyReceiptSnapshot,
@@ -92,6 +98,16 @@ export class ElectronTicketPrinter implements TicketPrinter {
       options.reprint
         ? 'El recibo se reimprimió como duplicado.'
         : 'El recibo se envió a la impresora.',
+    )
+  }
+
+  async printPendingPaymentTicket(
+    pending: PendingPayment,
+    options: TicketRenderOptions = {},
+  ): Promise<PrintResult> {
+    return this.render(
+      (layout, profile) => createPendingPaymentTicketHtml(layout, profile, pending, options),
+      'El tiquete de pago pendiente se envió a la impresora.',
     )
   }
 

@@ -22,6 +22,7 @@ export const IPC_CHANNELS = {
   PARKING_PENDING_MARK: 'parking:mark-payment-pending',
   PARKING_PENDING_LIST: 'parking:list-pending-payments',
   PARKING_PENDING_SETTLE: 'parking:settle-pending-payment',
+  PARKING_PENDING_REPRINT: 'parking:reprint-pending-payment-ticket',
   PARKING_ENTRY_REPRINT: 'parking:reprint-entry',
   PARKING_REPRINT: 'parking:reprint-receipt',
   PARKING_EXIT_HISTORY: 'parking:list-exits',

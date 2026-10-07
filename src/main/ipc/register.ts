@@ -29,6 +29,7 @@ import {
   parkingProfileSchema,
   quoteSessionSchema,
   registerEntrySchema,
+  reprintPendingPaymentTicketSchema,
   registerSubscriptionPaymentSchema,
   resolveExitTargetSchema,
   removePinSchema,
@@ -210,6 +211,16 @@ export function registerIpcHandlers(services: Services): void {
   )
   ipcMain.handle(IPC_CHANNELS.PARKING_PENDING_LIST, () =>
     withAccess(() => services.parking.listPendingPayments()),
+  )
+  ipcMain.handle(IPC_CHANNELS.PARKING_PENDING_REPRINT, (_event, rawInput: unknown) =>
+    withAccess(() =>
+      services.printing.printPendingPaymentTicket(
+        services.parking.findPendingPayment(
+          parseOrReject(reprintPendingPaymentTicketSchema, rawInput).pendingPaymentId,
+        ),
+        { reprint: true },
+      ),
+    ),
   )
   ipcMain.handle(IPC_CHANNELS.PARKING_PENDING_SETTLE, (_event, rawInput: unknown) =>
     withAccess(async () => {

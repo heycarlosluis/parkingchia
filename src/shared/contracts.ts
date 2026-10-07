@@ -490,6 +490,9 @@ export interface ParkingApi {
     expectedTotalCop: number
   }) => Promise<ApiResult<PendingPayment>>
   listPendingPayments: () => Promise<ApiResult<PendingPayment[]>>
+  reprintPendingPaymentTicket: (input: {
+    pendingPaymentId: string
+  }) => Promise<ApiResult<PrintResult>>
   settlePendingPayment: (input: {
     pendingPaymentId: string
     method: PaymentMethod

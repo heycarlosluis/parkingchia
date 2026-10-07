@@ -748,6 +748,46 @@ describe('pago pendiente', () => {
     })
   }
 
+  it('recupera para imprimir el snapshot exacto de cada deuda sin generar cobros ni reabrir sesiones', () => {
+    const first = leavePending('ABC123', 90)
+    const second = leavePending('ABC123', 150)
+    manager
+      .getNativeConnection()
+      .prepare("UPDATE rate_plans SET name = 'Tarifa nueva', amount_cop = 90000 WHERE id = ?")
+      .run(ratePlanId)
+    cash.closeSession({ closingAmountCop: 0, notes: null })
+    expect(parking.findPendingPayment(first.id)).toEqual(first)
+    expect(parking.findPendingPayment(second.id)).toEqual(second)
+    expect(first.amountCop).not.toBe(second.amountCop)
+    expect(parking.resolveExitTarget(encodeEntryTicketReference(first.sessionId)).kind).toBe(
+      'pending',
+    )
+    expect(parking.listActiveSessions({ search: '' })).toEqual([])
+    expect(
+      manager.getNativeConnection().prepare('SELECT COUNT(*) AS total FROM payments').get(),
+    ).toEqual({ total: 0 })
+    expect(
+      manager.getNativeConnection().prepare('SELECT COUNT(*) AS total FROM receipts').get(),
+    ).toEqual({ total: 0 })
+  })
+
+  it('rechaza imprimir pendientes cobrados o inexistentes y mantiene restringido el tiquete de ingreso', () => {
+    const pending = leavePending()
+    expect(() => parking.findEntryRegistration(pending.sessionId)).toThrow(
+      expect.objectContaining({ code: 'SESSION_NOT_ACTIVE' }),
+    )
+    parking.settlePendingPayment({
+      pendingPaymentId: pending.id,
+      method: 'cash',
+      receivedCop: pending.amountCop,
+    })
+    for (const id of [pending.id, 'missing']) {
+      expect(() => parking.findPendingPayment(id)).toThrow(
+        expect.objectContaining({ code: 'PENDING_PAYMENT_NOT_FOUND' }),
+      )
+    }
+  })
+
   it('detiene la permanencia, cierra la sesión y no genera pago ni recibo', () => {
     const pending = leavePending()
 

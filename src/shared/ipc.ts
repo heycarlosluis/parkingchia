@@ -16,6 +16,7 @@ export {
   markPaymentPendingSchema,
   quoteSessionSchema,
   registerEntrySchema,
+  reprintPendingPaymentTicketSchema,
   resolveExitTargetSchema,
   settlePendingPaymentSchema,
 } from './parking'

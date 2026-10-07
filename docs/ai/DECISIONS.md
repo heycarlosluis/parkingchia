@@ -393,6 +393,15 @@ Estados posibles: `propuesta`, `aceptada`, `reemplazada` o `descartada`.
 - Motivo: el propietario pidió poder eliminar clientes y planes usados. Borrar sus filas o sus mensualidades destruiría referencias, historial financiero y derechos de cobertura; esconder el botón o exigir desactivación no resolvía la petición. Vencer un periodo tampoco extingue su deuda, y el cobro de esa deuda ya estaba permitido por el servicio.
 - Consecuencia: los joins históricos y de cobertura no filtran `deleted_at`; los catálogos y las operaciones nuevas sí. Eliminar no cancela coberturas, condona deudas ni devuelve pagos. Los abonos, su anulación desde Caja y la reimpresión siguen funcionando aunque cliente y plan estén eliminados. La migración solo agrega columnas y queda cubierta por una prueba desde `0009` con suscripciones, pagos y recibos existentes y recuperación del respaldo previo.
 
+## D-047 — Los pagos pendientes tienen un tiquete reimprimible propio
+
+- Fecha: 2026-10-06
+- Estado: aceptada
+- Complementa: D-023, D-038 y D-044
+- Decisión: cada fila de Pagos pendientes en Parqueo activo ofrece «Reimprimir tiquete». Un canal IPC concreto, validado y protegido por el acceso local recupera exclusivamente una deuda en estado `pending` y envía a la impresión nativa un documento identificado como «Tiquete de pago pendiente» y «REIMPRESIÓN». Usa matrícula, vehículo, tarifa, fechas, permanencia, empleado e importe guardados al dejar pendiente, con QR y Code 128 del ingreso original. El papel aclara que el vehículo ya salió y que no acredita un pago. La impresión no cambia la deuda, no exige caja abierta, no crea un recibo y no permite reimprimir pendientes ya cobrados.
+- Motivo: el propietario necesita recuperar un tiquete desde el listado de deudas. Reimprimir el tiquete normal de ingreso de una sesión cerrada podría presentarla como un vehículo todavía estacionado, y emitir un recibo sin haber cobrado atribuiría un pago inexistente.
+- Consecuencia: `reprintEntryTicket` sigue limitado a ingresos activos; la deuda usa `reprintPendingPaymentTicket`. Los símbolos comparten la referencia original y al escanearlos se consulta SQLite. Las plantillas comparten el generador de símbolos y los perfiles térmicos de 58 y 80 mm. No hay cambios de esquema ni recalculo del saldo; la interfaz bloquea impresiones repetidas en curso y muestra errores o cancelaciones para poder reintentar.
+
 ## Plantilla para una nueva decisión
 
 ```markdown

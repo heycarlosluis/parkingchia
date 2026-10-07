@@ -108,6 +108,10 @@ export const settlePendingPaymentSchema = z
   })
   .strict()
 
+export const reprintPendingPaymentTicketSchema = z
+  .object({ pendingPaymentId: sessionIdSchema })
+  .strict()
+
 export const MAX_HISTORY_PAGE_SIZE = 100
 
 /** Cómo terminó una salida, ya resuelto para presentarlo en una sola columna. */

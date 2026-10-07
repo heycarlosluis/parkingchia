@@ -455,6 +455,9 @@ const parkingApi: ParkingApi = {
     }),
   ),
   reprintEntryTicket: vi.fn(async () => ok({ printed: false, message: 'No hay impresoras.' })),
+  reprintPendingPaymentTicket: vi.fn(async () =>
+    ok({ printed: false, message: 'No hay impresoras.' }),
+  ),
   reprintReceipt: vi.fn(async () => ok({ printed: false, message: 'No hay impresoras.' })),
   listExits: vi.fn(async (input) => {
     const records = exitRecords.filter(

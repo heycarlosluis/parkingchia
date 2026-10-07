@@ -102,7 +102,7 @@ Consulta `docs/database.md` y `src/main/database/schema.ts` antes de cambiar el 
 - Simular el cobro de una permanencia con la configuración guardada.
 - Registrar el ingreso de un vehículo e imprimir su tiquete.
 - Listar y buscar sesiones activas, cotizar una salida, cobrarla con recibo o anular un ingreso.
-- Dejar una salida con el pago pendiente, listar los pagos pendientes y cobrar cada uno con su recibo.
+- Dejar una salida con el pago pendiente, listar los pagos pendientes, reimprimir su tiquete identificado como deuda y cobrar cada uno con su recibo.
 - Reimprimir el recibo de una salida ya cobrada.
 - Consultar el historial de salidas por matrícula y rango de fechas.
 - Administrar mensualidades: clientes, planes mensuales, suscripciones, renovaciones, cancelaciones y pagos por abono, reimprimir el comprobante de un pago y consultar la cobertura vigente de una matrícula.

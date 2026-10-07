@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import type { EntryRegistration } from '@shared/contracts'
+import type { EntryRegistration, PendingPayment } from '@shared/contracts'
 import { encodeEntryTicketReference, formatEntryTicketReference } from '@shared/entry-ticket'
 import { calculateChargeForMinutes, DEFAULT_TARIFF_SETTINGS } from '@shared/tariff'
 import type { MonthlyReceiptSnapshot } from '@main/monthly/service'
@@ -12,6 +12,7 @@ import {
   createEntryTicketHtml,
   createExitReceiptHtml,
   createMonthlyReceiptHtml,
+  createPendingPaymentTicketHtml,
   createTestTicketHtml,
 } from './ticket'
 
@@ -96,6 +97,47 @@ describe('tiquete de ingreso', () => {
     const duplicate = createEntryTicketHtml('80mm', profile, entry, { reprint: true })
     expect(duplicate).toContain('** REIMPRESIÓN **')
   })
+})
+
+describe('tiquete de pago pendiente', () => {
+  const pending: PendingPayment = {
+    id: 'pending-1',
+    sessionId: entry.sessionId,
+    plate: receipt.plate,
+    vehicleType: receipt.vehicleType,
+    ratePlanName: receipt.ratePlanName,
+    enteredAt: receipt.enteredAt,
+    exitedAt: receipt.exitedAt,
+    charge,
+    amountCop: charge.totalCop,
+    employeeName: '<Ana Ruiz>',
+  }
+
+  it.each(['58mm', '80mm'] as const)(
+    'imprime el saldo congelado y el código original en papel %s, marcado como pendiente y duplicado',
+    (paper) => {
+      const html = createPendingPaymentTicketHtml(paper, profile, pending, { reprint: true })
+      expect(html).toContain('Tiquete de pago pendiente')
+      expect(html).toContain('** REIMPRESIÓN **')
+      expect(html).toContain('Saldo pendiente')
+      expect(html).toContain('10.000')
+      expect(html).toContain('Ingreso')
+      expect(html).toContain('Salida')
+      expect(html).toContain('1 h 30 min')
+      expect(html).toContain('&lt;Ana Ruiz&gt;')
+      expect(html).toContain('Este tiquete no acredita un pago.')
+      expect(html).toContain('El vehículo ya salió.')
+      expect(html).toContain('Escanee para consultar el pago pendiente')
+      expect(html).toContain(
+        formatEntryTicketReference(encodeEntryTicketReference(entry.sessionId)),
+      )
+      expect(html.match(/<svg/g)).toHaveLength(2)
+      expect(html).not.toContain('Se exige para retirar el vehículo')
+      expect(html).not.toContain('Recibo de salida')
+      expect(html).not.toContain('Recibido')
+      expect(html).not.toMatch(/@page\s*\{/)
+    },
+  )
 })
 
 describe('recibo de salida', () => {

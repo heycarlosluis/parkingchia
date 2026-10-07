@@ -657,6 +657,20 @@ export class ParkingService {
     return rows.map((row) => this.toPendingPayment(row))
   }
 
+  /** Solo recupera una deuda aún pendiente, sin recalcularla ni mover dinero. */
+  findPendingPayment(pendingPaymentId: string): PendingPayment {
+    const row = this.sqlite
+      .prepare(`${PENDING_PAYMENT_QUERY} AND pp.id = ?`)
+      .get(pendingPaymentId) as PendingPaymentRow | undefined
+    if (!row) {
+      throw new OperationError(
+        'PENDING_PAYMENT_NOT_FOUND',
+        'Ese pago pendiente ya se cobró o no existe. Actualiza el listado.',
+      )
+    }
+    return this.toPendingPayment(row)
+  }
+
   /**
    * Cobra un pago pendiente y emite su recibo, como una salida normal.
    *

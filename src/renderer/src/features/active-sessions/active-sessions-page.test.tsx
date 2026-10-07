@@ -154,6 +154,69 @@ describe('Parqueo activo', () => {
     expect(screen.queryByText('Pagos pendientes')).not.toBeInTheDocument()
   })
 
+  it('reimprime desde la fila del pendiente correcto sin cobrarlo', async () => {
+    const second = { ...pendingPayment, id: 'pending-2', sessionId: 'session-2', amountCop: 15_000 }
+    vi.mocked(window.parkingAPI.listPendingPayments).mockResolvedValueOnce({
+      ok: true,
+      data: [pendingPayment, second],
+    })
+    const print = vi.mocked(window.parkingAPI.reprintPendingPaymentTicket).mockClear()
+    const collect = vi.mocked(window.parkingAPI.settlePendingPayment).mockClear()
+    render(<ActiveSessionsPage />)
+    const table = await screen.findByRole('table', { name: /salieron sin pagar/ })
+    const rows = within(table).getAllByRole('row', { name: /DEU456/ })
+    await userEvent.click(within(rows[1]!).getByRole('button', { name: /Reimprimir tiquete/ }))
+    expect(print).toHaveBeenCalledWith({ pendingPaymentId: 'pending-2' })
+    expect(await screen.findByText('DEU456: No hay impresoras.')).toBeInTheDocument()
+    expect(collect).not.toHaveBeenCalled()
+    expect(within(table).getAllByRole('row', { name: /DEU456/ })).toHaveLength(2)
+  })
+
+  it('bloquea reimpresiones repetidas mientras se envía el tiquete', async () => {
+    let finish!: (result: { ok: true; data: { printed: boolean; message: string } }) => void
+    vi.mocked(window.parkingAPI.listPendingPayments).mockResolvedValueOnce({
+      ok: true,
+      data: [pendingPayment],
+    })
+    const print = vi
+      .mocked(window.parkingAPI.reprintPendingPaymentTicket)
+      .mockClear()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          }),
+      )
+    render(<ActiveSessionsPage />)
+    const table = await screen.findByRole('table', { name: /salieron sin pagar/ })
+    const button = within(table).getByRole('button', { name: /Reimprimir tiquete/ })
+    await userEvent.dblClick(button)
+    expect(button).toBeDisabled()
+    expect(print).toHaveBeenCalledTimes(1)
+    finish({ ok: true, data: { printed: true, message: 'Tiquete enviado.' } })
+    expect(await screen.findByText('DEU456: Tiquete enviado.')).toBeInTheDocument()
+    expect(button).toBeEnabled()
+  })
+
+  it('muestra el error de reimpresión y permite volver a intentarlo', async () => {
+    vi.mocked(window.parkingAPI.listPendingPayments).mockResolvedValueOnce({
+      ok: true,
+      data: [pendingPayment],
+    })
+    vi.mocked(window.parkingAPI.reprintPendingPaymentTicket).mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'PENDING_PAYMENT_NOT_FOUND', message: 'Ese pendiente ya se cobró.' },
+    })
+    render(<ActiveSessionsPage />)
+    const table = await screen.findByRole('table', { name: /salieron sin pagar/ })
+    const button = within(table).getByRole('button', { name: /Reimprimir tiquete/ })
+    await userEvent.click(button)
+    expect(await screen.findByText('DEU456: Ese pendiente ya se cobró.')).toBeInTheDocument()
+    expect(button).toBeEnabled()
+    await userEvent.click(button)
+    expect(await screen.findByText('DEU456: No hay impresoras.')).toBeInTheDocument()
+  })
+
   it('reimprime el tiquete de un vehículo que sigue en el parqueadero', async () => {
     render(<ActiveSessionsPage />)
 

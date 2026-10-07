@@ -25,6 +25,8 @@ const api: ParkingApi = {
   cancelSession: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_CANCEL, input),
   markPaymentPending: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_PENDING_MARK, input),
   listPendingPayments: () => ipcRenderer.invoke(IPC_CHANNELS.PARKING_PENDING_LIST),
+  reprintPendingPaymentTicket: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PARKING_PENDING_REPRINT, input),
   settlePendingPayment: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_PENDING_SETTLE, input),
   reprintEntryTicket: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_ENTRY_REPRINT, input),
   reprintReceipt: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_REPRINT, input),
