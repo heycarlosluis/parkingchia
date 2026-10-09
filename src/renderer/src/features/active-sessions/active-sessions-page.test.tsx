@@ -232,6 +232,31 @@ describe('Parqueo activo', () => {
     expect(await screen.findByText('No hay impresoras.')).toBeInTheDocument()
   })
 
+  it('imprime el listado del parqueo activo e informa el resultado', async () => {
+    vi.mocked(window.parkingAPI.printActiveSessions).mockClear()
+    vi.mocked(window.parkingAPI.printActiveSessions).mockResolvedValueOnce({
+      ok: true,
+      data: { printed: true, message: 'El listado del parqueo activo se envió a la impresora.' },
+    })
+    render(<ActiveSessionsPage />)
+    await screen.findByRole('table')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Imprimir parqueo activo' }))
+
+    expect(window.parkingAPI.printActiveSessions).toHaveBeenCalledTimes(1)
+    expect(
+      await screen.findByText('El listado del parqueo activo se envió a la impresora.'),
+    ).toBeInTheDocument()
+  })
+
+  it('no ofrece imprimir el listado cuando el parqueadero está vacío', async () => {
+    vi.mocked(window.parkingAPI.listActiveSessions).mockResolvedValueOnce({ ok: true, data: [] })
+    render(<ActiveSessionsPage />)
+
+    expect(await screen.findByText('No hay vehículos activos')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Imprimir parqueo activo' })).toBeDisabled()
+  })
+
   it('exige un motivo antes de anular un ingreso', async () => {
     render(<ActiveSessionsPage />)
     await screen.findByRole('table')

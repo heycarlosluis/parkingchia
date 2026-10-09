@@ -429,6 +429,59 @@ Estados posibles: `propuesta`, `aceptada`, `reemplazada` o `descartada`.
 - Motivo: el propietario imprime el cierre siempre; pedirlo con un botón era un paso de más que podía olvidarse.
 - Consecuencia: la impresión ocurre después de guardar el cierre y un fallo de la impresora no lo deshace: se informa en el aviso y se reintenta con el botón o desde Cierres anteriores. Si el cierre falla no se imprime nada.
 
+## D-051 — La caja acumula por separado el parqueo y las mensualidades
+
+- Fecha: 2026-10-09
+- Estado: aceptada
+- Complementa: D-019, D-042 y D-045
+- Decisión: `CashState` y `CashCloseSummary` suman `parkingCollectedCop` y `monthlyCollectedCop`. Un cobro es de mensualidad cuando su pago tiene `subscription_id`; el resto es parqueo, incluidos los pagos pendientes saldados en el turno. `collectedCop` sigue siendo la suma de ambos. El recibo de cierre imprime «Parqueo», «Mensualidades» y «Total recaudado»; la pantalla de Caja, el aviso del cierre y los cierres anteriores muestran el mismo desglose.
+- Motivo: el propietario necesita ver al cerrar cuánto entró por parqueo y cuánto por mensualidades, sin perder el total del turno.
+- Consecuencia: el desglose se calcula desde `payments` en cada consulta, sin columnas nuevas, así que los cierres anteriores también lo muestran. Lo esperado, el efectivo contado y la diferencia no cambian: siguen dependiendo solo del total. Las anulaciones se informan en un único importe, sin separar por origen.
+
+## D-052 — El parqueo activo se puede imprimir como un listado
+
+- Fecha: 2026-10-09
+- Estado: aceptada
+- Decisión: Parqueo activo ofrece «Imprimir parqueo activo». Un canal IPC sin entrada (`parking:print-active-list`) consulta en el proceso principal todos los ingresos activos y envía a la impresora un documento titulado «Parqueo activo» con la fecha de impresión, el número de vehículos y una fila por vehículo con su matrícula y su fecha y hora de ingreso.
+- Motivo: el propietario quiere contrastar en papel los vehículos que hay en el patio con los que registra el sistema.
+- Consecuencia: el listado siempre incluye todos los vehículos, aunque la pantalla tenga una búsqueda aplicada, y sigue su mismo orden. Es un inventario interno: no lleva QR, Code 128 ni marca de reimpresión, no sirve para retirar un vehículo y no exige caja abierta ni deja auditoría.
+
+## D-053 — Las mensualidades se corrigen y se eliminan en cualquier estado
+
+- Fecha: 2026-10-09
+- Estado: aceptada
+- Complementa: D-018 y D-046
+- Decisión: cada mensualidad ofrece «Editar» y «Eliminar», sin depender de su estado ni de sus pagos. `updateSubscription` cambia cliente, vehículo, plan, fechas, costo y nota; conserva la cancelación y vuelve a deducir el resto del estado desde las fechas nuevas. `deleteSubscription` registra `deleted_at` (migración `0012`, un `ADD COLUMN` anulable): la mensualidad sale del listado, deja de cubrir al vehículo y de sumar al saldo por cobrar, y su matrícula queda libre para una mensualidad nueva. Ambas acciones dejan auditoría; la edición guarda los valores anteriores y los nuevos.
+- Motivo: el propietario pidió control total para corregir o retirar mensualidades de clientes, sin bloqueos, porque en la operación cambian el vehículo, las fechas o el valor acordado. La eliminación conserva la fila en lugar de borrarla porque sus pagos ya entraron a una caja: borrarlos alteraría el arqueo de turnos cerrados y los consecutivos de los recibos.
+- Consecuencia: los pagos y sus recibos nunca cambian al editar o eliminar. Un recibo ya emitido conserva los datos con los que se cobró. Si el costo queda por debajo de lo abonado, la mensualidad figura como pagada con saldo cero; la diferencia no se devuelve sola. Lo abonado a una mensualidad eliminada sigue contando en su caja y, si hay que devolverlo, se anula ese cobro en Caja mientras siga abierta. Se mantienen dos reglas de coherencia: dos mensualidades no canceladas del mismo vehículo no pueden cruzarse en fechas, y no se cambia el tipo de un vehículo que tiene un ingreso activo. El cliente y el plan actuales se conservan aunque estén inactivos o eliminados; para cambiarlos se exige que el nuevo exista en el catálogo. Toda consulta de mensualidades vigentes, cobertura o resumen debe filtrar `deleted_at IS NULL`; las de caja, historial y recibos no.
+
+## D-054 — Cada cierre de caja se exporta a un archivo CSV
+
+- Fecha: 2026-10-09
+- Estado: aceptada
+- Complementa: D-019, D-045 y D-051
+- Decisión: el aviso del cierre y cada fila de Cierres anteriores ofrecen exportar un CSV. El canal `cash:export-close-csv` recibe el identificador del cierre, arma el reporte en el proceso principal, abre el diálogo nativo de guardado y escribe el archivo; el renderer nunca recibe la ruta. El archivo trae tres bloques: los datos de la caja (parqueadero, empleado a cargo, apertura, cierre, fondo, ingresos por parqueo, por mensualidades, total, anulado, esperado, contado, diferencia, movimientos y saldo pendiente), los vehículos del turno en columnas (placa, tipo, ingreso, salida, permanencia en minutos, tarifa, estado, valor, medio de pago, recibo y cliente mensual) y los pagos de mensualidad del turno.
+- Motivo: el propietario quiere llevar a una hoja de cálculo el detalle de cada caja cerrada, más allá del recibo impreso.
+- Consecuencia: un vehículo entra al reporte si ingresó o salió entre la apertura y el cierre, o si su cobro cayó en esa caja (un pago pendiente de un día anterior). El reporte describe el turno: quien seguía adentro al cerrar figura sin salida aunque ya se haya ido, y una deuda que se cobró en otro turno figura como pendiente. Se genera al pedirlo desde los datos guardados, no se almacena. El separador es punto y coma y lleva marca UTF-8, que es lo que abre bien Excel con la configuración regional de Colombia; las fechas van en hora local `AAAA-MM-DD HH:mm` y los importes como enteros sin formato. Los textos que empiezan por un signo de fórmula se neutralizan. Solo se exportan cajas cerradas.
+
+## D-055 — El CSV del cierre es una sola tabla con el separador del equipo
+
+- Fecha: 2026-10-09
+- Estado: aceptada
+- Reemplaza: el formato del archivo descrito en D-054 (tres bloques, punto y coma fijo y fecha con hora en una celda). El resto de D-054 sigue vigente.
+- Decisión: el archivo empieza con el encabezado y trae una fila por movimiento con 21 columnas fijas: concepto (parqueo o mensualidad), placa, tipo de vehículo, fecha y hora de ingreso, fecha y hora de salida, permanencia en texto y en minutos, tarifa, estado, tres columnas Sí/No (cobrado, anulado y pago pendiente), valor, medio de pago, recibo, fecha y hora de cobro, cliente mensual y empleado. Los pagos de mensualidad son filas de la misma tabla. El resumen de la caja va debajo, tras una fila vacía, en las dos primeras columnas. Todas las filas tienen el mismo número de celdas. El separador se elige con `app.getSystemLocale()`: punto y coma si la configuración regional usa coma decimal y coma si usa punto.
+- Motivo: el propietario abrió el primer archivo y las columnas se veían deformadas. Tenía tres tablas de anchos distintos una debajo de otra, la fecha con la hora en una sola celda y un punto y coma fijo que una hoja de cálculo con configuración regional de punto decimal no separa: todo caía en una columna.
+- Consecuencia: la primera fila es siempre el encabezado, así que la tabla se puede filtrar y ordenar. Las fechas van como `AAAA-MM-DD` y las horas como `HH:mm`, en columnas propias. Agregar un dato nuevo significa agregar una columna al final de `COLUMNS`, no otro bloque. Si un equipo abre el archivo con una hoja de cálculo cuya configuración no coincide con la del sistema, hay que importarlo indicando el separador.
+
+## D-056 — Los recibos de mensualidad tienen su propio consecutivo `MES-`
+
+- Fecha: 2026-10-09
+- Estado: aceptada
+- Complementa: D-014 y D-018. Reemplaza la regla por la que todos los recibos compartían un único consecutivo.
+- Decisión: `receipts` suma la columna `series` (`parking` o `monthly`) y el índice único pasa de `receipt_number` a (`series`, `receipt_number`), con la migración `0013`. Cada servicio toma el siguiente número dentro de su serie: un pago de mensualidad ya no consume un número de parqueo ni al revés. El número de una mensualidad se imprime y se muestra como `MES-00001` (`formatMonthlyReceiptNumber`, cinco dígitos con ceros a la izquierda): en el recibo impreso, el aviso del pago, los movimientos de Caja y el CSV del cierre. Los recibos de parqueo siguen mostrando su número simple.
+- Motivo: el propietario pidió que la numeración de las mensualidades fuera independiente de la del parqueo y se reconociera por el prefijo `MES`.
+- Consecuencia: la migración marca como `monthly` los recibos de mensualidad ya emitidos y conserva su número y su snapshot, porque un recibo entregado no se renumera. En una instalación con mensualidades cobradas antes de este cambio, el siguiente recibo continúa desde el mayor número que tenga una mensualidad, no desde `MES-00001`, y la serie puede tener saltos heredados; una instalación sin pagos de mensualidad empieza en `MES-00001`. El consecutivo de parqueo continúa desde su propio mayor número, de modo que puede volver a usar un número que antes llevó una mensualidad: el prefijo los distingue. La base guarda el número entero; el prefijo es solo presentación. Un tipo nuevo de recibo necesita su propio valor de `series`.
+
 ## Plantilla para una nueva decisión
 
 ```markdown

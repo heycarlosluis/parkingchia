@@ -978,7 +978,9 @@ export class ParkingService {
       )
 
     const next = this.sqlite
-      .prepare('SELECT COALESCE(MAX(receipt_number), 0) + 1 AS next FROM receipts')
+      .prepare(
+        "SELECT COALESCE(MAX(receipt_number), 0) + 1 AS next FROM receipts WHERE series = 'parking'",
+      )
       .get() as { next: number }
     const snapshot: ReceiptSnapshot = {
       ...receipt,

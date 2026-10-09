@@ -153,11 +153,17 @@ describe('eliminación de clientes y planes mensuales', () => {
     expect(migrated.prepare('SELECT deleted_at FROM rate_plans').get()).toEqual({
       deleted_at: null,
     })
-    expect(migrated.prepare('SELECT * FROM monthly_subscriptions').get()).toEqual(
-      original.subscription,
-    )
+    // La migración 0012 solo le suma `deleted_at`, vacío en las mensualidades existentes.
+    expect(migrated.prepare('SELECT * FROM monthly_subscriptions').get()).toEqual({
+      ...(original.subscription as Record<string, unknown>),
+      deleted_at: null,
+    })
     expect(migrated.prepare('SELECT * FROM payments').get()).toEqual(original.payment)
-    expect(migrated.prepare('SELECT * FROM receipts').get()).toEqual(original.receipt)
+    // La migración 0013 pasa el recibo de mensualidad a su consecutivo sin cambiarle el número.
+    expect(migrated.prepare('SELECT * FROM receipts').get()).toEqual({
+      ...(original.receipt as Record<string, unknown>),
+      series: 'monthly',
+    })
     expect(migrated.pragma('foreign_key_check')).toEqual([])
     upgraded.close()
 

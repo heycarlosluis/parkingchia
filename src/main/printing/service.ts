@@ -1,5 +1,6 @@
 import { BrowserWindow } from 'electron'
 import type {
+  ActiveSession,
   AppSettings,
   CashCloseSummary,
   EntryRegistration,
@@ -15,6 +16,7 @@ import type { MonthlyReceiptSnapshot } from '@main/monthly/service'
 import type { ExitDocument, FreeExitTicket, ReceiptSnapshot } from '@main/parking/service'
 import {
   contentWidthMm,
+  createActiveSessionsTicketHtml,
   createCalibrationGuideHtml,
   createCashCloseReceiptHtml,
   createEntryTicketHtml,
@@ -45,6 +47,7 @@ export interface TicketPrinter {
     options?: TicketRenderOptions,
   ): Promise<PrintResult>
   printCashCloseReceipt(summary: CashCloseSummary): Promise<PrintResult>
+  printActiveSessions(sessions: ActiveSession[]): Promise<PrintResult>
 }
 
 export class ElectronTicketPrinter implements TicketPrinter {
@@ -152,6 +155,14 @@ export class ElectronTicketPrinter implements TicketPrinter {
     return this.render(
       (layout, profile) => createCashCloseReceiptHtml(layout, profile, summary),
       'El recibo de cierre se envió a la impresora.',
+    )
+  }
+
+  async printActiveSessions(sessions: ActiveSession[]): Promise<PrintResult> {
+    const printedAt = new Date().toISOString()
+    return this.render(
+      (layout, profile) => createActiveSessionsTicketHtml(layout, profile, sessions, printedAt),
+      'El listado del parqueo activo se envió a la impresora.',
     )
   }
 

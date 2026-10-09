@@ -3,15 +3,22 @@ import { LoaderCircle } from 'lucide-react'
 import { useEffect } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { z } from 'zod'
-import type { MonthlyCustomer, RatePlan, SubscriptionDraft } from '@shared/contracts'
+import type {
+  MonthlyCustomer,
+  MonthlySubscription,
+  RatePlan,
+  SubscriptionDraft,
+} from '@shared/contracts'
 import { formatCurrency } from '@shared/format'
 import {
   coverageEndDate,
   formatLocalDate,
   isRealLocalDate,
+  lastCoveredLocalDate,
   MAX_SUBSCRIPTION_MONTHS,
   MIN_SUBSCRIPTION_MONTHS,
   todayLocalDate,
+  toLocalDate,
 } from '@shared/monthly'
 import { MAX_AMOUNT_COP, VEHICLE_TYPE_LABELS, vehicleTypeSchema } from '@shared/tariff'
 import { normalizePlate } from '@shared/validation'
@@ -75,7 +82,20 @@ const subscriptionFormSchema = z
 
 type SubscriptionForm = z.infer<typeof subscriptionFormSchema>
 
-function emptyForm(): SubscriptionForm {
+function initialForm(subscription: MonthlySubscription | null): SubscriptionForm {
+  if (subscription !== null) {
+    return {
+      customerId: subscription.customerId,
+      plate: subscription.plate,
+      vehicleType: subscription.vehicleType,
+      ratePlanId: subscription.ratePlanId,
+      startDate: toLocalDate(subscription.startsAt),
+      months: 1,
+      endDate: lastCoveredLocalDate(subscription.endsAt),
+      amountCop: subscription.amountCop,
+      notes: subscription.notes ?? '',
+    }
+  }
   const startDate = todayLocalDate()
   return {
     customerId: '',
@@ -92,6 +112,8 @@ function emptyForm(): SubscriptionForm {
 
 type SubscriptionDialogProps = {
   open: boolean
+  /** Mensualidad que se corrige; sin ella el diálogo crea una nueva. */
+  subscription?: MonthlySubscription | null
   customers: MonthlyCustomer[]
   plans: RatePlan[]
   error: string | null
@@ -101,6 +123,7 @@ type SubscriptionDialogProps = {
 
 export function SubscriptionDialog({
   open,
+  subscription = null,
   customers,
   plans,
   error,
@@ -108,25 +131,38 @@ export function SubscriptionDialog({
   onSubmit,
 }: SubscriptionDialogProps): React.JSX.Element {
   const { control, handleSubmit, register, reset, setValue, formState } = useForm<SubscriptionForm>(
-    { resolver: zodResolver(subscriptionFormSchema), defaultValues: emptyForm() },
+    { resolver: zodResolver(subscriptionFormSchema), defaultValues: initialForm(subscription) },
   )
 
-  const activeCustomers = customers.filter((customer) => customer.status === 'active')
-  const activePlans = plans.filter((plan) => plan.status === 'active')
+  const editing = subscription !== null
+  // Al corregir, el cliente y el plan actuales se ofrecen aunque estén inactivos.
+  const activeCustomers = customers.filter(
+    (customer) => customer.status === 'active' || customer.id === subscription?.customerId,
+  )
+  const activePlans = plans.filter(
+    (plan) => plan.status === 'active' || plan.id === subscription?.ratePlanId,
+  )
+  // Un cliente o un plan eliminado ya no viene en el catálogo: se muestra con su nombre guardado.
+  const removedCustomer =
+    editing && !customers.some((customer) => customer.id === subscription.customerId)
+  const removedPlan = editing && !plans.some((plan) => plan.id === subscription.ratePlanId)
 
   useEffect(() => {
-    if (open) reset(emptyForm())
-  }, [open, reset])
+    if (open) reset(initialForm(subscription))
+  }, [open, reset, subscription])
 
   const startDate = useWatch({ control, name: 'startDate' })
   const months = useWatch({ control, name: 'months' })
   const endDate = useWatch({ control, name: 'endDate' })
 
-  /** La fecha final se recalcula al mover el inicio o la duración. */
+  /**
+   * La fecha final se recalcula al mover el inicio o la duración. Al corregir
+   * una mensualidad las dos fechas son independientes: se respeta la guardada.
+   */
   useEffect(() => {
-    if (!startDate || !isRealLocalDate(startDate)) return
+    if (editing || !startDate || !isRealLocalDate(startDate)) return
     setValue('endDate', coverageEndDate(startDate, months), { shouldValidate: true })
-  }, [startDate, months, setValue])
+  }, [editing, startDate, months, setValue])
 
   const submit = handleSubmit(async (values) => {
     const saved = await onSubmit({
@@ -142,7 +178,7 @@ export function SubscriptionDialog({
     if (saved) onOpenChange(false)
   })
 
-  const missingRequirements = activeCustomers.length === 0 || activePlans.length === 0
+  const missingRequirements = !editing && (activeCustomers.length === 0 || activePlans.length === 0)
 
   return (
     <Dialog
@@ -153,10 +189,13 @@ export function SubscriptionDialog({
     >
       <DialogContent className="rate-plan-dialog">
         <DialogHeader>
-          <DialogTitle>Nueva mensualidad</DialogTitle>
+          <DialogTitle>
+            {editing ? `Editar la mensualidad de ${subscription.plate}` : 'Nueva mensualidad'}
+          </DialogTitle>
           <DialogDescription>
-            El cliente paga un periodo por adelantado y su vehículo entra y sale sin cobro por horas
-            mientras esté vigente.
+            {editing
+              ? 'Corrige el cliente, el vehículo, el plan, las fechas o el costo. Los pagos ya registrados y sus recibos no cambian.'
+              : 'El cliente paga un periodo por adelantado y su vehículo entra y sale sin cobro por horas mientras esté vigente.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -173,7 +212,11 @@ export function SubscriptionDialog({
           <form onSubmit={(event) => void submit(event)} noValidate>
             {error ? (
               <Alert variant="destructive">
-                <AlertTitle>No fue posible crear la mensualidad</AlertTitle>
+                <AlertTitle>
+                  {editing
+                    ? 'No fue posible guardar la mensualidad'
+                    : 'No fue posible crear la mensualidad'}
+                </AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             ) : null}
@@ -191,6 +234,11 @@ export function SubscriptionDialog({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
+                          {removedCustomer ? (
+                            <SelectItem value={subscription.customerId}>
+                              {subscription.customerName} · eliminado
+                            </SelectItem>
+                          ) : null}
                           {activeCustomers.map((customer) => (
                             <SelectItem key={customer.id} value={customer.id}>
                               {customer.fullName}
@@ -229,6 +277,11 @@ export function SubscriptionDialog({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
+                          {removedPlan ? (
+                            <SelectItem value={subscription.ratePlanId}>
+                              {subscription.planName} · eliminado
+                            </SelectItem>
+                          ) : null}
                           {activePlans.map((plan) => (
                             <SelectItem key={plan.id} value={plan.id}>
                               {plan.name} · {formatCurrency(plan.amountCop)}
@@ -296,35 +349,37 @@ export function SubscriptionDialog({
                 <FieldError errors={[formState.errors.startDate]} />
               </Field>
 
-              <Field>
-                <FieldLabel htmlFor="subscription-months">Duración</FieldLabel>
-                <Controller
-                  control={control}
-                  name="months"
-                  render={({ field }) => (
-                    <Select
-                      value={String(field.value)}
-                      onValueChange={(value) => field.onChange(Number(value))}
-                    >
-                      <SelectTrigger id="subscription-months" className="min-h-11">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {MONTH_OPTIONS.map((option) => (
-                            <SelectItem key={option} value={String(option)}>
-                              {option === 1 ? '1 mes' : `${option} meses`}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-                <FieldDescription>
-                  Ajusta la fecha final si el acuerdo no cubre meses completos.
-                </FieldDescription>
-              </Field>
+              {editing ? null : (
+                <Field>
+                  <FieldLabel htmlFor="subscription-months">Duración</FieldLabel>
+                  <Controller
+                    control={control}
+                    name="months"
+                    render={({ field }) => (
+                      <Select
+                        value={String(field.value)}
+                        onValueChange={(value) => field.onChange(Number(value))}
+                      >
+                        <SelectTrigger id="subscription-months" className="min-h-11">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            {MONTH_OPTIONS.map((option) => (
+                              <SelectItem key={option} value={String(option)}>
+                                {option === 1 ? '1 mes' : `${option} meses`}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  <FieldDescription>
+                    Ajusta la fecha final si el acuerdo no cubre meses completos.
+                  </FieldDescription>
+                </Field>
+              )}
 
               <Field data-invalid={Boolean(formState.errors.endDate)}>
                 <FieldLabel htmlFor="subscription-end">Fecha final</FieldLabel>
@@ -356,7 +411,9 @@ export function SubscriptionDialog({
                   {...register('amountCop', { valueAsNumber: true })}
                 />
                 <FieldDescription>
-                  Se sugiere el costo del plan; cámbialo si acordaste otro valor.
+                  {editing && subscription.paidCop > 0
+                    ? `Ya se abonaron ${formatCurrency(subscription.paidCop)}; el saldo se recalcula con este costo.`
+                    : 'Se sugiere el costo del plan; cámbialo si acordaste otro valor.'}
                 </FieldDescription>
                 <FieldError errors={[formState.errors.amountCop]} />
               </Field>
@@ -387,7 +444,7 @@ export function SubscriptionDialog({
                 {formState.isSubmitting ? (
                   <LoaderCircle className="animate-spin" data-icon="inline-start" />
                 ) : null}
-                Crear mensualidad
+                {editing ? 'Guardar cambios' : 'Crear mensualidad'}
               </Button>
             </DialogFooter>
           </form>

@@ -5,7 +5,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DatabaseManager } from '@main/database/connection'
 import { OperationError } from '@main/ipc/errors'
-import { coverageEndDate, todayLocalDate } from '@shared/monthly'
+import { coverageEndDate, formatMonthlyReceiptNumber, todayLocalDate } from '@shared/monthly'
 import {
   encodeEntryTicketBarcode,
   encodeEntryTicketReference,
@@ -520,6 +520,73 @@ describe('cotización y salida', () => {
       )
     }
     expect(numbers).toEqual([1, 2])
+  })
+
+  it('numera los recibos de parqueo y los de mensualidad por separado', () => {
+    const exitNumber = (plate: string): number | null => {
+      const registration = parking.registerEntry(entry(plate))
+      ageSession(registration.sessionId, 90)
+      return parking.closeSession({
+        sessionId: registration.sessionId,
+        expectedTotalCop: 10_000,
+        method: 'card',
+        receivedCop: null,
+        notes: null,
+      }).receiptNumber
+    }
+    const customerId = monthly.createCustomer({
+      fullName: 'Carlos Andrés Peña',
+      documentNumber: null,
+      phone: null,
+      email: null,
+      notes: null,
+      status: 'active',
+    }).id
+    const planId = monthly.createPlan({
+      name: 'Mensualidad automóvil',
+      vehicleType: 'car',
+      amountCop: 150_000,
+      status: 'active',
+    }).id
+    const subscription = monthly.createSubscription({
+      customerId,
+      plate: 'MEN001',
+      vehicleType: 'car',
+      ratePlanId: planId,
+      startDate: todayLocalDate(),
+      endDate: coverageEndDate(todayLocalDate(), 1),
+      amountCop: 150_000,
+      notes: null,
+    })
+    const monthlyNumber = (): number =>
+      monthly.registerPayment({
+        subscriptionId: subscription.id,
+        amountCop: 50_000,
+        method: 'transfer',
+        receivedCop: null,
+        reference: null,
+      }).receiptNumber
+
+    // Intercalados: ninguno consume el número del otro.
+    expect(exitNumber('AAA111')).toBe(1)
+    expect(exitNumber('BBB222')).toBe(2)
+    expect(monthlyNumber()).toBe(1)
+    expect(exitNumber('CCC333')).toBe(3)
+    expect(monthlyNumber()).toBe(2)
+    expect(formatMonthlyReceiptNumber(monthlyNumber())).toBe('MES-00003')
+    expect(exitNumber('DDD444')).toBe(4)
+
+    expect(
+      manager
+        .getNativeConnection()
+        .prepare('SELECT series, COUNT(*) AS total FROM receipts GROUP BY series ORDER BY series')
+        .all(),
+    ).toEqual([
+      { series: 'monthly', total: 3 },
+      { series: 'parking', total: 4 },
+    ])
+    // El recibo impreso de la mensualidad conserva su propio número.
+    expect(monthly.findReceiptSnapshot(subscription.id).receiptNumber).toBe(3)
   })
 })
 

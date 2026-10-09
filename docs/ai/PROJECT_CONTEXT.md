@@ -81,7 +81,7 @@ Principios del modelo:
 - Una sesión activa por vehículo y una sola caja abierta.
 - Importes enteros COP y timestamps ISO 8601 UTC.
 - Estados explícitos y restricciones `CHECK`.
-- Relaciones con claves foráneas y borrado restrictivo. Clientes y planes mensuales se eliminan de los catálogos mediante `deleted_at`, conservando mensualidades, cobertura, deudas y comprobantes.
+- Relaciones con claves foráneas y borrado restrictivo. Clientes, planes mensuales y mensualidades se eliminan mediante `deleted_at`, conservando los pagos y comprobantes ya emitidos.
 - Recibos con número positivo único y snapshot inmutable de emisión.
 - Auditoría append-only para acciones críticas.
 
@@ -101,12 +101,12 @@ Consulta `docs/database.md` y `src/main/database/schema.ts` antes de cambiar el 
 - Leer la configuración de tarifas, actualizarla y administrar las tarifas por tiempo.
 - Simular el cobro de una permanencia con la configuración guardada.
 - Registrar el ingreso de un vehículo e imprimir su tiquete.
-- Listar y buscar sesiones activas, cotizar una salida, cobrarla con recibo o anular un ingreso.
+- Listar y buscar sesiones activas, imprimir el listado del parqueo activo, cotizar una salida, cobrarla con recibo o anular un ingreso.
 - Dejar una salida con el pago pendiente, listar los pagos pendientes, reimprimir su tiquete identificado como deuda y cobrar cada uno con su recibo.
 - Reimprimir el recibo de una salida ya cobrada o el comprobante de una salida que cerró en cero.
 - Consultar el historial de salidas por matrícula y rango de fechas.
-- Administrar mensualidades: clientes, planes mensuales, suscripciones, renovaciones, cancelaciones y pagos por abono, reimprimir el comprobante de un pago y consultar la cobertura vigente de una matrícula.
-- Consultar el estado de la caja, abrirla (eligiendo el empleado que opera el turno), cerrarla y anular un cobro con motivo.
+- Administrar mensualidades: clientes, planes mensuales, suscripciones con su edición y eliminación, renovaciones, cancelaciones y pagos por abono, reimprimir el comprobante de un pago y consultar la cobertura vigente de una matrícula.
+- Consultar el estado de la caja, abrirla (eligiendo el empleado que opera el turno), cerrarla, anular un cobro con motivo y exportar un cierre a CSV mediante diálogo nativo.
 - Administrar empleados: crear, listar, editar y eliminar.
 - Leer y actualizar ajustes conocidos.
 - Listar impresoras e imprimir un ticket de prueba.

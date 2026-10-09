@@ -54,6 +54,8 @@ type MonthlyStore = {
   updatePlan: (input: MonthlyPlanDraft & { id: string }) => Promise<boolean>
   deletePlan: (id: string) => Promise<boolean>
   createSubscription: (input: SubscriptionDraft) => Promise<boolean>
+  updateSubscription: (input: SubscriptionDraft & { id: string }) => Promise<boolean>
+  deleteSubscription: (id: string) => Promise<boolean>
   renewSubscription: (input: {
     id: string
     months: number
@@ -167,6 +169,10 @@ export const useMonthlyStore = create<MonthlyStore>((set, get) => {
       runBoolean(() => window.parkingAPI.deleteMonthlyPlan({ id }), 'Plan mensual eliminado.'),
     createSubscription: (input) =>
       runBoolean(() => window.parkingAPI.createSubscription(input), 'Mensualidad creada.'),
+    updateSubscription: (input) =>
+      runBoolean(() => window.parkingAPI.updateSubscription(input), 'Mensualidad actualizada.'),
+    deleteSubscription: (id) =>
+      runBoolean(() => window.parkingAPI.deleteSubscription({ id }), 'Mensualidad eliminada.'),
     renewSubscription: (input) =>
       runBoolean(() => window.parkingAPI.renewSubscription(input), 'Mensualidad renovada.'),
     cancelSubscription: (id, reason) =>

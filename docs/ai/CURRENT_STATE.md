@@ -1,6 +1,6 @@
 # Estado actual del proyecto
 
-Última actualización: **2026-10-07**.
+Última actualización: **2026-10-09**.
 
 Este archivo describe el último corte conocido, no sustituye la verificación de `git status`, `package.json`, GitHub Actions ni el comportamiento ejecutable.
 
@@ -41,6 +41,11 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 - El recibo de salida deja constancia del empleado del turno y de la nota de la salida, y todo duplicado sale marcado como «REIMPRESIÓN» con su fecha y hora.
 - Salida dentro del tiempo de gracia que cierra la sesión sin cobro ni recibo. Toda salida en cero, por tolerancia o por mensualidad, imprime un comprobante de salida sin número, reimprimible desde la confirmación y el Historial (D-049).
 - El cierre de caja imprime su recibo automáticamente y deja reimprimirlo (D-050).
+- La caja separa lo recaudado por parqueo y por mensualidades (D-051): el recibo de cierre, la pantalla de Caja, el aviso del cierre y los cierres anteriores muestran cada importe y su total.
+- Parqueo activo imprime un listado con la matrícula y la hora de ingreso de todos los vehículos que están adentro (D-052).
+- Cada mensualidad se puede editar o eliminar en cualquier estado, tenga o no pagos (D-053); los pagos y recibos ya emitidos se conservan.
+- Los recibos de mensualidad llevan su propio consecutivo, independiente del de parqueo, y se muestran como `MES-00001` (D-056).
+- Cada caja cerrada se exporta a un archivo CSV (D-054): una sola tabla con una fila por vehículo o pago de mensualidad y, debajo, el resumen de la caja (D-055).
 - Reimpresión de tiquetes desde cada fila de Pagos pendientes (D-047), con datos e importe guardados, marca de duplicado y código del ingreso original; sin cobro, recibo ni caja abierta.
 - Pago pendiente (D-044): el diálogo de cobro ofrece «Pago pendiente» junto a «Cancelar» y «Cobrar». La permanencia se detiene en ese instante, la sesión se cierra y el importe queda como una deuda independiente en `pending_payments`, sin pago ni recibo. El vehículo puede volver a ingresar con un tiquete nuevo y acumular varios pendientes, que se cobran por separado con su recibo normal. Registrar ingreso, Registrar salida (por matrícula o con el tiquete viejo) y el cobro de un ingreso nuevo muestran «Este carro tiene un pago pendiente»; Parqueo activo los reúne en el bloque «Pagos pendientes» y el Historial los marca con un estado propio.
 - Migración `0001` que recrea `rate_plans` preservando datos y referencias, con claves foráneas desactivadas alrededor de `migrate()` y verificación posterior con `PRAGMA foreign_key_check`.
@@ -79,7 +84,7 @@ npm ci
 npm run format:check
 npm run typecheck
 npm run lint
-npm run test:run       33 archivos, 384 pruebas
+npm run test:run       33 archivos, 409 pruebas
 npm run db:generate
 npm run db:migrate
 npm run db:seed
@@ -187,3 +192,13 @@ El mismo 2026-10-06 se corrigió la anulación del cobro de un pago pendiente (D
 El 2026-10-07 se atendieron dos pedidos del propietario sobre la impresión. Las salidas en cero imprimen ahora un comprobante de salida sin número (D-049): antes solo imprimían las salidas cobradas, porque el papel dependía del recibo. Y el cierre de caja envía su recibo a la impresora sin pulsar el botón (D-050). No hay migración ni canales IPC nuevos. Pasaron `format:check`, `typecheck`, `lint`, 33 archivos con 384 pruebas y `build`. Falta confirmar ambos documentos en papel con la impresora del cliente. `0.1.0-alpha.12` se preparó para distribuir estos cambios.
 
 `0.1.0-alpha.12` se publicó el 2026-10-07 en [GitHub Releases](https://github.com/heycarlosluis/parkingchia/releases/tag/v0.1.0-alpha.12). [CI](https://github.com/heycarlosluis/parkingchia/actions/runs/37574408149) y [Release](https://github.com/heycarlosluis/parkingchia/actions/runs/37574410734) terminaron correctamente. La release incluye el instalador NSIS de Windows x64, los DMG y ZIP de macOS x64/arm64, sus blockmaps y los YAML de actualización, que declaran la versión `0.1.0-alpha.12`. El comprobante de salida en cero (D-049) y la impresión automática del cierre (D-050) se validaron con pruebas automatizadas; falta confirmarlos en papel y probar la actualización en un equipo instalado.
+
+El 2026-10-09 se atendieron cuatro pedidos del propietario, todavía sin publicar: el cambio está en el árbol de trabajo sobre `0.1.0-alpha.12`. La caja acumula por separado parqueo y mensualidades y el recibo de cierre los imprime con su total (D-051). Parqueo activo imprime un listado de matrículas con su hora de ingreso (D-052). Las mensualidades se editan y se eliminan sin bloqueos por estado o por pagos (D-053); la migración `0012` solo agrega `deleted_at` anulable a `monthly_subscriptions`. Y cada cierre se exporta a CSV desde el aviso del cierre o desde Cierres anteriores (D-054). Hay cuatro canales IPC nuevos, todos con entrada validada y protegidos por el acceso local.
+
+Pasaron `format:check`, `typecheck`, `lint`, 33 archivos con 405 pruebas, `build`, `db:generate` (sin cambios adicionales) y `db:migrate` con `db:seed` sobre una base temporal desechable. Las pruebas cubren el desglose en la caja abierta y en cierres distintos, el reporte del cierre con cada estado de vehículo, el escapado del CSV, la edición y eliminación de mensualidades con pagos, vencidas, canceladas o con cliente y plan eliminados, la migración sobre mensualidades con pagos y recibos previos, y las pantallas de Caja, Mensualidades y Parqueo activo. No se abrió la aplicación para revisarla a mano ni se imprimió en papel: faltan la validación visual del propietario, la prueba del listado y del recibo de cierre en la impresora térmica y abrir un CSV real en el Excel del equipo del parqueadero para confirmar el separador.
+
+El mismo 2026-10-09 el propietario probó el CSV del cierre y lo encontró deformado. Se rehízo como una sola tabla de 21 columnas con el resumen debajo, fechas y horas en columnas separadas, columnas Sí/No para cobrado, anulado y pago pendiente, y el separador según la configuración regional del equipo (D-055). Pasaron `format:check`, `typecheck`, `lint`, 33 archivos con 406 pruebas y `build`. Falta que el propietario confirme el archivo nuevo en su hoja de cálculo.
+
+El mismo 2026-10-09 los recibos de mensualidad pasaron a un consecutivo propio con prefijo `MES-` (D-056), también sin publicar. La migración `0013` agrega `receipts.series`, cambia el índice único a (`series`, `receipt_number`) y marca los recibos de mensualidad existentes sin renumerarlos; la prueba de migración desde `0009` comprueba que un recibo de mensualidad previo conserva número y snapshot. Pasaron `format:check`, `typecheck`, `lint`, 33 archivos con 409 pruebas, `build`, `db:generate` (sin cambios adicionales) y `db:migrate` con `db:seed` sobre una base temporal. Falta confirmar el recibo impreso.
+
+Antes de publicar se comprobó que las migraciones `0011` a `0013` no alteran lo ya registrado: sobre una copia de un respaldo automático de la base de desarrollo anterior a estos cambios, con sesiones, cobros, cierres y dos recibos de mensualidad, todas las filas de todas las tablas quedaron idénticas tras migrar; solo aparecieron las columnas nuevas (`deleted_at` vacío y `series`), los dos recibos de mensualidad conservaron su número y `foreign_key_check` e `integrity_check` salieron limpios. La numeración `MES-` y la eliminación de mensualidades solo afectan a lo que se registre desde esta versión.

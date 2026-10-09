@@ -63,6 +63,7 @@ export function ActiveSessionsPage(): React.JSX.Element {
   const [reprintMessage, setReprintMessage] = useState('')
   const [ticketMessage, setTicketMessage] = useState('')
   const [printingTicketId, setPrintingTicketId] = useState<string | null>(null)
+  const [printingList, setPrintingList] = useState(false)
 
   useEffect(() => {
     void initializeTariffs()
@@ -117,6 +118,15 @@ export function ActiveSessionsPage(): React.JSX.Element {
     setTicketMessage(`Enviando el tiquete de ${session.plate}…`)
     const result = await window.parkingAPI.reprintEntryTicket({ sessionId: session.id })
     setPrintingTicketId(null)
+    setTicketMessage(result.ok ? result.data.message : result.error.message)
+  }
+
+  /** Imprime todos los vehículos que están adentro, sin importar la búsqueda. */
+  const printActiveList = async (): Promise<void> => {
+    setPrintingList(true)
+    setTicketMessage('Enviando el listado del parqueo activo…')
+    const result = await window.parkingAPI.printActiveSessions()
+    setPrintingList(false)
     setTicketMessage(result.ok ? result.data.message : result.error.message)
   }
 
@@ -231,6 +241,15 @@ export function ActiveSessionsPage(): React.JSX.Element {
             <Button type="button" variant="outline" onClick={() => void refresh()}>
               <RefreshCw data-icon="inline-start" />
               Actualizar
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={printingList || (sessions.length === 0 && search === '')}
+              onClick={() => void printActiveList()}
+            >
+              <Printer data-icon="inline-start" />
+              Imprimir parqueo activo
             </Button>
           </div>
         </CardHeader>

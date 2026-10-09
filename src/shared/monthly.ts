@@ -181,6 +181,16 @@ export function isExpiringSoon(endsAtUtc: string, nowUtc: string): boolean {
   return remaining > 0 && remaining <= EXPIRING_SOON_DAYS
 }
 
+/**
+ * Número de un recibo de mensualidad tal como se imprime y se muestra: `MES-00001`.
+ *
+ * Las mensualidades tienen su propio consecutivo, aparte del de los recibos de
+ * parqueo; el prefijo evita confundir dos recibos con el mismo número.
+ */
+export function formatMonthlyReceiptNumber(receiptNumber: number): string {
+  return `MES-${String(receiptNumber).padStart(5, '0')}`
+}
+
 /** Estado de pago comparando lo abonado contra el valor acordado. */
 export function resolvePaymentState(amountCop: number, paidCop: number): SubscriptionPaymentState {
   if (paidCop <= 0) return amountCop === 0 ? 'paid' : 'unpaid'
@@ -296,24 +306,35 @@ export const updateMonthlyPlanSchema = z
 
 export const deleteMonthlyPlanSchema = z.object({ id: ratePlanIdSchema }).strict()
 
+const subscriptionShape = {
+  customerId: monthlyCustomerIdSchema,
+  plate: plateSchema,
+  vehicleType: vehicleTypeSchema,
+  ratePlanId: ratePlanIdSchema,
+  /** Primer día cubierto, en calendario local. */
+  startDate: localDateSchema,
+  /** Último día cubierto, en calendario local. */
+  endDate: localDateSchema,
+  amountCop: copAmount('El costo de la mensualidad'),
+  notes: optionalText(200, 'La nota'),
+}
+
+const endsAfterStart = {
+  message: 'La fecha final no puede ser anterior a la inicial',
+  path: ['endDate'],
+}
+
 export const createSubscriptionSchema = z
-  .object({
-    customerId: monthlyCustomerIdSchema,
-    plate: plateSchema,
-    vehicleType: vehicleTypeSchema,
-    ratePlanId: ratePlanIdSchema,
-    /** Primer día cubierto, en calendario local. */
-    startDate: localDateSchema,
-    /** Último día cubierto, en calendario local. */
-    endDate: localDateSchema,
-    amountCop: copAmount('El costo de la mensualidad'),
-    notes: optionalText(200, 'La nota'),
-  })
+  .object(subscriptionShape)
   .strict()
-  .refine((value) => value.endDate >= value.startDate, {
-    message: 'La fecha final no puede ser anterior a la inicial',
-    path: ['endDate'],
-  })
+  .refine((value) => value.endDate >= value.startDate, endsAfterStart)
+
+export const updateSubscriptionSchema = z
+  .object({ id: subscriptionIdSchema, ...subscriptionShape })
+  .strict()
+  .refine((value) => value.endDate >= value.startDate, endsAfterStart)
+
+export const deleteSubscriptionSchema = z.object({ id: subscriptionIdSchema }).strict()
 
 export const renewSubscriptionSchema = z
   .object({
@@ -375,6 +396,7 @@ export type UpdateMonthlyCustomerInput = z.infer<typeof updateMonthlyCustomerSch
 export type CreateMonthlyPlanInput = z.infer<typeof createMonthlyPlanSchema>
 export type UpdateMonthlyPlanInput = z.infer<typeof updateMonthlyPlanSchema>
 export type CreateSubscriptionInput = z.infer<typeof createSubscriptionSchema>
+export type UpdateSubscriptionInput = z.infer<typeof updateSubscriptionSchema>
 export type RenewSubscriptionInput = z.infer<typeof renewSubscriptionSchema>
 export type CancelSubscriptionInput = z.infer<typeof cancelSubscriptionSchema>
 export type RegisterSubscriptionPaymentInput = z.infer<typeof registerSubscriptionPaymentSchema>

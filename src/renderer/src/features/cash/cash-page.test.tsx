@@ -16,6 +16,8 @@ const closedSummary: CashCloseSummary = {
   closedAt: '2026-08-18T18:00:00.000Z',
   openingAmountCop: 50_000,
   collectedCop: 10_000,
+  parkingCollectedCop: 10_000,
+  monthlyCollectedCop: 0,
   voidedCop: 0,
   expectedAmountCop: 60_000,
   closingAmountCop: 60_000,
@@ -28,6 +30,8 @@ const emptyState: CashState = {
   session: null,
   movements: [],
   collectedCop: 0,
+  parkingCollectedCop: 0,
+  monthlyCollectedCop: 0,
   voidedCop: 0,
   expectedCop: 0,
   movementCount: 0,
@@ -62,6 +66,8 @@ const openState: CashState = {
     },
   ],
   collectedCop: 10_000,
+  parkingCollectedCop: 10_000,
+  monthlyCollectedCop: 0,
   voidedCop: 0,
   expectedCop: 60_000,
   movementCount: 1,
@@ -82,6 +88,8 @@ describe('Caja', () => {
       session: null,
       movements: [],
       collectedCop: 0,
+      parkingCollectedCop: 0,
+      monthlyCollectedCop: 0,
       voidedCop: 0,
       expectedCop: 0,
       movementCount: 0,
@@ -303,6 +311,87 @@ describe('Caja', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Entendido' }))
     expect(screen.queryByText(/Caja cerrada/)).not.toBeInTheDocument()
+  })
+
+  it('separa lo recaudado por parqueo y por mensualidades en la caja y en sus cierres', async () => {
+    const split = { parkingCollectedCop: 10_000, monthlyCollectedCop: 150_000 }
+    vi.mocked(window.parkingAPI.getCashState).mockResolvedValue(
+      ok({ ...openState, ...split, collectedCop: 160_000, expectedCop: 210_000 }),
+    )
+    vi.mocked(window.parkingAPI.listCashSessions).mockResolvedValue(
+      ok([{ ...closedSummary, ...split, collectedCop: 160_000 }]),
+    )
+    renderPage()
+
+    const summary = await screen.findByRole('region', { name: 'Resumen de la caja abierta' })
+    expect(within(summary).getByText(/^\$\s160\.000$/)).toBeInTheDocument()
+    expect(
+      within(summary).getByText(/Parqueo \$\s10\.000 · Mensualidades \$\s150\.000/),
+    ).toBeInTheDocument()
+
+    const table = screen.getByRole('table', { name: /Cierres de caja anteriores/ })
+    const row = within(table).getAllByRole('row')[1]!
+    expect(within(row).getByText(/^\$\s160\.000$/)).toBeInTheDocument()
+    expect(
+      within(row).getByText(/Parqueo \$\s10\.000 · Mensualidades \$\s150\.000/),
+    ).toBeInTheDocument()
+  })
+
+  it('distingue el recibo de una mensualidad del de un parqueo en los movimientos', async () => {
+    vi.mocked(window.parkingAPI.getCashState).mockResolvedValue(
+      ok({
+        ...openState,
+        movements: [
+          ...openState.movements,
+          {
+            ...openState.movements[0]!,
+            paymentId: 'payment-2',
+            source: 'monthly' as const,
+            plate: 'MEN001',
+            customerName: 'Carlos Peña',
+          },
+        ],
+      }),
+    )
+    renderPage()
+
+    const table = await screen.findByRole('table', { name: /Movimientos de la caja abierta/ })
+    const [, parkingRow, monthlyRow] = within(table).getAllByRole('row')
+    expect(within(parkingRow!).getByText('N.º 1')).toBeInTheDocument()
+    expect(within(monthlyRow!).getByText('N.º MES-00001')).toBeInTheDocument()
+  })
+
+  it('exporta el CSV de un cierre anterior y del cierre recién hecho', async () => {
+    vi.mocked(window.parkingAPI.exportCashCloseCsv).mockClear()
+    vi.mocked(window.parkingAPI.exportCashCloseCsv).mockResolvedValue(
+      ok({ created: true, message: 'Reporte del cierre guardado en CSV.' }),
+    )
+    vi.mocked(window.parkingAPI.listCashSessions).mockResolvedValue(ok([closedSummary]))
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('button', { name: /Exportar CSV del cierre de/ }))
+    expect(window.parkingAPI.exportCashCloseCsv).toHaveBeenCalledWith({
+      sessionId: 'cash-closed-1',
+    })
+    expect(await screen.findByText('Reporte del cierre guardado en CSV.')).toBeInTheDocument()
+
+    useCashStore.setState({ lastClose: { ...closedSummary, sessionId: 'cash-closed-2' } })
+    await userEvent.click(await screen.findByRole('button', { name: 'Exportar CSV' }))
+    expect(window.parkingAPI.exportCashCloseCsv).toHaveBeenLastCalledWith({
+      sessionId: 'cash-closed-2',
+    })
+  })
+
+  it('explica cuando el CSV no se pudo guardar', async () => {
+    vi.mocked(window.parkingAPI.exportCashCloseCsv).mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'EXPORT_FAILED', message: 'No fue posible guardar el archivo.' },
+    })
+    vi.mocked(window.parkingAPI.listCashSessions).mockResolvedValue(ok([closedSummary]))
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('button', { name: /Exportar CSV del cierre de/ }))
+    expect(await screen.findByText('No fue posible guardar el archivo.')).toBeInTheDocument()
   })
 
   describe('con el cobro simplificado', () => {

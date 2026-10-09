@@ -5,6 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DatabaseManager } from '@main/database/connection'
+import { createCashCloseCsv, csvSeparatorFor } from '@main/cash/export'
 import { CashService } from '@main/cash/service'
 import { EmployeeService } from '@main/employee/service'
 import { MonthlyService } from '@main/monthly/service'
@@ -439,6 +440,328 @@ describe('historial de cierres', () => {
     expect(() => cash.getCloseSummary('no-existe')).toThrow(
       expect.objectContaining({ code: 'CASH_SESSION_NOT_FOUND' }),
     )
+  })
+})
+
+describe('ingresos por parqueo y por mensualidades', () => {
+  const payMonthly = (amountCop: number): void => {
+    const subscription = monthly.createSubscription({
+      customerId,
+      plate: 'MEN001',
+      vehicleType: 'car',
+      ratePlanId: planId,
+      startDate: '2026-08-19',
+      endDate: '2026-09-18',
+      amountCop: 150_000,
+      notes: null,
+    })
+    monthly.registerPayment({
+      subscriptionId: subscription.id,
+      amountCop,
+      method: 'transfer',
+      receivedCop: null,
+      reference: null,
+    })
+  }
+
+  it('acumula cada origen por separado y su suma es lo recaudado', () => {
+    openSession()
+    seedParkingPayment(cash.getOpenSessionId()!, 10_000, 'ABC123')
+    const voided = seedParkingPayment(cash.getOpenSessionId()!, 4_000, 'XYZ999')
+    payMonthly(90_000)
+    cash.voidPayment({ paymentId: voided, reason: 'Cobro duplicado' })
+
+    expect(cash.getState()).toMatchObject({
+      parkingCollectedCop: 10_000,
+      monthlyCollectedCop: 90_000,
+      collectedCop: 100_000,
+      voidedCop: 4_000,
+    })
+
+    const summary = cash.closeSession({ closingAmountCop: opening + 100_000, notes: null })
+    const expected = {
+      parkingCollectedCop: 10_000,
+      monthlyCollectedCop: 90_000,
+      collectedCop: 100_000,
+      expectedAmountCop: opening + 100_000,
+      differenceCop: 0,
+    }
+    expect(summary).toMatchObject(expected)
+    expect(cash.getCloseSummary(summary.sessionId)).toMatchObject(expected)
+    expect(cash.listClosedSessions()[0]).toMatchObject(expected)
+  })
+
+  it('no mezcla los orígenes de un turno con los de otro', () => {
+    openSession(0)
+    payMonthly(60_000)
+    const first = cash.closeSession({ closingAmountCop: 60_000, notes: null })
+    openSession(0)
+    seedParkingPayment(cash.getOpenSessionId()!, 7_000, 'ABC123')
+    const second = cash.closeSession({ closingAmountCop: 7_000, notes: null })
+
+    expect(cash.getCloseSummary(first.sessionId)).toMatchObject({
+      parkingCollectedCop: 0,
+      monthlyCollectedCop: 60_000,
+    })
+    expect(cash.getCloseSummary(second.sessionId)).toMatchObject({
+      parkingCollectedCop: 7_000,
+      monthlyCollectedCop: 0,
+    })
+  })
+})
+
+describe('reporte del cierre', () => {
+  /** Inserta un vehículo con su sesión, sin cobro asociado. */
+  function seedSession(
+    plate: string,
+    status: 'active' | 'closed' | 'cancelled',
+    amountCop: number | null,
+  ): string {
+    const db = manager.getNativeConnection()
+    const now = new Date().toISOString()
+    const vehicleId = randomUUID()
+    const sessionId = randomUUID()
+    db.prepare(
+      `INSERT INTO vehicles (id, plate, vehicle_type, status, created_at, updated_at)
+       VALUES (?, ?, 'motorcycle', 'active', ?, ?)`,
+    ).run(vehicleId, plate, now, now)
+    db.prepare(
+      `INSERT INTO parking_sessions
+       (id, vehicle_id, entered_at, exited_at, status, calculated_amount_cop, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(sessionId, vehicleId, now, status === 'active' ? null : now, status, amountCop, now, now)
+    return sessionId
+  }
+
+  it('reúne el arqueo, los vehículos del turno y los pagos de mensualidad', () => {
+    const db = manager.getNativeConnection()
+    openSession()
+    seedParkingPayment(cash.getOpenSessionId()!, 10_000, 'ABC123')
+    seedSession('GRA001', 'closed', 0)
+    seedSession('ANU001', 'cancelled', 0)
+    const parkedId = seedSession('DEN001', 'active', null)
+    const owedId = seedSession('DEU001', 'closed', 8_000)
+    const at = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO pending_payments
+       (id, parking_session_id, amount_cop, status, snapshot_json, registered_at, created_at, updated_at)
+       VALUES (?, ?, 8000, 'pending', '{}', ?, ?, ?)`,
+    ).run(randomUUID(), owedId, at, at, at)
+    const subscription = monthly.createSubscription({
+      customerId,
+      plate: 'MEN001',
+      vehicleType: 'car',
+      ratePlanId: planId,
+      startDate: '2026-08-19',
+      endDate: '2026-09-18',
+      amountCop: 150_000,
+      notes: null,
+    })
+    monthly.registerPayment({
+      subscriptionId: subscription.id,
+      amountCop: 150_000,
+      method: 'transfer',
+      receivedCop: null,
+      reference: null,
+    })
+    const summary = cash.closeSession({ closingAmountCop: opening + 160_000, notes: null })
+
+    // Lo que ocurre después del cierre no cambia el reporte del turno.
+    db.prepare(
+      "UPDATE parking_sessions SET status = 'closed', exited_at = ?, calculated_amount_cop = 5000 WHERE id = ?",
+    ).run('2999-01-01T00:00:00.000Z', parkedId)
+
+    const report = cash.getCloseReport(summary.sessionId)
+    expect(report.summary).toMatchObject({
+      employeeName: 'Laura Torres',
+      parkingCollectedCop: 10_000,
+      monthlyCollectedCop: 150_000,
+      collectedCop: 160_000,
+    })
+    const byPlate = new Map(report.vehicles.map((vehicle) => [vehicle.plate, vehicle]))
+    expect([...byPlate.keys()].sort()).toEqual(['ABC123', 'ANU001', 'DEN001', 'DEU001', 'GRA001'])
+    expect(byPlate.get('ABC123')).toMatchObject({
+      outcome: 'paid',
+      amountCop: 10_000,
+      method: 'cash',
+      receiptNumber: 1,
+    })
+    expect(byPlate.get('GRA001')).toMatchObject({ outcome: 'free', amountCop: 0 })
+    expect(byPlate.get('ANU001')).toMatchObject({ outcome: 'cancelled', amountCop: 0 })
+    expect(byPlate.get('DEN001')).toMatchObject({ outcome: 'parked', exitedAt: null, amountCop: 0 })
+    expect(byPlate.get('DEU001')).toMatchObject({ outcome: 'pending', amountCop: 8_000 })
+    expect(report.monthlyPayments).toEqual([
+      expect.objectContaining({
+        customerName: 'Carlos Andrés Peña',
+        plate: 'MEN001',
+        planName: 'Mensualidad automóvil',
+        amountCop: 150_000,
+        method: 'transfer',
+        status: 'completed',
+      }),
+    ])
+
+    const csv = createCashCloseCsv(report, 'Parking; "Chía"')
+    expect(csv.startsWith('﻿Concepto;Placa;')).toBe(true)
+    const rows = csv
+      .slice(1)
+      .trimEnd()
+      .split('\r\n')
+      .map((line) => line.split(/;(?=(?:[^"]*"[^"]*")*[^"]*$)/))
+    // Todas las filas tienen las mismas columnas: ninguna hoja de cálculo las desacomoda.
+    expect(new Set(rows.map((row) => row.length))).toEqual(new Set([21]))
+    expect(rows[0]).toEqual([
+      'Concepto',
+      'Placa',
+      'Tipo de vehículo',
+      'Fecha de ingreso',
+      'Hora de ingreso',
+      'Fecha de salida',
+      'Hora de salida',
+      'Permanencia',
+      'Minutos',
+      'Tarifa',
+      'Estado',
+      'Cobrado',
+      'Anulado',
+      'Pago pendiente',
+      'Valor',
+      'Medio de pago',
+      'Recibo',
+      'Fecha de cobro',
+      'Hora de cobro',
+      'Cliente mensual',
+      'Empleado',
+    ])
+    const header = rows[0]!
+    const record = (match: (row: string[]) => boolean): Record<string, string> =>
+      Object.fromEntries(rows.find(match)!.map((value, index) => [header[index]!, value]))
+    const date = /^\d{4}-\d{2}-\d{2}$/
+    const time = /^\d{2}:\d{2}$/
+
+    const paid = record((row) => row[1] === 'ABC123')
+    expect(paid).toMatchObject({
+      Concepto: 'Parqueo',
+      'Tipo de vehículo': 'Automóvil',
+      Permanencia: '0 min',
+      Minutos: '0',
+      Estado: 'Cobrado',
+      Cobrado: 'Sí',
+      Anulado: 'No',
+      'Pago pendiente': 'No',
+      Valor: '10000',
+      'Medio de pago': 'Efectivo',
+      Recibo: '1',
+      Empleado: 'Laura Torres',
+    })
+    for (const column of ['Fecha de ingreso', 'Fecha de salida', 'Fecha de cobro']) {
+      expect(paid[column]).toMatch(date)
+    }
+    for (const column of ['Hora de ingreso', 'Hora de salida', 'Hora de cobro']) {
+      expect(paid[column]).toMatch(time)
+    }
+    expect(record((row) => row[1] === 'DEN001')).toMatchObject({
+      'Tipo de vehículo': 'Motocicleta',
+      'Fecha de salida': '',
+      'Hora de salida': '',
+      Permanencia: '',
+      Estado: 'En el parqueadero al cierre',
+      Cobrado: 'No',
+      Valor: '0',
+    })
+    expect(record((row) => row[1] === 'DEU001')).toMatchObject({
+      Estado: 'Pago pendiente',
+      Cobrado: 'No',
+      'Pago pendiente': 'Sí',
+      Valor: '8000',
+    })
+    expect(record((row) => row[1] === 'ANU001')).toMatchObject({
+      Estado: 'Ingreso anulado',
+      Anulado: 'Sí',
+    })
+    expect(record((row) => row[1] === 'GRA001')).toMatchObject({ Estado: 'Sin cobro', Valor: '0' })
+    expect(record((row) => row[0] === 'Mensualidad')).toMatchObject({
+      Placa: 'MEN001',
+      Tarifa: 'Mensualidad automóvil',
+      Estado: 'Cobrado',
+      Cobrado: 'Sí',
+      Valor: '150000',
+      'Medio de pago': 'Transferencia',
+      // Las mensualidades llevan su propio consecutivo, aparte del de parqueo.
+      Recibo: 'MES-00001',
+      'Cliente mensual': 'Carlos Andrés Peña',
+    })
+
+    // El resumen va debajo de la tabla, tras una fila vacía, en las dos primeras columnas.
+    const summaryStart = rows.findIndex((row) => row[0] === 'Resumen de la caja')
+    expect(rows[summaryStart - 1]!.every((value) => value === '')).toBe(true)
+    expect(summaryStart).toBe(1 + report.vehicles.length + report.monthlyPayments.length + 1)
+    const resume = new Map(rows.slice(summaryStart).map((row) => [row[0], row[1]]))
+    // El separador y las comillas del nombre no rompen las columnas.
+    expect(resume.get('Parqueadero')).toBe('"Parking; ""Chía"""')
+    expect(resume.get('Empleado a cargo')).toBe('Laura Torres')
+    expect(resume.get('Ingresos por parqueo')).toBe('10000')
+    expect(resume.get('Ingresos por mensualidades')).toBe('150000')
+    expect(resume.get('Total recaudado')).toBe('160000')
+    expect(resume.get('Vehículos del turno')).toBe('5')
+
+    // Con configuración regional de punto decimal, las columnas se separan con coma.
+    const commaCsv = createCashCloseCsv(report, 'Parking, Chía', ',')
+    expect(commaCsv.startsWith('﻿Concepto,Placa,')).toBe(true)
+    expect(commaCsv).toContain('Parqueadero,"Parking, Chía",')
+    expect(commaCsv).not.toContain(';')
+  })
+
+  it('elige el separador según la configuración regional del equipo', () => {
+    expect(csvSeparatorFor('es-CO')).toBe(';')
+    expect(csvSeparatorFor('en-US')).toBe(',')
+    expect(csvSeparatorFor('configuración-inválida')).toBe(';')
+  })
+
+  it('un pago pendiente de otro turno figura en la caja donde se cobró', () => {
+    const db = manager.getNativeConnection()
+    openSession(0)
+    const first = cash.closeSession({ closingAmountCop: 0, notes: null })
+    // Salió antes de que abriera la caja siguiente y se cobró en ella.
+    const paymentId = seedParkingPayment(openSession(0).session!.id, 6_000, 'VIE001')
+    db.prepare(
+      `UPDATE parking_sessions SET entered_at = ?, exited_at = ?
+       WHERE id = (SELECT parking_session_id FROM payments WHERE id = ?)`,
+    ).run('2020-01-01T10:00:00.000Z', '2020-01-01T12:00:00.000Z', paymentId)
+    const second = cash.closeSession({ closingAmountCop: 6_000, notes: null })
+
+    expect(cash.getCloseReport(first.sessionId).vehicles).toEqual([])
+    expect(cash.getCloseReport(second.sessionId).vehicles).toEqual([
+      expect.objectContaining({
+        plate: 'VIE001',
+        outcome: 'paid',
+        amountCop: 6_000,
+        exitedAt: '2020-01-01T12:00:00.000Z',
+      }),
+    ])
+  })
+
+  it('neutraliza un texto que una hoja de cálculo ejecutaría como fórmula', () => {
+    openSession(0)
+    const summary = cash.closeSession({ closingAmountCop: 0, notes: null })
+    const csv = createCashCloseCsv(cash.getCloseReport(summary.sessionId), '=HYPERLINK("x")')
+    expect(csv).toContain(`Parqueadero;"'=HYPERLINK(""x"")";`)
+    // Una diferencia negativa es un número propio, no texto que haya que escapar.
+    expect(
+      createCashCloseCsv(
+        { summary: { ...summary, differenceCop: -2_000 }, vehicles: [], monthlyPayments: [] },
+        null,
+      ),
+    ).toContain('Diferencia;-2000;')
+  })
+
+  it('rechaza exportar un cierre inexistente o una caja todavía abierta', () => {
+    const open = openSession()
+    for (const id of ['no-existe', open.session!.id]) {
+      expect(() => cash.getCloseReport(id)).toThrow(
+        expect.objectContaining({ code: 'CASH_SESSION_NOT_FOUND' }),
+      )
+    }
   })
 })
 

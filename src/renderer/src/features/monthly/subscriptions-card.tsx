@@ -2,10 +2,12 @@ import {
   Ban,
   CalendarPlus,
   CreditCard,
+  Pencil,
   Plus,
   Printer,
   RefreshCw,
   Search,
+  Trash2,
   UsersRound,
 } from 'lucide-react'
 import { useState } from 'react'
@@ -14,6 +16,7 @@ import { formatCurrency } from '@shared/format'
 import {
   describeCoverage,
   describeRemaining,
+  formatMonthlyReceiptNumber,
   isExpiringSoon,
   MAX_SUBSCRIPTION_MONTHS,
   MIN_SUBSCRIPTION_MONTHS,
@@ -81,12 +84,16 @@ export function SubscriptionsCard(): React.JSX.Element {
   const setStatus = useMonthlyStore((store) => store.setStatus)
   const refresh = useMonthlyStore((store) => store.refresh)
   const createSubscription = useMonthlyStore((store) => store.createSubscription)
+  const updateSubscription = useMonthlyStore((store) => store.updateSubscription)
+  const deleteSubscription = useMonthlyStore((store) => store.deleteSubscription)
   const renewSubscription = useMonthlyStore((store) => store.renewSubscription)
   const cancelSubscription = useMonthlyStore((store) => store.cancelSubscription)
   const registerPayment = useMonthlyStore((store) => store.registerPayment)
   const clearFeedback = useMonthlyStore((store) => store.clearFeedback)
 
   const [creating, setCreating] = useState(false)
+  const [editing, setEditing] = useState<MonthlySubscription | null>(null)
+  const [removing, setRemoving] = useState<MonthlySubscription | null>(null)
   const [charging, setCharging] = useState<MonthlySubscription | null>(null)
   const [renewing, setRenewing] = useState<MonthlySubscription | null>(null)
   const [renewMonths, setRenewMonths] = useState(1)
@@ -127,6 +134,11 @@ export function SubscriptionsCard(): React.JSX.Element {
     }
   }
 
+  const confirmRemove = async (): Promise<void> => {
+    if (!removing) return
+    if (await deleteSubscription(removing.id)) setRemoving(null)
+  }
+
   const hasFilters = search !== '' || status !== 'all'
   const validRenewal =
     renewing !== null &&
@@ -138,7 +150,7 @@ export function SubscriptionsCard(): React.JSX.Element {
 
   return (
     <>
-      {error && !creating && !charging && !renewing && !cancelling ? (
+      {error && !creating && !editing && !removing && !charging && !renewing && !cancelling ? (
         <Alert variant="destructive">
           <AlertTitle>La operación no se completó</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
@@ -152,7 +164,7 @@ export function SubscriptionsCard(): React.JSX.Element {
           </AlertTitle>
           <AlertDescription>
             <span>
-              Recibo N.º {lastPayment.receiptNumber} ·{' '}
+              Recibo N.º {formatMonthlyReceiptNumber(lastPayment.receiptNumber)} ·{' '}
               {PAYMENT_METHOD_LABELS[lastPayment.method as PaymentMethod]}
               {lastPayment.changeCop === null
                 ? ''
@@ -402,6 +414,30 @@ export function SubscriptionsCard(): React.JSX.Element {
                               Cancelar
                             </Button>
                           ) : null}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              clearFeedback()
+                              setEditing(subscription)
+                            }}
+                          >
+                            <Pencil data-icon="inline-start" />
+                            Editar
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              clearFeedback()
+                              setRemoving(subscription)
+                            }}
+                          >
+                            <Trash2 data-icon="inline-start" />
+                            Eliminar
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -425,6 +461,60 @@ export function SubscriptionsCard(): React.JSX.Element {
         onOpenChange={setCreating}
         onSubmit={createSubscription}
       />
+
+      {editing ? (
+        <SubscriptionDialog
+          key={editing.id}
+          open
+          subscription={editing}
+          customers={customers}
+          plans={plans}
+          error={error}
+          onOpenChange={(open) => {
+            if (!open) setEditing(null)
+          }}
+          onSubmit={(draft) => updateSubscription({ ...draft, id: editing.id })}
+        />
+      ) : null}
+
+      <AlertDialog
+        open={removing !== null}
+        onOpenChange={(open) => {
+          if (!open && !mutating) setRemoving(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar la mensualidad de {removing?.plate}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              La mensualidad de {removing?.customerName} sale del listado, deja de cubrir al
+              vehículo y ya no suma al saldo por cobrar.
+              {removing && removing.paidCop > 0
+                ? ` Los ${formatCurrency(removing.paidCop)} ya abonados siguen contando en la caja donde se recibieron; si hay que devolverlos, anula ese cobro en Caja.`
+                : ''}{' '}
+              Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {error ? (
+            <Alert variant="destructive">
+              <AlertTitle>No fue posible eliminar la mensualidad</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={mutating}>Volver</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={mutating}
+              onClick={(event) => {
+                event.preventDefault()
+                void confirmRemove()
+              }}
+            >
+              Eliminar mensualidad
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {charging ? (
         <PaymentDialog

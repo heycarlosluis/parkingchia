@@ -317,6 +317,188 @@ describe('mensualidades', () => {
     })
   })
 
+  it('corrige cliente, vehículo, plan, fechas y costo aunque ya tenga pagos', () => {
+    const subscription = service.createSubscription(subscriptionDraft())
+    service.registerPayment({
+      subscriptionId: subscription.id,
+      amountCop: 100_000,
+      method: 'transfer',
+      receivedCop: null,
+      reference: null,
+    })
+    const otherCustomer = service.createCustomer({
+      ...customerDraft,
+      fullName: 'Julián Castro',
+      documentNumber: '900100200',
+    })
+    const otherPlan = service.createPlan({
+      name: 'Mensualidad moto',
+      vehicleType: 'motorcycle',
+      amountCop: 80_000,
+      status: 'active',
+    })
+    const startDate = shiftLocalDate(today, -3)
+    const endDate = shiftLocalDate(today, 10)
+
+    const updated = service.updateSubscription({
+      id: subscription.id,
+      customerId: otherCustomer.id,
+      plate: 'MOT777',
+      vehicleType: 'motorcycle',
+      ratePlanId: otherPlan.id,
+      startDate,
+      endDate,
+      amountCop: 80_000,
+      notes: 'Cambió de vehículo',
+    })
+
+    expect(updated).toMatchObject({
+      id: subscription.id,
+      customerName: 'Julián Castro',
+      plate: 'MOT777',
+      vehicleType: 'motorcycle',
+      planName: 'Mensualidad moto',
+      startsAt: startOfLocalDayUtc(startDate),
+      endsAt: startOfLocalDayUtc(endDate, 1),
+      amountCop: 80_000,
+      // Lo abonado supera el costo nuevo: queda pagada y sin saldo negativo.
+      paidCop: 100_000,
+      balanceCop: 0,
+      paymentState: 'paid',
+      status: 'active',
+      notes: 'Cambió de vehículo',
+    })
+    const now = new Date().toISOString()
+    expect(service.findCoverageByPlate('MOT777', now)).toMatchObject({
+      subscriptionId: subscription.id,
+    })
+    expect(service.findCoverageByPlate('MEN001', now)).toBeNull()
+    // El recibo emitido conserva los datos con los que se cobró.
+    expect(service.findReceiptSnapshot(subscription.id)).toMatchObject({
+      plate: 'MEN001',
+      paidCop: 100_000,
+    })
+
+    const audit = manager
+      .getNativeConnection()
+      .prepare("SELECT details_json FROM audit_logs WHERE action = 'monthly.subscription_updated'")
+      .get() as { details_json: string }
+    expect(JSON.parse(audit.details_json)).toMatchObject({
+      before: { plate: 'MEN001', amountCop: 150_000 },
+      after: { plate: 'MOT777', amountCop: 80_000 },
+      paidCop: 100_000,
+    })
+  })
+
+  it('corrige una mensualidad vencida, cancelada o con el cliente y el plan eliminados', () => {
+    const expired = service.createSubscription(
+      subscriptionDraft({
+        startDate: shiftLocalDate(today, -60),
+        endDate: shiftLocalDate(today, -31),
+      }),
+    )
+    expect(expired.status).toBe('expired')
+    // Mover la fecha final la devuelve a vigente sin crear otra.
+    const reactivated = service.updateSubscription({
+      ...subscriptionDraft({
+        startDate: shiftLocalDate(today, -60),
+        endDate: shiftLocalDate(today, 5),
+      }),
+      id: expired.id,
+    })
+    expect(reactivated.status).toBe('active')
+
+    service.cancelSubscription({ id: expired.id, reason: 'Se retiró del parqueadero' })
+    service.deleteCustomer(customerId)
+    service.deletePlan(planId)
+    const corrected = service.updateSubscription({
+      ...subscriptionDraft({ amountCop: 120_000, notes: 'Valor corregido' }),
+      id: expired.id,
+    })
+    expect(corrected).toMatchObject({
+      status: 'cancelled',
+      amountCop: 120_000,
+      notes: 'Valor corregido',
+      customerName: 'María Fernanda Ríos',
+    })
+    expect(service.getOverview(filters).subscriptions).toHaveLength(1)
+  })
+
+  it('al corregir no permite cruzarse con otra mensualidad ni usar un cliente inexistente', () => {
+    const first = service.createSubscription(subscriptionDraft())
+    const nextStart = shiftLocalDate(coverageEndDate(today, 1), 1)
+    const second = service.createSubscription(
+      subscriptionDraft({ startDate: nextStart, endDate: shiftLocalDate(nextStart, 20) }),
+    )
+
+    expect(() => service.updateSubscription({ ...subscriptionDraft(), id: second.id })).toThrow(
+      expect.objectContaining({ code: 'SUBSCRIPTION_OVERLAPS' }),
+    )
+    expect(() =>
+      service.updateSubscription({
+        ...subscriptionDraft({ customerId: 'no-existe' }),
+        id: first.id,
+      }),
+    ).toThrow(expect.objectContaining({ code: 'CUSTOMER_NOT_FOUND' }))
+    // Guardar sin cambios no choca consigo misma.
+    expect(service.updateSubscription({ ...subscriptionDraft(), id: first.id }).id).toBe(first.id)
+  })
+
+  it('elimina una mensualidad con pagos sin tocar la caja ni los recibos', () => {
+    const subscription = service.createSubscription(subscriptionDraft())
+    service.registerPayment({
+      subscriptionId: subscription.id,
+      amountCop: 50_000,
+      method: 'transfer',
+      receivedCop: null,
+      reference: null,
+    })
+    const db = manager.getNativeConnection()
+    const before = {
+      payments: db.prepare('SELECT * FROM payments').all(),
+      receipts: db.prepare('SELECT * FROM receipts').all(),
+    }
+
+    service.deleteSubscription(subscription.id)
+
+    const overview = service.getOverview(filters)
+    expect(overview.subscriptions).toEqual([])
+    expect(overview.summary).toMatchObject({ activeCount: 0, pendingCollectionCop: 0 })
+    expect(overview.customers[0]).toMatchObject({ subscriptionCount: 0, activeSubscriptions: 0 })
+    expect(service.findCoverageByPlate('MEN001')).toBeNull()
+    expect(
+      service.findCoverageForVehicle(subscription.vehicleId, new Date().toISOString()),
+    ).toBeNull()
+    // El dinero ya recibido sigue en la caja y su recibo no se altera.
+    expect(db.prepare('SELECT * FROM payments').all()).toEqual(before.payments)
+    expect(db.prepare('SELECT * FROM receipts').all()).toEqual(before.receipts)
+    expect(cash.getState()).toMatchObject({ collectedCop: 50_000, monthlyCollectedCop: 50_000 })
+    expect(db.pragma('foreign_key_check')).toEqual([])
+
+    for (const operation of [
+      () => service.deleteSubscription(subscription.id),
+      () => service.updateSubscription({ ...subscriptionDraft(), id: subscription.id }),
+      () => service.renewSubscription({ id: subscription.id, months: 1, amountCop: null }),
+      () =>
+        service.registerPayment({
+          subscriptionId: subscription.id,
+          amountCop: 10_000,
+          method: 'transfer',
+          receivedCop: null,
+          reference: null,
+        }),
+    ]) {
+      expect(operation).toThrow(expect.objectContaining({ code: 'SUBSCRIPTION_NOT_FOUND' }))
+    }
+    // La matrícula queda libre para una mensualidad nueva en las mismas fechas.
+    expect(service.createSubscription(subscriptionDraft()).status).toBe('active')
+
+    const audit = db
+      .prepare("SELECT details_json FROM audit_logs WHERE action = 'monthly.subscription_deleted'")
+      .get() as { details_json: string }
+    expect(JSON.parse(audit.details_json)).toMatchObject({ plate: 'MEN001', paidCop: 50_000 })
+  })
+
   it('sincroniza los estados guardados con el calendario', () => {
     const subscription = service.createSubscription(subscriptionDraft())
     manager

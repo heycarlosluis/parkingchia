@@ -14,6 +14,7 @@ import {
 } from '@shared/cash'
 import { OperationError } from '@main/ipc/errors'
 import { readSimpleChargeMode } from '@main/settings/service'
+import type { CashCloseReport, CashReportMonthlyPayment, CashReportVehicle } from './export'
 
 type SessionRow = {
   id: string
@@ -30,6 +31,9 @@ type SessionRow = {
 
 type TotalsRow = {
   collected: number
+  /** Parte de `collected` que entró por parqueo; el resto son mensualidades. */
+  parking: number
+  monthly: number
   voided: number
   count: number
 }
@@ -43,6 +47,8 @@ type ClosedSessionRow = {
   expected_amount_cop: number | null
   employee_name: string | null
   collected_cop: number
+  parking_collected_cop: number
+  monthly_collected_cop: number
   voided_cop: number
   movement_count: number
   pending_count: number
@@ -58,6 +64,8 @@ const closedSessionsQuery = (filter = ''): string => `
   SELECT s.id AS session_id, s.opened_at, s.closed_at, s.opening_amount_cop,
          s.closing_amount_cop, s.expected_amount_cop, e.full_name AS employee_name,
          COALESCE(SUM(CASE WHEN p.status = 'completed' THEN p.amount_cop ELSE 0 END), 0) AS collected_cop,
+         COALESCE(SUM(CASE WHEN p.status = 'completed' AND p.subscription_id IS NULL THEN p.amount_cop ELSE 0 END), 0) AS parking_collected_cop,
+         COALESCE(SUM(CASE WHEN p.status = 'completed' AND p.subscription_id IS NOT NULL THEN p.amount_cop ELSE 0 END), 0) AS monthly_collected_cop,
          COALESCE(SUM(CASE WHEN p.status = 'voided' THEN p.amount_cop ELSE 0 END), 0) AS voided_cop,
          COUNT(p.id) AS movement_count,
          COALESCE(s.pending_count, 0) AS pending_count,
@@ -97,6 +105,8 @@ export class CashService {
         session: null,
         movements: [],
         collectedCop: 0,
+        parkingCollectedCop: 0,
+        monthlyCollectedCop: 0,
         voidedCop: 0,
         expectedCop: 0,
         movementCount: 0,
@@ -108,6 +118,8 @@ export class CashService {
       session,
       movements: this.listMovements(session.id),
       collectedCop: totals.collected,
+      parkingCollectedCop: totals.parking,
+      monthlyCollectedCop: totals.monthly,
       voidedCop: totals.voided,
       expectedCop: session.openingAmountCop + totals.collected,
       movementCount: totals.count,
@@ -201,6 +213,8 @@ export class CashService {
       this.writeAudit('cash.session_closed', 'cash_register_session', session.id, now, {
         openingAmountCop: session.openingAmountCop,
         collectedCop: totals.collected,
+        parkingCollectedCop: totals.parking,
+        monthlyCollectedCop: totals.monthly,
         voidedCop: totals.voided,
         expectedAmountCop,
         closingAmountCop,
@@ -217,6 +231,8 @@ export class CashService {
       closedAt: now,
       openingAmountCop: session.openingAmountCop,
       collectedCop: totals.collected,
+      parkingCollectedCop: totals.parking,
+      monthlyCollectedCop: totals.monthly,
       voidedCop: totals.voided,
       expectedAmountCop,
       closingAmountCop,
@@ -312,6 +328,129 @@ export class CashService {
     return this.toCloseSummary(row)
   }
 
+  /**
+   * Detalle de un turno cerrado para exportarlo: el arqueo, los vehículos que
+   * se movieron mientras la caja estuvo abierta y los pagos de mensualidad.
+   *
+   * Un vehículo entra al reporte si ingresó o salió dentro del turno, o si su
+   * cobro cayó en esta caja (un pago pendiente de un día anterior). Lo que pasó
+   * después del cierre no cambia el reporte: quien seguía adentro figura sin
+   * salida aunque ya se haya ido.
+   */
+  getCloseReport(sessionId: string): CashCloseReport {
+    const summary = this.getCloseSummary(sessionId)
+    const vehicles = this.sqlite
+      .prepare(
+        `SELECT v.plate, v.vehicle_type, r.name AS rate_plan_name, s.entered_at, s.exited_at,
+                s.status, s.calculated_amount_cop, p.amount_cop AS paid_cop, p.method,
+                p.status AS payment_status, p.paid_at, rc.receipt_number,
+                pp.id AS pending_id, mc.full_name AS monthly_customer_name
+         FROM parking_sessions s
+         JOIN vehicles v ON v.id = s.vehicle_id
+         LEFT JOIN rate_plans r ON r.id = s.rate_plan_id
+         LEFT JOIN payments p ON p.parking_session_id = s.id AND p.cash_register_session_id = ?
+         LEFT JOIN receipts rc ON rc.payment_id = p.id
+         LEFT JOIN pending_payments pp ON pp.parking_session_id = s.id
+         LEFT JOIN monthly_subscriptions ms ON ms.id = s.subscription_id
+         LEFT JOIN monthly_customers mc ON mc.id = ms.customer_id
+         WHERE (s.entered_at >= ? AND s.entered_at <= ?)
+            OR (s.exited_at >= ? AND s.exited_at <= ?)
+            OR p.id IS NOT NULL
+         ORDER BY s.entered_at, s.rowid, p.paid_at`,
+      )
+      .all(
+        sessionId,
+        summary.openedAt,
+        summary.closedAt,
+        summary.openedAt,
+        summary.closedAt,
+      ) as Array<{
+      plate: string
+      vehicle_type: CashReportVehicle['vehicleType']
+      rate_plan_name: string | null
+      entered_at: string
+      exited_at: string | null
+      status: 'active' | 'closed' | 'cancelled'
+      calculated_amount_cop: number | null
+      paid_cop: number | null
+      method: CashReportVehicle['method']
+      payment_status: CashMovement['status'] | null
+      paid_at: string | null
+      receipt_number: number | null
+      pending_id: string | null
+      monthly_customer_name: string | null
+    }>
+
+    const monthlyPayments = this.sqlite
+      .prepare(
+        `SELECT p.paid_at, p.amount_cop, p.method, p.status, rc.receipt_number,
+                mc.full_name AS customer_name, v.plate, r.name AS plan_name
+         FROM payments p
+         JOIN monthly_subscriptions ms ON ms.id = p.subscription_id
+         JOIN monthly_customers mc ON mc.id = ms.customer_id
+         JOIN vehicles v ON v.id = ms.vehicle_id
+         JOIN rate_plans r ON r.id = ms.rate_plan_id
+         LEFT JOIN receipts rc ON rc.payment_id = p.id
+         WHERE p.cash_register_session_id = ?
+         ORDER BY p.paid_at, p.rowid`,
+      )
+      .all(sessionId) as Array<{
+      paid_at: string
+      amount_cop: number
+      method: CashReportMonthlyPayment['method']
+      status: CashReportMonthlyPayment['status']
+      receipt_number: number | null
+      customer_name: string
+      plate: string
+      plan_name: string
+    }>
+
+    return {
+      summary,
+      vehicles: vehicles.map((row) => {
+        // Una salida posterior al cierre no pertenece a este turno.
+        const exitedInShift = row.exited_at !== null && row.exited_at <= summary.closedAt
+        const exitedAt = exitedInShift ? row.exited_at : null
+        const owedCop = row.calculated_amount_cop ?? 0
+        let outcome: CashReportVehicle['outcome']
+        if (row.payment_status !== null) {
+          outcome = row.payment_status === 'completed' ? 'paid' : 'voided'
+        } else if (!exitedInShift) {
+          outcome = 'parked'
+        } else if (row.status === 'cancelled') {
+          outcome = 'cancelled'
+        } else if (owedCop === 0) {
+          outcome = row.monthly_customer_name === null ? 'free' : 'monthly'
+        } else {
+          outcome = row.pending_id === null ? 'paid-elsewhere' : 'pending'
+        }
+        return {
+          plate: row.plate,
+          vehicleType: row.vehicle_type,
+          ratePlanName: row.rate_plan_name,
+          enteredAt: row.entered_at,
+          exitedAt,
+          outcome,
+          amountCop: row.paid_cop ?? (outcome === 'pending' ? owedCop : 0),
+          method: row.method,
+          receiptNumber: row.receipt_number,
+          paidAt: row.paid_at,
+          monthlyCustomerName: row.monthly_customer_name,
+        }
+      }),
+      monthlyPayments: monthlyPayments.map((row) => ({
+        paidAt: row.paid_at,
+        customerName: row.customer_name,
+        plate: row.plate,
+        planName: row.plan_name,
+        amountCop: row.amount_cop,
+        method: row.method,
+        status: row.status,
+        receiptNumber: row.receipt_number,
+      })),
+    }
+  }
+
   /** Pagos pendientes sin cobrar ahora mismo, de todos los vehículos. */
   private pendingBalance(): PendingBalance {
     const row = this.sqlite
@@ -340,12 +479,20 @@ export class CashService {
       .prepare(
         `SELECT
            COALESCE(SUM(CASE WHEN status = 'completed' THEN amount_cop ELSE 0 END), 0) AS collected,
+           COALESCE(SUM(CASE WHEN status = 'completed' AND subscription_id IS NULL THEN amount_cop ELSE 0 END), 0) AS parking,
+           COALESCE(SUM(CASE WHEN status = 'completed' AND subscription_id IS NOT NULL THEN amount_cop ELSE 0 END), 0) AS monthly,
            COALESCE(SUM(CASE WHEN status = 'voided' THEN amount_cop ELSE 0 END), 0) AS voided,
            COUNT(*) AS count
          FROM payments WHERE cash_register_session_id = ?`,
       )
       .get(sessionId) as TotalsRow
-    return { collected: row.collected, voided: row.voided, count: row.count }
+    return {
+      collected: row.collected,
+      parking: row.parking,
+      monthly: row.monthly,
+      voided: row.voided,
+      count: row.count,
+    }
   }
 
   private listMovements(sessionId: string): CashMovement[] {
@@ -400,6 +547,8 @@ export class CashService {
       closedAt: row.closed_at ?? row.opened_at,
       openingAmountCop: row.opening_amount_cop,
       collectedCop: row.collected_cop,
+      parkingCollectedCop: row.parking_collected_cop,
+      monthlyCollectedCop: row.monthly_collected_cop,
       voidedCop: row.voided_cop,
       expectedAmountCop,
       closingAmountCop,

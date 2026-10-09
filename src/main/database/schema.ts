@@ -140,6 +140,8 @@ export const monthlySubscriptions = sqliteTable(
     amountCop: integer('amount_cop').notNull(),
     status: text('status', { enum: ['pending', 'active', 'expired', 'cancelled'] }).notNull(),
     notes: text('notes'),
+    /** Retirada del listado por el operador; sus pagos y recibos se conservan. */
+    deletedAt: text('deleted_at'),
     ...timestamps,
   },
   (table) => [
@@ -323,6 +325,14 @@ export const receipts = sqliteTable(
   {
     id: text('id').primaryKey(),
     receiptNumber: integer('receipt_number').notNull(),
+    /**
+     * Consecutivo al que pertenece el número: los recibos de parqueo y los de
+     * mensualidad se numeran por separado. Los de mensualidad se muestran como
+     * `MES-00001`.
+     */
+    series: text('series', { enum: ['parking', 'monthly'] })
+      .notNull()
+      .default('parking'),
     paymentId: text('payment_id')
       .notNull()
       .references(() => payments.id, { onDelete: 'restrict' }),
@@ -335,7 +345,7 @@ export const receipts = sqliteTable(
     ...timestamps,
   },
   (table) => [
-    uniqueIndex('receipts_number_unique').on(table.receiptNumber),
+    uniqueIndex('receipts_series_number_unique').on(table.series, table.receiptNumber),
     uniqueIndex('receipts_payment_unique').on(table.paymentId),
     check('receipts_number_positive', sql`${table.receiptNumber} > 0`),
     check('receipts_status_valid', sql`${table.status} in ('issued', 'voided')`),

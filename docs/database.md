@@ -59,6 +59,10 @@ Cada pago de parqueo o de mensualidad se asocia, al registrarse, a la caja abier
 
 La migración `0010` añade `deleted_at` anulable a `monthly_customers` y `rate_plans`, sin recrear tablas ni borrar filas. Eliminar desde Mensualidades registra la fecha UTC, marca la entidad como inactiva y la retira de los catálogos y de los selectores. Las consultas de suscripciones, cobertura, caja e historial mantienen sus referencias, y los recibos conservan su snapshot. No se permite editar ni crear o renovar con una entidad eliminada; cobrar saldos y cancelar una mensualidad existente sigue disponible. El documento de un cliente eliminado puede usarse al registrarlo de nuevo, con un identificador distinto (D-046).
 
+La migración `0013` añade `series` a `receipts` (`parking` por defecto, `monthly` para los pagos de mensualidad) y reemplaza el índice único de `receipt_number` por uno sobre (`series`, `receipt_number`): cada serie lleva su propio consecutivo (D-056). Los recibos de mensualidad existentes se marcan como `monthly` conservando su número y su snapshot. El prefijo `MES-` es de presentación y no se guarda.
+
+La migración `0012` añade `deleted_at` anulable a `monthly_subscriptions` (D-053). Eliminar una mensualidad registra la fecha UTC y conserva la fila, sus pagos y sus recibos: deja de aparecer en el listado, en la cobertura, en el cruce de fechas y en el resumen, pero sus cobros siguen contando en la caja donde se recibieron. Editar una mensualidad actualiza la misma fila y nunca modifica `payments` ni `receipts`.
+
 ## Propiedad y copias
 
 Los datos pertenecen al usuario. El instalador y las actualizaciones no reemplazan la base, y el desinstalador no elimina automáticamente los datos. Configuración ofrece una copia consistente mediante la API de backup de SQLite y un diálogo nativo; React nunca recibe acceso arbitrario al sistema de archivos.

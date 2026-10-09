@@ -26,6 +26,8 @@ describe('Dashboard', () => {
       session: null,
       movements: [],
       collectedCop: 0,
+      parkingCollectedCop: 0,
+      monthlyCollectedCop: 0,
       voidedCop: 0,
       expectedCop: 0,
       movementCount: 0,

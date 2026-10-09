@@ -1,0 +1,1 @@
+ALTER TABLE `monthly_subscriptions` ADD `deleted_at` text;

@@ -12,6 +12,8 @@ type CashStore = {
   session: CashSession | null
   movements: CashMovement[]
   collectedCop: number
+  parkingCollectedCop: number
+  monthlyCollectedCop: number
   voidedCop: number
   expectedCop: number
   movementCount: number
@@ -34,6 +36,8 @@ const EMPTY_STATE: CashState = {
   session: null,
   movements: [],
   collectedCop: 0,
+  parkingCollectedCop: 0,
+  monthlyCollectedCop: 0,
   voidedCop: 0,
   expectedCop: 0,
   movementCount: 0,
@@ -46,6 +50,8 @@ export const useCashStore = create<CashStore>((set, get) => {
       session: state.session,
       movements: state.movements,
       collectedCop: state.collectedCop,
+      parkingCollectedCop: state.parkingCollectedCop,
+      monthlyCollectedCop: state.monthlyCollectedCop,
       voidedCop: state.voidedCop,
       expectedCop: state.expectedCop,
       movementCount: state.movementCount,

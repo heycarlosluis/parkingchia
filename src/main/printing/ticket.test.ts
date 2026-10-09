@@ -1,12 +1,13 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import type { EntryRegistration, PendingPayment } from '@shared/contracts'
+import type { ActiveSession, EntryRegistration, PendingPayment } from '@shared/contracts'
 import { encodeEntryTicketReference, formatEntryTicketReference } from '@shared/entry-ticket'
 import { calculateChargeForMinutes, DEFAULT_TARIFF_SETTINGS } from '@shared/tariff'
 import type { MonthlyReceiptSnapshot } from '@main/monthly/service'
 import type { ReceiptSnapshot } from '@main/parking/service'
 import { isPrintCancellation } from './service'
 import {
+  createActiveSessionsTicketHtml,
   createCalibrationGuideHtml,
   createCashCloseReceiptHtml,
   createEntryTicketHtml,
@@ -262,6 +263,8 @@ describe('legibilidad en papel térmico', () => {
         closedAt: '2026-08-18T23:00:00.000Z',
         openingAmountCop: 100_000,
         collectedCop: 50_000,
+        parkingCollectedCop: 50_000,
+        monthlyCollectedCop: 0,
         voidedCop: 0,
         expectedAmountCop: 150_000,
         closingAmountCop: 150_000,
@@ -375,6 +378,13 @@ describe('documentos que recibe el cliente', () => {
   }
   const note = 'El parqueadero no se hace responsable de los objetos dejados en el vehículo.'
 
+  it('numera el recibo de mensualidad con su propio prefijo', () => {
+    const html = createMonthlyReceiptHtml('58mm', profile, monthlyReceipt)
+    expect(html).toContain('<p class="doc-meta">N.º MES-00012</p>')
+    // El recibo de salida conserva el número simple del consecutivo de parqueo.
+    expect(createExitReceiptHtml('58mm', profile, receipt)).not.toContain('MES-')
+  })
+
   it('cierra tiquete y recibos con el aviso de responsabilidad en letra pequeña', () => {
     const documents = [
       createEntryTicketHtml('80mm', profile, entry),
@@ -413,6 +423,8 @@ describe('cierre de caja', () => {
     closedAt: '2026-08-18T23:00:00.000Z',
     openingAmountCop: 0,
     collectedCop: 50_000,
+    parkingCollectedCop: 50_000,
+    monthlyCollectedCop: 0,
     voidedCop: 5_000,
     expectedAmountCop: 50_000,
     movementCount: 4,
@@ -428,6 +440,20 @@ describe('cierre de caja', () => {
     expect(html).toContain('<span class="total-label">Efectivo contado</span>')
     expect(html).toContain('Diferencia')
     expect(html).toContain('Falta')
+  })
+
+  it('separa lo recaudado por parqueo y por mensualidades y conserva el total', () => {
+    const split = { ...summary, parkingCollectedCop: 30_000, monthlyCollectedCop: 20_000 }
+    for (const closing of [
+      { closingAmountCop: 50_000, differenceCop: 0 },
+      { closingAmountCop: null, differenceCop: null },
+    ]) {
+      const html = createCashCloseReceiptHtml('58mm', profile, { ...split, ...closing })
+      expect(html).toMatch(/<dt>Parqueo<\/dt><dd>\$\s30\.000</)
+      expect(html).toMatch(/<dt>Mensualidades<\/dt><dd>\$\s20\.000</)
+      expect(html).toMatch(/<dt>Total recaudado<\/dt><dd>\$\s50\.000</)
+      expect(html.indexOf('Mensualidades')).toBeLessThan(html.indexOf('Total recaudado'))
+    }
   })
 
   it('informa los pagos pendientes aparte, sin alterar los totales', () => {
@@ -456,5 +482,45 @@ describe('cierre de caja', () => {
     expect(html).not.toContain('Efectivo contado')
     expect(html).not.toContain('Diferencia')
     expect(html).not.toContain('Fondo inicial')
+  })
+})
+
+describe('listado del parqueo activo', () => {
+  const session = (plate: string, enteredAt: string): ActiveSession => ({
+    id: `session-${plate}`,
+    plate,
+    vehicleType: 'car',
+    ratePlanId: null,
+    ratePlanName: null,
+    enteredAt,
+    notes: null,
+    monthlyCoverage: null,
+  })
+  const printedAt = '2026-10-09T15:00:00.000Z'
+
+  it('imprime cada matrícula con su hora de ingreso y el total de vehículos', () => {
+    const html = createActiveSessionsTicketHtml(
+      '58mm',
+      profile,
+      [
+        session('ABC123', '2026-10-09T12:30:00.000Z'),
+        session('XYZ987', '2026-10-09T13:45:00.000Z'),
+      ],
+      printedAt,
+    )
+    expect(html).toContain('Parqueo activo')
+    expect(html).toContain('<dt>Vehículos</dt><dd>2</dd>')
+    expect(html).toMatch(/<dt>ABC123<\/dt><dd><span class="nowrap">/)
+    expect(html).toMatch(/<dt>XYZ987<\/dt><dd><span class="nowrap">/)
+    expect(html.indexOf('ABC123')).toBeLessThan(html.indexOf('XYZ987'))
+    // Es un inventario interno: no lleva códigos ni se confunde con un tiquete de ingreso.
+    expect(html).not.toContain('<svg')
+    expect(html).not.toContain('REIMPRESIÓN')
+  })
+
+  it('deja constancia cuando el parqueadero está vacío', () => {
+    const html = createActiveSessionsTicketHtml('80mm', profile, [], printedAt)
+    expect(html).toContain('<dt>Vehículos</dt><dd>0</dd>')
+    expect(html).toContain('No hay vehículos en el parqueadero.')
   })
 })

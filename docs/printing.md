@@ -43,6 +43,14 @@ Parqueo activo › Pagos pendientes ofrece **Reimprimir tiquete** junto a **Cobr
 
 Reimprimir no cobra, no exige caja abierta y no emite recibo. Si la deuda ya se cobró, la operación se rechaza y debe consultarse el recibo del pago desde el historial. El tiquete ordinario de ingreso sigue limitado a sesiones activas. El botón se bloquea durante el envío y la pantalla informa el resultado, incluida la falta de impresora o la cancelación del diálogo.
 
+## Listado del parqueo activo
+
+Parqueo activo ofrece **Imprimir parqueo activo**. El documento se titula «Parqueo activo» y lista todos los vehículos que están adentro, con su matrícula y su fecha y hora de ingreso, además de la fecha de impresión y el total de vehículos (D-052). Ignora la búsqueda de la pantalla y no lleva códigos: es un inventario interno, no un tiquete.
+
+## Cierre de caja
+
+El recibo de cierre separa lo recaudado en «Parqueo» y «Mensualidades» y muestra debajo el «Total recaudado» (D-051). El detalle completo del turno, con cada vehículo y cada pago de mensualidad, se obtiene exportando el cierre a CSV desde Caja (D-054).
+
 ## Diagnóstico
 
 1. Confirma que el sistema operativo detecte la impresora.

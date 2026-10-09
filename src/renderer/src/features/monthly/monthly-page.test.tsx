@@ -2,7 +2,9 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { lastCoveredLocalDate, toLocalDate } from '@shared/monthly'
 import { useMonthlyStore } from '@/store/monthly-store'
+import { monthlySubscription } from '@/test/setup'
 import { MonthlyPage } from './monthly-page'
 
 const getOverviewDefault = vi.mocked(window.parkingAPI.getMonthlyOverview).getMockImplementation()!
@@ -179,6 +181,8 @@ describe('Mensualidades', () => {
       reference: null,
     })
     expect(screen.getByRole('button', { name: /Reimprimir comprobante/ })).toBeInTheDocument()
+    // El recibo de la mensualidad se identifica con su propio consecutivo.
+    expect(screen.getByText(/Recibo N\.º MES-00002/)).toBeInTheDocument()
   })
 
   it('exige un motivo antes de cancelar una mensualidad', async () => {
@@ -228,6 +232,99 @@ describe('Mensualidades', () => {
       amountCop: 150_000,
     })
     expect(draft!.endDate > draft!.startDate).toBe(true)
+  })
+
+  it('edita una mensualidad con sus datos actuales y guarda solo lo corregido', async () => {
+    vi.mocked(window.parkingAPI.updateSubscription).mockClear()
+    renderPage()
+    await screen.findByRole('table')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Editar' }))
+    const dialog = await screen.findByRole('dialog', { name: /Editar la mensualidad de MEN001/ })
+    expect(within(dialog).getByLabelText('Matrícula')).toHaveValue(monthlySubscription.plate)
+    expect(within(dialog).getByLabelText('Fecha de inicio')).toHaveValue(
+      toLocalDate(monthlySubscription.startsAt),
+    )
+    // La fecha final guardada se respeta: no se recalcula desde una duración.
+    expect(within(dialog).getByLabelText('Fecha final')).toHaveValue(
+      lastCoveredLocalDate(monthlySubscription.endsAt),
+    )
+    expect(within(dialog).queryByLabelText('Duración')).not.toBeInTheDocument()
+
+    const amount = within(dialog).getByLabelText('Costo de la mensualidad')
+    await userEvent.clear(amount)
+    await userEvent.type(amount, '120000')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Guardar cambios' }))
+
+    await waitFor(() =>
+      expect(window.parkingAPI.updateSubscription).toHaveBeenCalledWith({
+        id: monthlySubscription.id,
+        customerId: monthlySubscription.customerId,
+        plate: monthlySubscription.plate,
+        vehicleType: monthlySubscription.vehicleType,
+        ratePlanId: monthlySubscription.ratePlanId,
+        startDate: toLocalDate(monthlySubscription.startsAt),
+        endDate: lastCoveredLocalDate(monthlySubscription.endsAt),
+        amountCop: 120_000,
+        notes: null,
+      }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(await screen.findByText('Mensualidad actualizada.')).toBeInTheDocument()
+  })
+
+  it('elimina una mensualidad solo después de confirmarlo', async () => {
+    vi.mocked(window.parkingAPI.deleteSubscription).mockClear()
+    const initial = await window.parkingAPI.getMonthlyOverview({ search: '', status: 'all' })
+    if (!initial.ok) throw new Error('Falta el escenario de mensualidades')
+    vi.mocked(window.parkingAPI.getMonthlyOverview).mockResolvedValue({
+      ok: true,
+      data: {
+        ...initial.data,
+        subscriptions: [{ ...monthlySubscription, paidCop: 50_000, balanceCop: 100_000 }],
+      },
+    })
+    vi.mocked(window.parkingAPI.deleteSubscription).mockImplementationOnce(async () => {
+      vi.mocked(window.parkingAPI.getMonthlyOverview).mockResolvedValue({
+        ok: true,
+        data: { ...initial.data, subscriptions: [] },
+      })
+      return { ok: true, data: undefined }
+    })
+    renderPage()
+    await screen.findByRole('table')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Eliminar' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(window.parkingAPI.deleteSubscription).not.toHaveBeenCalled()
+    // Deja claro qué pasa con el dinero que ya entró a la caja.
+    expect(within(dialog).getByText(/\$\s50\.000 ya abonados siguen contando/)).toBeInTheDocument()
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Eliminar mensualidad' }))
+
+    await waitFor(() =>
+      expect(window.parkingAPI.deleteSubscription).toHaveBeenCalledWith({
+        id: monthlySubscription.id,
+      }),
+    )
+    expect(await screen.findByText('Todavía no hay mensualidades')).toBeInTheDocument()
+  })
+
+  it('mantiene el error de eliminar una mensualidad dentro de la confirmación', async () => {
+    vi.mocked(window.parkingAPI.deleteSubscription).mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'SUBSCRIPTION_NOT_FOUND', message: 'Esa mensualidad ya no existe.' },
+    })
+    renderPage()
+    await screen.findByRole('table')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Eliminar' }))
+    const dialog = await screen.findByRole('alertdialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Eliminar mensualidad' }))
+
+    expect(await within(dialog).findByText('Esa mensualidad ya no existe.')).toBeInTheDocument()
+    // La mensualidad sigue en el listado, detrás de la confirmación abierta.
+    expect(screen.getByRole('table', { hidden: true })).toBeInTheDocument()
   })
 
   it('administra los clientes y los planes en sus propias pestañas', async () => {

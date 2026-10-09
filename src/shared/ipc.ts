@@ -27,6 +27,7 @@ export {
   createSubscriptionSchema,
   deleteMonthlyCustomerSchema,
   deleteMonthlyPlanSchema,
+  deleteSubscriptionSchema,
   findMonthlyCoverageSchema,
   listMonthlySchema,
   registerSubscriptionPaymentSchema,
@@ -34,6 +35,7 @@ export {
   subscriptionReceiptSchema,
   updateMonthlyCustomerSchema,
   updateMonthlyPlanSchema,
+  updateSubscriptionSchema,
 } from './monthly'
 export {
   createRatePlanSchema,

@@ -29,6 +29,7 @@ import {
   type SubscriptionStatus,
   type UpdateMonthlyCustomerInput,
   type UpdateMonthlyPlanInput,
+  type UpdateSubscriptionInput,
 } from '@shared/monthly'
 import { calculateChange, type PaymentMethod } from '@shared/parking'
 import type { VehicleType } from '@shared/tariff'
@@ -168,7 +169,7 @@ export class MonthlyService {
                 COALESCE(SUM(CASE WHEN s.status = 'active' THEN 1 ELSE 0 END), 0) AS active_subscriptions,
                 COUNT(s.id) AS subscription_count
          FROM monthly_customers c
-         LEFT JOIN monthly_subscriptions s ON s.customer_id = c.id
+         LEFT JOIN monthly_subscriptions s ON s.customer_id = c.id AND s.deleted_at IS NULL
          WHERE c.deleted_at IS NULL
          GROUP BY c.id
          ORDER BY c.status = 'inactive', c.full_name COLLATE NOCASE`,
@@ -329,7 +330,7 @@ export class MonthlyService {
   // ----------------------------------------------------------- suscripciones
 
   listSubscriptions(input: ListMonthlyInput, nowUtc: string): MonthlySubscription[] {
-    const conditions: string[] = []
+    const conditions: string[] = ['s.deleted_at IS NULL']
     const params: unknown[] = []
 
     if (input.search !== '') {
@@ -343,9 +344,8 @@ export class MonthlyService {
       params.push(input.status)
     }
 
-    const where = conditions.length === 0 ? '' : `WHERE ${conditions.join(' AND ')}`
     const rows = this.sqlite
-      .prepare(`${SUBSCRIPTION_QUERY} ${where} ${SUBSCRIPTION_ORDER}`)
+      .prepare(`${SUBSCRIPTION_QUERY} WHERE ${conditions.join(' AND ')} ${SUBSCRIPTION_ORDER}`)
       .all(...params) as SubscriptionRow[]
     return rows.map((row) => this.toSubscription(row, nowUtc))
   }
@@ -407,6 +407,102 @@ export class MonthlyService {
     })()
 
     return this.requireSubscription(id, now)
+  }
+
+  /**
+   * Corrige una mensualidad ya registrada: cliente, vehículo, plan, fechas,
+   * costo o nota.
+   *
+   * No depende del estado ni de los pagos: una mensualidad vencida, cancelada o
+   * ya abonada se corrige igual. Los pagos y sus recibos no se tocan; si el
+   * costo queda por debajo de lo abonado, la mensualidad figura como pagada. La
+   * cancelación se conserva y el resto del estado se vuelve a deducir de las
+   * fechas nuevas.
+   */
+  updateSubscription(input: UpdateSubscriptionInput): MonthlySubscription {
+    const now = new Date().toISOString()
+    const current = this.requireSubscription(input.id, now)
+    // El cliente y el plan actuales se conservan aunque ya no estén en el catálogo.
+    if (input.customerId !== current.customerId) this.requireCustomer(input.customerId)
+    if (input.ratePlanId !== current.ratePlanId) this.requirePlan(input.ratePlanId)
+
+    const startsAt = startOfLocalDayUtc(input.startDate)
+    const endsAt = startOfLocalDayUtc(input.endDate, 1)
+    const cancelled = current.status === 'cancelled'
+
+    this.sqlite.transaction(() => {
+      const vehicleId = this.resolveVehicle(input.plate, input.vehicleType, now)
+      // Una cancelada no cubre al vehículo, así que no choca con otra vigente.
+      if (!cancelled) this.assertNoOverlap(vehicleId, startsAt, endsAt, input.id)
+
+      this.sqlite
+        .prepare(
+          `UPDATE monthly_subscriptions
+           SET customer_id = ?, vehicle_id = ?, rate_plan_id = ?, starts_at = ?, ends_at = ?,
+               amount_cop = ?, status = ?, notes = ?, updated_at = ?
+           WHERE id = ?`,
+        )
+        .run(
+          input.customerId,
+          vehicleId,
+          input.ratePlanId,
+          startsAt,
+          endsAt,
+          input.amountCop,
+          deriveSubscriptionStatus({ startsAt, endsAt, cancelled, nowUtc: now }),
+          input.notes,
+          now,
+          input.id,
+        )
+
+      this.writeAudit('monthly.subscription_updated', 'monthly_subscription', input.id, now, {
+        before: {
+          customerId: current.customerId,
+          plate: current.plate,
+          ratePlanId: current.ratePlanId,
+          startsAt: current.startsAt,
+          endsAt: current.endsAt,
+          amountCop: current.amountCop,
+        },
+        after: {
+          customerId: input.customerId,
+          plate: input.plate,
+          ratePlanId: input.ratePlanId,
+          startsAt,
+          endsAt,
+          amountCop: input.amountCop,
+        },
+        paidCop: current.paidCop,
+      })
+    })()
+
+    return this.requireSubscription(input.id, now)
+  }
+
+  /**
+   * Retira una mensualidad en cualquier estado, tenga o no pagos.
+   *
+   * Deja de cubrir al vehículo y de sumar al saldo por cobrar. La fila se
+   * conserva porque sus pagos ya entraron a una caja: borrarlos alteraría el
+   * arqueo de turnos cerrados. Un pago que haya que devolver se anula en Caja.
+   */
+  deleteSubscription(id: string): void {
+    const now = new Date().toISOString()
+    const current = this.requireSubscription(id, now)
+    this.sqlite.transaction(() => {
+      this.sqlite
+        .prepare('UPDATE monthly_subscriptions SET deleted_at = ?, updated_at = ? WHERE id = ?')
+        .run(now, now, id)
+      this.writeAudit('monthly.subscription_deleted', 'monthly_subscription', id, now, {
+        plate: current.plate,
+        customerName: current.customerName,
+        startsAt: current.startsAt,
+        endsAt: current.endsAt,
+        amountCop: current.amountCop,
+        paidCop: current.paidCop,
+        status: current.status,
+      })
+    })()
   }
 
   /**
@@ -535,7 +631,9 @@ export class MonthlyService {
         )
 
       const next = this.sqlite
-        .prepare('SELECT COALESCE(MAX(receipt_number), 0) + 1 AS next FROM receipts')
+        .prepare(
+          "SELECT COALESCE(MAX(receipt_number), 0) + 1 AS next FROM receipts WHERE series = 'monthly'",
+        )
         .get() as { next: number }
       receiptNumber = next.next
 
@@ -562,8 +660,8 @@ export class MonthlyService {
       this.sqlite
         .prepare(
           `INSERT INTO receipts
-           (id, receipt_number, payment_id, issued_at, status, snapshot_json, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 'issued', ?, ?, ?)`,
+           (id, receipt_number, series, payment_id, issued_at, status, snapshot_json, created_at, updated_at)
+           VALUES (?, ?, 'monthly', ?, ?, 'issued', ?, ?, ?)`,
         )
         .run(randomUUID(), receiptNumber, paymentId, now, JSON.stringify(snapshot), now, now)
 
@@ -630,7 +728,7 @@ export class MonthlyService {
         `SELECT s.id, c.full_name, s.starts_at, s.ends_at
          FROM monthly_subscriptions s
          JOIN monthly_customers c ON c.id = s.customer_id
-         WHERE s.vehicle_id = ? AND s.status <> 'cancelled'
+         WHERE s.vehicle_id = ? AND s.status <> 'cancelled' AND s.deleted_at IS NULL
            AND s.starts_at <= ? AND s.ends_at > ?
          ORDER BY s.ends_at DESC LIMIT 1`,
       )
@@ -661,7 +759,7 @@ export class MonthlyService {
          FROM monthly_subscriptions s
          JOIN monthly_customers c ON c.id = s.customer_id
          JOIN vehicles v ON v.id = s.vehicle_id
-         WHERE v.plate = ? AND s.status <> 'cancelled'
+         WHERE v.plate = ? AND s.status <> 'cancelled' AND s.deleted_at IS NULL
            AND s.starts_at <= ? AND s.ends_at > ?
          ORDER BY s.ends_at DESC LIMIT 1`,
       )
@@ -714,7 +812,7 @@ export class MonthlyService {
            COALESCE(SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END), 0) AS active_count,
            COALESCE(SUM(CASE WHEN status = 'active' AND ends_at <= ? THEN 1 ELSE 0 END), 0) AS expiring_count,
            COALESCE(SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END), 0) AS expired_count
-         FROM monthly_subscriptions`,
+         FROM monthly_subscriptions WHERE deleted_at IS NULL`,
       )
       .get(soonLimit) as { active_count: number; expiring_count: number; expired_count: number }
 
@@ -726,7 +824,7 @@ export class MonthlyService {
              WHERE p.subscription_id = s.id AND p.status = 'completed'
            ), 0) AS pending
            FROM monthly_subscriptions s
-           WHERE s.status <> 'cancelled'
+           WHERE s.status <> 'cancelled' AND s.deleted_at IS NULL
          )`,
       )
       .get() as { total: number }
@@ -789,7 +887,7 @@ export class MonthlyService {
         `SELECT s.id, s.starts_at, s.ends_at, v.plate
          FROM monthly_subscriptions s
          JOIN vehicles v ON v.id = s.vehicle_id
-         WHERE s.vehicle_id = ? AND s.status <> 'cancelled'
+         WHERE s.vehicle_id = ? AND s.status <> 'cancelled' AND s.deleted_at IS NULL
            AND s.starts_at < ? AND s.ends_at > ?
            AND (? IS NULL OR s.id <> ?)
          LIMIT 1`,
@@ -799,7 +897,9 @@ export class MonthlyService {
     if (row) {
       throw new OperationError(
         'SUBSCRIPTION_OVERLAPS',
-        `La matrícula ${row.plate} ya tiene una mensualidad vigente hasta el ${lastCoveredLocalDate(row.ends_at)}. Renuévala en lugar de crear otra.`,
+        excludeId === null
+          ? `La matrícula ${row.plate} ya tiene una mensualidad vigente hasta el ${lastCoveredLocalDate(row.ends_at)}. Renuévala en lugar de crear otra.`
+          : `La matrícula ${row.plate} ya tiene otra mensualidad que cubre esas fechas, hasta el ${lastCoveredLocalDate(row.ends_at)}. Ajusta las fechas o corrige esa mensualidad.`,
       )
     }
   }
@@ -827,7 +927,7 @@ export class MonthlyService {
                 COALESCE(SUM(CASE WHEN s.status = 'active' THEN 1 ELSE 0 END), 0) AS active_subscriptions,
                 COUNT(s.id) AS subscription_count
          FROM monthly_customers c
-         LEFT JOIN monthly_subscriptions s ON s.customer_id = c.id
+         LEFT JOIN monthly_subscriptions s ON s.customer_id = c.id AND s.deleted_at IS NULL
          WHERE c.id = ? AND c.deleted_at IS NULL
          GROUP BY c.id`,
       )
@@ -851,8 +951,9 @@ export class MonthlyService {
   }
 
   private requireSubscription(id: string, nowUtc: string): MonthlySubscription {
-    const row = this.sqlite.prepare(`${SUBSCRIPTION_QUERY} WHERE s.id = ?`).get(id) as
-      SubscriptionRow | undefined
+    const row = this.sqlite
+      .prepare(`${SUBSCRIPTION_QUERY} WHERE s.id = ? AND s.deleted_at IS NULL`)
+      .get(id) as SubscriptionRow | undefined
     if (!row) {
       throw new OperationError('SUBSCRIPTION_NOT_FOUND', 'Esa mensualidad ya no existe.')
     }

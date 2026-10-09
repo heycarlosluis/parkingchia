@@ -1,5 +1,6 @@
 import {
   Banknote,
+  FileSpreadsheet,
   HandCoins,
   History,
   Lock,
@@ -19,6 +20,7 @@ import {
   describeCashDifference,
   describePendingCount,
 } from '@shared/cash'
+import { formatMonthlyReceiptNumber } from '@shared/monthly'
 import { PAYMENT_METHOD_LABELS } from '@shared/parking'
 import {
   AlertDialog,
@@ -63,6 +65,8 @@ export function CashPage(): React.JSX.Element {
   const session = useCashStore((store) => store.session)
   const movements = useCashStore((store) => store.movements)
   const collectedCop = useCashStore((store) => store.collectedCop)
+  const parkingCollectedCop = useCashStore((store) => store.parkingCollectedCop)
+  const monthlyCollectedCop = useCashStore((store) => store.monthlyCollectedCop)
   const voidedCop = useCashStore((store) => store.voidedCop)
   const expectedCop = useCashStore((store) => store.expectedCop)
   const pendingBalance = useCashStore((store) => store.pendingBalance)
@@ -107,6 +111,13 @@ export function CashPage(): React.JSX.Element {
     setReprintMessage(result.ok ? result.data.message : result.error.message)
   }
 
+  /** Guarda el reporte del turno en un archivo CSV que elige el operador. */
+  const exportClose = async (sessionId: string): Promise<void> => {
+    setReprintMessage('Preparando el reporte del cierre…')
+    const result = await window.parkingAPI.exportCashCloseCsv({ sessionId })
+    setReprintMessage(result.ok ? result.data.message : result.error.message)
+  }
+
   /** Cierra la caja y envía su recibo a la impresora sin esperar otro clic. */
   const closeAndPrint = async (input: CloseCashSessionInput): Promise<CashCloseSummary | null> => {
     const summary = await closeSession(input)
@@ -144,7 +155,8 @@ export function CashPage(): React.JSX.Element {
       ) : null}
 
       <div className="stable-status" role="status" aria-live="polite">
-        {message}
+        {/* Con el aviso del cierre a la vista, el resultado se lee allí. */}
+        {closeSummary || reprintMessage === '' ? message : reprintMessage}
       </div>
 
       {closeSummary ? (
@@ -171,6 +183,11 @@ export function CashPage(): React.JSX.Element {
                   }`
                 : ''}
             </span>
+            <p>
+              Parqueo {formatCurrency(closeSummary.parkingCollectedCop)} · Mensualidades{' '}
+              {formatCurrency(closeSummary.monthlyCollectedCop)} · Total recaudado{' '}
+              {formatCurrency(closeSummary.collectedCop)}
+            </p>
             {closeSummary.pendingBalance.count === 0 ? null : (
               <p>
                 Quedan {describePendingCount(closeSummary.pendingBalance.count)} por{' '}
@@ -190,6 +207,15 @@ export function CashPage(): React.JSX.Element {
             >
               <Printer data-icon="inline-start" />
               Reimprimir recibo de cierre
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void exportClose(closeSummary.sessionId)}
+            >
+              <FileSpreadsheet data-icon="inline-start" />
+              Exportar CSV
             </Button>
             <Button
               type="button"
@@ -254,6 +280,12 @@ export function CashPage(): React.JSX.Element {
                     {formatCurrency(collectedCop)}
                   </CardTitle>
                 </CardHeader>
+                <CardContent>
+                  <p className="field-hint tabular">
+                    Parqueo {formatCurrency(parkingCollectedCop)} · Mensualidades{' '}
+                    {formatCurrency(monthlyCollectedCop)}
+                  </p>
+                </CardContent>
               </Card>
               <Card>
                 <CardHeader>
@@ -358,7 +390,9 @@ export function CashPage(): React.JSX.Element {
                           <td className="numeric tabular">
                             {movement.receiptNumber === null
                               ? '—'
-                              : `N.º ${movement.receiptNumber}`}
+                              : movement.source === 'monthly'
+                                ? `N.º ${formatMonthlyReceiptNumber(movement.receiptNumber)}`
+                                : `N.º ${movement.receiptNumber}`}
                           </td>
                           <td className="actions">
                             {movement.status === 'completed' ? (
@@ -395,15 +429,15 @@ export function CashPage(): React.JSX.Element {
               <History aria-hidden="true" /> Cierres anteriores
             </CardTitle>
             <CardDescription>
-              Arqueo de los turnos ya cerrados, con su recibo reimprimible.
+              Arqueo de los turnos ya cerrados, con su recibo reimprimible y su reporte en CSV.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="table-scroll">
               <table className="data-table">
                 <caption className="sr-only">
-                  Cierres de caja anteriores con empleado, recaudado, esperado, diferencia y pagos
-                  pendientes que quedaban.
+                  Cierres de caja anteriores con empleado, recaudado por parqueo y por
+                  mensualidades, esperado, diferencia y pagos pendientes que quedaban.
                 </caption>
                 <thead>
                   <tr>
@@ -434,7 +468,15 @@ export function CashPage(): React.JSX.Element {
                     <tr key={summary.sessionId}>
                       <td>{summary.employeeName ?? '—'}</td>
                       <td className="numeric tabular">{localDateTime(summary.closedAt)}</td>
-                      <td className="numeric tabular">{formatCurrency(summary.collectedCop)}</td>
+                      <td className="numeric tabular">
+                        <span className="cell-stack">
+                          <span>{formatCurrency(summary.collectedCop)}</span>
+                          <span className="cell-note">
+                            Parqueo {formatCurrency(summary.parkingCollectedCop)} · Mensualidades{' '}
+                            {formatCurrency(summary.monthlyCollectedCop)}
+                          </span>
+                        </span>
+                      </td>
                       <td className="numeric tabular">
                         {formatCurrency(summary.expectedAmountCop)}
                       </td>
@@ -471,15 +513,27 @@ export function CashPage(): React.JSX.Element {
                         )}
                       </td>
                       <td className="actions">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => void printClose(summary.sessionId)}
-                        >
-                          <Printer data-icon="inline-start" />
-                          Recibo
-                        </Button>
+                        <div className="row-actions">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void printClose(summary.sessionId)}
+                          >
+                            <Printer data-icon="inline-start" />
+                            Recibo
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            aria-label={`Exportar CSV del cierre de ${localDateTime(summary.closedAt)}`}
+                            onClick={() => void exportClose(summary.sessionId)}
+                          >
+                            <FileSpreadsheet data-icon="inline-start" />
+                            CSV
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}

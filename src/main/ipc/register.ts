@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
+import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { app, dialog, ipcMain } from 'electron'
 import type { z, ZodType } from 'zod'
-import type { ApiResult, AppStatus, BackupResult } from '@shared/contracts'
+import type { ApiResult, AppStatus, BackupResult, ExportResult } from '@shared/contracts'
 import {
   cancelSessionSchema,
   cancelSubscriptionSchema,
@@ -19,6 +20,7 @@ import {
   deleteMonthlyCustomerSchema,
   deleteMonthlyPlanSchema,
   deleteRatePlanSchema,
+  deleteSubscriptionSchema,
   findMonthlyCoverageSchema,
   IPC_CHANNELS,
   listActiveSessionsSchema,
@@ -44,6 +46,7 @@ import {
   updateMonthlyPlanSchema,
   updateRatePlanSchema,
   updateSettingsSchema,
+  updateSubscriptionSchema,
   updateTariffSettingsSchema,
   voidPaymentSchema,
 } from '@shared/ipc'
@@ -51,6 +54,7 @@ import type { DatabaseManager } from '@main/database/connection'
 import type { ElectronTicketPrinter } from '@main/printing/service'
 import type { AccessService } from '@main/security/access-service'
 import type { SettingsService } from '@main/settings/service'
+import { cashCloseCsvFileName, createCashCloseCsv, csvSeparatorFor } from '@main/cash/export'
 import type { CashService } from '@main/cash/service'
 import type { EmployeeService } from '@main/employee/service'
 import type { MonthlyService } from '@main/monthly/service'
@@ -181,6 +185,11 @@ export function registerIpcHandlers(services: Services): void {
       services.parking.listActiveSessions(parseOrReject(listActiveSessionsSchema, rawInput)),
     ),
   )
+  ipcMain.handle(IPC_CHANNELS.PARKING_ACTIVE_PRINT, () =>
+    withAccess(() =>
+      services.printing.printActiveSessions(services.parking.listActiveSessions({ search: '' })),
+    ),
+  )
   ipcMain.handle(IPC_CHANNELS.PARKING_RESOLVE_EXIT, (_event, rawInput: unknown) =>
     withAccess(() =>
       services.parking.resolveExitTarget(parseOrReject(resolveExitTargetSchema, rawInput).code),
@@ -290,6 +299,16 @@ export function registerIpcHandlers(services: Services): void {
       services.monthly.createSubscription(parseOrReject(createSubscriptionSchema, rawInput)),
     ),
   )
+  ipcMain.handle(IPC_CHANNELS.MONTHLY_SUBSCRIPTION_UPDATE, (_event, rawInput: unknown) =>
+    withAccess(() =>
+      services.monthly.updateSubscription(parseOrReject(updateSubscriptionSchema, rawInput)),
+    ),
+  )
+  ipcMain.handle(IPC_CHANNELS.MONTHLY_SUBSCRIPTION_DELETE, (_event, rawInput: unknown) =>
+    withAccess(() => {
+      services.monthly.deleteSubscription(parseOrReject(deleteSubscriptionSchema, rawInput).id)
+    }),
+  )
   ipcMain.handle(IPC_CHANNELS.MONTHLY_SUBSCRIPTION_RENEW, (_event, rawInput: unknown) =>
     withAccess(() =>
       services.monthly.renewSubscription(parseOrReject(renewSubscriptionSchema, rawInput)),
@@ -348,6 +367,40 @@ export function registerIpcHandlers(services: Services): void {
         services.cash.getCloseSummary(parseOrReject(cashSessionReceiptSchema, rawInput).sessionId),
       ),
     ),
+  )
+
+  ipcMain.handle(IPC_CHANNELS.CASH_CLOSE_EXPORT, (_event, rawInput: unknown) =>
+    withAccess<ExportResult>(async () => {
+      const report = services.cash.getCloseReport(
+        parseOrReject(cashSessionReceiptSchema, rawInput).sessionId,
+      )
+      const result = await dialog.showSaveDialog({
+        title: 'Guardar el reporte del cierre',
+        defaultPath: path.join(app.getPath('documents'), cashCloseCsvFileName(report.summary)),
+        filters: [{ name: 'Archivo CSV', extensions: ['csv'] }],
+      })
+      if (result.canceled || !result.filePath) {
+        return { created: false, message: 'No se guardó el reporte del cierre.' }
+      }
+      try {
+        await writeFile(
+          result.filePath,
+          createCashCloseCsv(
+            report,
+            services.access.getState().profile?.name ?? null,
+            // El separador sigue la configuración regional del equipo, como hace Excel.
+            csvSeparatorFor(app.getSystemLocale()),
+          ),
+          'utf8',
+        )
+      } catch {
+        throw new OperationError(
+          'EXPORT_FAILED',
+          'No fue posible guardar el archivo. Elige otra carpeta o cierra el archivo si está abierto.',
+        )
+      }
+      return { created: true, message: 'Reporte del cierre guardado en CSV.' }
+    }),
   )
 
   ipcMain.handle(IPC_CHANNELS.EMPLOYEES_LIST, () => withAccess(() => services.employees.list()))

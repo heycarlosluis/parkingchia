@@ -20,6 +20,7 @@ const api: ParkingApi = {
   registerEntry: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_ENTRY, input),
   resolveExitTarget: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_RESOLVE_EXIT, input),
   listActiveSessions: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_ACTIVE_LIST, input),
+  printActiveSessions: () => ipcRenderer.invoke(IPC_CHANNELS.PARKING_ACTIVE_PRINT),
   quoteSessionExit: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_QUOTE_EXIT, input),
   closeSession: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_CLOSE, input),
   cancelSession: (input) => ipcRenderer.invoke(IPC_CHANNELS.PARKING_CANCEL, input),
@@ -40,6 +41,10 @@ const api: ParkingApi = {
   deleteMonthlyPlan: (input) => ipcRenderer.invoke(IPC_CHANNELS.MONTHLY_PLAN_DELETE, input),
   createSubscription: (input) =>
     ipcRenderer.invoke(IPC_CHANNELS.MONTHLY_SUBSCRIPTION_CREATE, input),
+  updateSubscription: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MONTHLY_SUBSCRIPTION_UPDATE, input),
+  deleteSubscription: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MONTHLY_SUBSCRIPTION_DELETE, input),
   renewSubscription: (input) => ipcRenderer.invoke(IPC_CHANNELS.MONTHLY_SUBSCRIPTION_RENEW, input),
   cancelSubscription: (input) =>
     ipcRenderer.invoke(IPC_CHANNELS.MONTHLY_SUBSCRIPTION_CANCEL, input),
@@ -54,6 +59,7 @@ const api: ParkingApi = {
   voidCashPayment: (input) => ipcRenderer.invoke(IPC_CHANNELS.CASH_PAYMENT_VOID, input),
   listCashSessions: () => ipcRenderer.invoke(IPC_CHANNELS.CASH_SESSIONS_LIST),
   printCashCloseReceipt: (input) => ipcRenderer.invoke(IPC_CHANNELS.CASH_CLOSE_RECEIPT, input),
+  exportCashCloseCsv: (input) => ipcRenderer.invoke(IPC_CHANNELS.CASH_CLOSE_EXPORT, input),
   listEmployees: () => ipcRenderer.invoke(IPC_CHANNELS.EMPLOYEES_LIST),
   createEmployee: (input) => ipcRenderer.invoke(IPC_CHANNELS.EMPLOYEE_CREATE, input),
   updateEmployee: (input) => ipcRenderer.invoke(IPC_CHANNELS.EMPLOYEE_UPDATE, input),

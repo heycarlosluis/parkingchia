@@ -1,5 +1,6 @@
 import bwipjs from 'bwip-js/node'
 import type {
+  ActiveSession,
   CashCloseSummary,
   EntryRegistration,
   PaperWidth,
@@ -12,7 +13,7 @@ import { PRINTABLE_WIDTH_MM } from '@shared/ipc'
 import { formatNit } from '@shared/nit'
 import { describeElapsed, PAYMENT_METHOD_LABELS } from '@shared/parking'
 import { describeBillingUnit, VEHICLE_TYPE_LABELS } from '@shared/tariff'
-import { describeCoverage } from '@shared/monthly'
+import { describeCoverage, formatMonthlyReceiptNumber } from '@shared/monthly'
 import { encodeEntryTicketReference, formatEntryTicketReference } from '@shared/entry-ticket'
 import type { MonthlyReceiptSnapshot } from '@main/monthly/service'
 import type { FreeExitTicket, ReceiptSnapshot } from '@main/parking/service'
@@ -420,6 +421,34 @@ export function createExitReceiptHtml(
   )
 }
 
+/**
+ * Inventario de los vehículos que están en el parqueadero: matrícula y hora
+ * de ingreso de cada uno, para contrastarlo con lo que hay en el patio.
+ */
+export function createActiveSessionsTicketHtml(
+  layout: LayoutInput,
+  profile: ParkingProfile | null,
+  sessions: ActiveSession[],
+  printedAt: string,
+): string {
+  const body = `
+    <dl>
+      ${row('Impreso', dateTimeHtml(printedAt))}
+      ${row('Vehículos', String(sessions.length))}
+    </dl>
+    ${RULE}
+    ${
+      sessions.length === 0
+        ? '<p class="footer">No hay vehículos en el parqueadero.</p>'
+        : `<dl>
+      ${sessions.map((session) => row(session.plate, dateTimeHtml(session.enteredAt))).join('\n      ')}
+    </dl>`
+    }
+    ${RULE}
+    <p class="footer">Matrícula y hora de ingreso.</p>`
+  return documentShell(layout, profile, { title: 'Parqueo activo' }, body)
+}
+
 /** Comprobante de una salida que cerró en cero: deja constancia sin ser un recibo. */
 export function createFreeExitTicketHtml(
   layout: LayoutInput,
@@ -493,7 +522,10 @@ export function createMonthlyReceiptHtml(
   return documentShell(
     layout,
     profile,
-    { title: 'Recibo de mensualidad', meta: `N.º ${receipt.receiptNumber}` },
+    {
+      title: 'Recibo de mensualidad',
+      meta: `N.º ${formatMonthlyReceiptNumber(receipt.receiptNumber)}`,
+    },
     body,
     options,
   )
@@ -504,19 +536,23 @@ export function createCashCloseReceiptHtml(
   profile: ParkingProfile | null,
   summary: CashCloseSummary,
 ): string {
+  // Parqueo y mensualidades se acumulan aparte y su suma es lo recaudado.
+  const collected = `${row('Parqueo', escapeHtml(formatCurrency(summary.parkingCollectedCop)))}
+      ${row('Mensualidades', escapeHtml(formatCurrency(summary.monthlyCollectedCop)))}
+      ${row('Total recaudado', escapeHtml(formatCurrency(summary.collectedCop)))}`
   // Un turno cerrado sin conteo (cobro simplificado) no tiene efectivo contado
   // ni diferencia: el importe principal pasa a ser lo acumulado en el turno.
   const totals =
     summary.closingAmountCop === null
       ? `<dl>
       ${summary.openingAmountCop === 0 ? '' : row('Fondo inicial', escapeHtml(formatCurrency(summary.openingAmountCop)))}
-      ${row('Recaudado', escapeHtml(formatCurrency(summary.collectedCop)))}
+      ${collected}
       ${row('Anulado', escapeHtml(formatCurrency(summary.voidedCop)))}
     </dl>
     ${totalBlock('Total del turno', summary.expectedAmountCop)}`
       : `<dl>
       ${row('Fondo inicial', escapeHtml(formatCurrency(summary.openingAmountCop)))}
-      ${row('Recaudado', escapeHtml(formatCurrency(summary.collectedCop)))}
+      ${collected}
       ${row('Anulado', escapeHtml(formatCurrency(summary.voidedCop)))}
       ${row('Esperado', escapeHtml(formatCurrency(summary.expectedAmountCop)))}
     </dl>

@@ -310,6 +310,11 @@ export type BackupResult = {
   message: string
 }
 
+export type ExportResult = {
+  created: boolean
+  message: string
+}
+
 export type UpdateStateName =
   | 'idle'
   | 'checking'
@@ -414,7 +419,12 @@ export type CashState = {
   /** Caja abierta ahora mismo; `null` cuando el turno no ha iniciado. */
   session: CashSession | null
   movements: CashMovement[]
+  /** Suma de `parkingCollectedCop` y `monthlyCollectedCop`. */
   collectedCop: number
+  /** Cobros de parqueo del turno: salidas y pagos pendientes saldados. */
+  parkingCollectedCop: number
+  /** Pagos de mensualidad recibidos en el turno. */
+  monthlyCollectedCop: number
   voidedCop: number
   expectedCop: number
   movementCount: number
@@ -428,7 +438,12 @@ export type CashCloseSummary = {
   openedAt: string
   closedAt: string
   openingAmountCop: number
+  /** Suma de `parkingCollectedCop` y `monthlyCollectedCop`. */
   collectedCop: number
+  /** Cobros de parqueo del turno: salidas y pagos pendientes saldados. */
+  parkingCollectedCop: number
+  /** Pagos de mensualidad recibidos en el turno. */
+  monthlyCollectedCop: number
   voidedCop: number
   expectedAmountCop: number
   /** Efectivo contado al cerrar; `null` cuando el turno se cerró sin conteo. */
@@ -473,6 +488,7 @@ export interface ParkingApi {
   }) => Promise<ApiResult<EntryRegistration>>
   resolveExitTarget: (input: { code: string }) => Promise<ApiResult<ExitTarget>>
   listActiveSessions: (input: { search: string }) => Promise<ApiResult<ActiveSession[]>>
+  printActiveSessions: () => Promise<ApiResult<PrintResult>>
   quoteSessionExit: (input: { sessionId: string }) => Promise<ApiResult<SessionQuote>>
   closeSession: (input: {
     sessionId: string
@@ -516,6 +532,10 @@ export interface ParkingApi {
   updateMonthlyPlan: (input: MonthlyPlanDraft & { id: string }) => Promise<ApiResult<RatePlan>>
   deleteMonthlyPlan: (input: { id: string }) => Promise<ApiResult<void>>
   createSubscription: (input: SubscriptionDraft) => Promise<ApiResult<MonthlySubscription>>
+  updateSubscription: (
+    input: SubscriptionDraft & { id: string },
+  ) => Promise<ApiResult<MonthlySubscription>>
+  deleteSubscription: (input: { id: string }) => Promise<ApiResult<void>>
   renewSubscription: (input: {
     id: string
     months: number
@@ -540,6 +560,7 @@ export interface ParkingApi {
   voidCashPayment: (input: VoidPaymentInput) => Promise<ApiResult<CashState>>
   listCashSessions: () => Promise<ApiResult<CashCloseSummary[]>>
   printCashCloseReceipt: (input: { sessionId: string }) => Promise<ApiResult<PrintResult>>
+  exportCashCloseCsv: (input: { sessionId: string }) => Promise<ApiResult<ExportResult>>
   listEmployees: () => Promise<ApiResult<Employee[]>>
   createEmployee: (input: EmployeeDraft) => Promise<ApiResult<Employee>>
   updateEmployee: (input: EmployeeDraft & { id: string }) => Promise<ApiResult<Employee>>
