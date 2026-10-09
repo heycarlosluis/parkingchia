@@ -7,7 +7,7 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 ## Línea base
 
 - Rama de referencia: `main`.
-- Versión del corte: `0.1.0-alpha.12`.
+- Versión del corte: `0.1.0-alpha.13`.
 - Versión publicada más reciente: `0.1.0-alpha.12`.
 - Tag publicado más reciente: `v0.1.0-alpha.12`.
 - CI de la versión publicada: aprobado.
@@ -202,3 +202,5 @@ El mismo 2026-10-09 el propietario probó el CSV del cierre y lo encontró defor
 El mismo 2026-10-09 los recibos de mensualidad pasaron a un consecutivo propio con prefijo `MES-` (D-056), también sin publicar. La migración `0013` agrega `receipts.series`, cambia el índice único a (`series`, `receipt_number`) y marca los recibos de mensualidad existentes sin renumerarlos; la prueba de migración desde `0009` comprueba que un recibo de mensualidad previo conserva número y snapshot. Pasaron `format:check`, `typecheck`, `lint`, 33 archivos con 409 pruebas, `build`, `db:generate` (sin cambios adicionales) y `db:migrate` con `db:seed` sobre una base temporal. Falta confirmar el recibo impreso.
 
 Antes de publicar se comprobó que las migraciones `0011` a `0013` no alteran lo ya registrado: sobre una copia de un respaldo automático de la base de desarrollo anterior a estos cambios, con sesiones, cobros, cierres y dos recibos de mensualidad, todas las filas de todas las tablas quedaron idénticas tras migrar; solo aparecieron las columnas nuevas (`deleted_at` vacío y `series`), los dos recibos de mensualidad conservaron su número y `foreign_key_check` e `integrity_check` salieron limpios. La numeración `MES-` y la eliminación de mensualidades solo afectan a lo que se registre desde esta versión.
+
+`0.1.0-alpha.13` se preparó el 2026-10-09 para distribuir D-051 a D-056. Incluye las migraciones aditivas `0012` y `0013`; conserva los datos y crea un respaldo antes de migrar.
