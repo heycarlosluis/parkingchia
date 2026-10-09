@@ -8,10 +8,10 @@ Este archivo describe el último corte conocido, no sustituye la verificación d
 
 - Rama de referencia: `main`.
 - Versión del corte: `0.1.0-alpha.13`.
-- Versión publicada más reciente: `0.1.0-alpha.12`.
-- Tag publicado más reciente: `v0.1.0-alpha.12`.
+- Versión publicada más reciente: `0.1.0-alpha.13`.
+- Tag publicado más reciente: `v0.1.0-alpha.13`.
 - CI de la versión publicada: aprobado.
-- Release multiplataforma publicada: `0.1.0-alpha.12`, como pre-release.
+- Release multiplataforma publicada: `0.1.0-alpha.13`, como pre-release.
 - Artefactos publicados: NSIS Windows x64; DMG y ZIP macOS x64/arm64; metadatos YAML y blockmaps.
 
 ## Implementado y funcional
@@ -204,3 +204,5 @@ El mismo 2026-10-09 los recibos de mensualidad pasaron a un consecutivo propio c
 Antes de publicar se comprobó que las migraciones `0011` a `0013` no alteran lo ya registrado: sobre una copia de un respaldo automático de la base de desarrollo anterior a estos cambios, con sesiones, cobros, cierres y dos recibos de mensualidad, todas las filas de todas las tablas quedaron idénticas tras migrar; solo aparecieron las columnas nuevas (`deleted_at` vacío y `series`), los dos recibos de mensualidad conservaron su número y `foreign_key_check` e `integrity_check` salieron limpios. La numeración `MES-` y la eliminación de mensualidades solo afectan a lo que se registre desde esta versión.
 
 `0.1.0-alpha.13` se preparó el 2026-10-09 para distribuir D-051 a D-056. Incluye las migraciones aditivas `0012` y `0013`; conserva los datos y crea un respaldo antes de migrar.
+
+`0.1.0-alpha.13` se publicó el 2026-10-09 en [GitHub Releases](https://github.com/heycarlosluis/parkingchia/releases/tag/v0.1.0-alpha.13). [CI](https://github.com/heycarlosluis/parkingchia/actions/runs/37963921855) y los cuatro jobs de [Release](https://github.com/heycarlosluis/parkingchia/actions/runs/37963926317) terminaron correctamente. La release incluye el instalador NSIS de Windows x64, los DMG y ZIP de macOS x64/arm64, sus blockmaps y los YAML de actualización, que declaran la versión `0.1.0-alpha.13`. Los cambios D-051 a D-056 se validaron con pruebas automatizadas y con la migración de una copia de datos reales de desarrollo; falta confirmar en papel el recibo de cierre, el listado del parqueo activo y el recibo `MES-`, abrir un CSV en el equipo del parqueadero y probar la actualización en un equipo instalado.
